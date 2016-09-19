@@ -1,0 +1,856 @@
+package dynagent.ruleengine.src.ruler.ERPrules
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.exceptions.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import org.drools.WorkingMemory;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import dynagent.common.basicobjects.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.utils.Auxiliar;
+
+global DataModelAdapter dma;
+
+function String addDestinationToString(String destination,String anotherDestination){
+	boolean destinationNull= destination==null || destination.length()==0;
+	boolean anotherDestNull= anotherDestination==null || anotherDestination.length()==0;
+	
+	if( destinationNull && !anotherDestNull){
+		return anotherDestination;
+	}
+	if( !destinationNull && anotherDestNull ){
+		return destination;
+	}
+	if( destinationNull && anotherDestNull ){
+		return "";
+	}
+	
+	String[] anotherSpl =anotherDestination.split(",");
+	for (String anotherAux : anotherSpl) {
+		boolean addDestination=true;
+		String[] destinationSpl = destination.split(",");
+		for (String destinationAux : destinationSpl) {
+			if(destinationAux.equals(anotherAux) || destinationAux.equals("*")){
+				addDestination=false;
+			}
+		}
+		if(addDestination){
+			if(destination.isEmpty()){
+				destination=anotherAux;
+			}else{
+ 				destination=destination+","+anotherAux;
+ 			}
+ 		}
+ 	}
+ 	
+ 	return destination;
+}
+
+function void setDestination(DataModelAdapter dma,String destination, ArrayList facts,boolean incremental){
+	for(int i=0;i<facts.size();i++){
+ 		Fact f=(Fact)facts.get(i);
+ 		//dma.printRule("DBGDEST SIMPLE "+f.getPROPNAME()+" "+destination);	  
+ 		if(incremental){
+ 			destination=addDestinationToString(f.getDestinationSystem(),destination);
+ 		}      		
+ 		f.setDestinationSystem(destination,false);
+ 	}
+}
+
+/*
+Asigna el destination a los facts del ido pasado por parametro descendiendo recursivamente por sus rangos si son estructurales y no estan en la lista de exclusiones.
+
+Tener en cuenta que:
+	Si no es estructural: No se descendera por el rango pero el fact objectproperty tendra el destination del rdn del rango
+	Si esta en exclusiones: No se descendera por el rango pero el fact objectproperty tendra el destination pasado por parametro
+*/
+
+rule "REPLICA_RULE DESTINATION STOCK"
+ salience -210
+no-loop true
+ agenda-group "bddrules" when 
+    ObjValue(PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+    
+	FactHierarchy(idtoStock:IDTO,nameclase:CLASSSUP=="STOCK")
+	Individual(IDTO==idtoStock,idoStock:IDO,classStock:CLASSNAME)
+	
+	ObjValue(IDO==idoStock,PROPNAME=="almacén_stock",idoAlm:IDOVALUE)
+	ObjValue(IDO==idoAlm,PROPNAME=="delegación",idoDelStock:IDOVALUE)
+	DatValue(IDO==idoDelStock, PROPNAME=="rdn",LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL, rdnDelegStock:VALUE)
+	
+	ObjValue(IDO==idoStock,PROPNAME=="producto",idoProd:IDOVALUE)	
+	
+	rdnDelegacionCentral:String() from accumulate((and 	ObjValue(IDO==idoProd,PROPNAME=="empresa",idoEmp:IDOVALUE)
+														ObjValue(IDO==idoEmp,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE)
+														DatValue(IDO==idoDelCentral, PROPNAME=="rdn",LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL, rdnDel:VALUE!=null)),
+														init(String res="";),
+														action(res=rdnDel;),
+														result(res))
+	
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="delegación",idoMiDeleg:IDOVALUE!=null)
+	DatValue(IDO==idoMiDeleg, PROPNAME=="rdn",rdnMiDeleg:VALUE)
+	
+	//no puedo limitar a IndividualValues cambiados porque entonces no envia las eliminaciones que se basa enproperty ficticia 21 que toma el destino del destino del rdn
+	facts: ArrayList(size>0) from collect (IndividualValue(IDO==idoStock, IDTO==idtoStock, LEVEL!=Constants.LEVEL_FILTER))
+
+then
+ 	dma.printRule("\n\n============== REPLICA_RULE: REPLICA_RULE DESTINATION STOCK: tipoObjeto="+nameclase+" ido="+idoStock+" class="+classStock+" facts:"+facts.size());
+	//cogemos el rdn de las delegaciones y lo ponemos como destination multiple
+ 	String destination=rdnDelegStock;
+	
+ 	destination=addDestinationToString(destination,rdnDelegacionCentral);
+
+	if(rdnDelegStock.equals(rdnDelegacionCentral)) destination=addDestinationToString(destination,"web");//necesario cuando hay tallas y colores
+	
+	//en stocks externos no propago fecha alta, por ejemplo el stock central no es global, si se hace una traspaso desde tienda se crea por primera vez en la tienda y machacaria ese valor en central.
+	// Pasara tambien que al crear por primera vez un traspaso desde central a tienda, no se replicara ese dato a la tienda, pero de momento no es necesario. Si fuera necesario habria que tocar server 
+	// para que nunca actualizase ese dato si el stock existe 	
+ 	for(int i=0;i<facts.size();i++){
+ 		Fact f=(Fact)facts.get(i);  		
+ 		if(f.getPROPNAME().equals("fecha_alta")&&!idoMiDeleg.equals(idoDelStock)) 
+ 			//si es stock externo pongo mi delegacion local para excluir.
+ 			//tener en cuenta que regla de tiendas impide un cambio de genero (ej de talla) desde un almacen distinto al local, pues computa en el origen del documento
+ 			f.setDestinationSystem(rdnMiDeleg,false); 	
+ 		else	    		
+ 			f.setDestinationSystem(destination,false);
+ 	} 	
+end
+
+rule "REPLICA_RULE DESTINATION CAJA"
+ salience -210
+no-loop true
+ agenda-group "bddrules" when 
+    ObjValue(PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+	FactHierarchy(idtoDoc:IDTO,nameclase:CLASSSUP=="CAJA")
+	
+	DatValue(IDTO==idtoDoc,idoDoc:IDO,classDoc:CLASSNAME,PROPNAME=="rdn",LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL)	
+	
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="mi_empresa",idoMiEmp:IDOVALUE)
+	
+	//si mi maquina es de una empresa que coincide con la empresa de la delegacion del documento, envio los datos a su central
+	ObjValue(IDO==idoDoc,PROPNAME=="delegación",idoDel:IDOVALUE)
+	ObjValue(IDO==idoDel,PROPNAME=="empresa",IDOVALUE==idoMiEmp)
+	
+	DatValue(IDO==idoDel, PROPNAME=="rdn",LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL, rdnDelegacion:VALUE)
+	
+	ObjValue(IDO==idoMiEmp,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE)
+	DatValue(IDO==idoDelCentral, PROPNAME=="rdn",LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL, rdnDelegacionCentral:VALUE)
+
+	facts: ArrayList(size>0) from collect (IndividualValue(IDO==idoDoc, IDTO==idtoDoc, LEVEL!=Constants.LEVEL_FILTER))
+
+then
+ 	dma.printRule("\n\n============== REPLICA_RULE: REPLICA_RULE DESTINATION CAJA: tipoObjeto="+nameclase+" ido="+idoDoc+" class="+classDoc+" facts:"+facts.size());
+	String destination=rdnDelegacion;
+	
+ 	destination=addDestinationToString(destination,rdnDelegacionCentral);
+ 	
+	dma.printRule("...... Destination="+destination);
+	setDestination(dma,destination,facts,false);
+end
+
+rule "REPLICA_RULE DESTINATION MENSAJE"
+//SI EL DESTINATARIO FUERA TODOS, NO SE MARCA DESTINATION QUE EN IMPLEM SIGNIFICA QUE LLEGA A TODOS//
+ salience -210
+no-loop true
+ agenda-group "bddrules" when 
+    ObjValue(PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+ 	FactHierarchy(idtoDoc:IDTO,nameclase:CLASSSUP=="MENSAJE")
+	DatValue(IDTO==idtoDoc,idoDoc:IDO,classDoc:CLASSNAME,PROPNAME=="rdn",LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL)
+
+	ObjValue(IDO==idoDoc,PROPNAME=="origen_delegacion",idoDelOrigen:IDOVALUE)
+	DatValue(IDO==idoDelOrigen, PROPNAME=="rdn",LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL, rdnOrigenDelegacion:VALUE)
+	//de momento no soporta enviar mensaje a una tienda de otra empresa, dado que no añade la central de esa tienda en el destino de replica
+	ObjValue(IDO==idoDelOrigen,PROPNAME=="empresa",idoEmp:IDOVALUE)
+	ObjValue(IDO==idoEmp,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE)
+	DatValue(IDO==idoDelCentral, PROPNAME=="rdn",rdnDestinoCentral:VALUE!=null)
+	
+	rdnDestinoDelegacion:String() from accumulate ((and 	ObjValue(IDO==idoDoc,PROPNAME=="destino_delegacion",idoDelDestino:IDOVALUE)
+															//Si hay un destino explicito le replico el mensaje, aunque no sea de mi empresa
+															//ObjValue(IDO==idoDelDestino,PROPNAME=="empresa",idoEmpDest:IDOVALUE)
+															//ObjValue(IDO==idoEmpDest,PROPNAME=="delegacion_central",IDOVALUE==idoDelCentral)
+															DatValue(IDO==idoDelDestino, PROPNAME=="rdn",rdnD:VALUE!=null)), 
+											init(String res="";),
+											action(res=addDestinationToString(res,rdnD);),
+											result(res))											
+	
+	rdnDestinoMismaRed:String() from accumulate ((and 	ObjValue(IDO==idoDoc,PROPNAME=="destino_delegacion",idoDelDestino:IDOVALUE)
+														ObjValue(IDO==idoDelDestino,PROPNAME=="empresa",idoEmpDest:IDOVALUE)
+														ObjValue(IDO==idoEmpDest,PROPNAME=="delegacion_central",IDOVALUE==idoDelCentral)
+														DatValue(IDO==idoDelDestino, PROPNAME=="rdn",rdnD:VALUE!=null)), 
+											init(String res="";),
+											action(res=addDestinationToString(res,rdnD);),
+											result(res))	
+	
+	facts: ArrayList(size>0) from collect (IndividualValue(IDO==idoDoc, IDTO==idtoDoc, LEVEL!=Constants.LEVEL_FILTER))
+	
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="delegación",idoMiDel:IDOVALUE!=null)
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="mi_empresa",idoMiEmp:IDOVALUE!=null)
+	ObjValue(IDO==idoMiEmp,PROPNAME=="delegacion_central",idoDelCentralMiEmp:IDOVALUE)
+
+then
+ 	dma.printRule("\n\n============== REPLICA_RULE: REPLICA_RULE DESTINATION MENSAJE: tipoObjeto="+nameclase+" ido="+idoDoc+" class="+classDoc+" facts:"+facts.size());
+	//cogemos el rdn de las delegaciones y lo ponemos como destination multiple. Al menos una de las delegaciones tendra central, la que no tenga no envia. 
+ 	String destination=rdnOrigenDelegacion;
+ 	
+ 	// si soy tienda y estoy modificando un mensaje con origen central sin destino, se replica al origen  	
+ 	if(rdnDestinoDelegacion!=null && rdnDestinoDelegacion.length()>0 ){ 
+ 		destination+=","+rdnDestinoDelegacion;
+		dma.printRule("...... Destination="+destination);
+				
+		if(rdnDestinoMismaRed!=null && rdnDestinoMismaRed.length()>0){
+			// un mensaje enviado desde una tienda a otra tienda, debe pasar por la central
+			destination=addDestinationToString(destination,rdnDestinoCentral);
+		}
+		
+		setDestination(dma,destination,facts,false);
+ 	}else{
+ 		//si el destino es multiple, lo dejamos global, que baja por get pero nunca sube con post, tanto a mi red como otras 		
+ 		// si no soy central, y no tengo destino, añado la central del origne
+ 		if(idoDelCentralMiEmp.equals(idoMiDel)){
+ 			destination=null;//es global. Deberia tambien replicar al origen
+ 		}else{ 			
+ 			destination=addDestinationToString(destination,rdnDestinoCentral); 			
+ 		}
+ 		setDestination(dma,destination,facts,false);
+ 	}	 	
+end
+
+
+rule "REPLICA_RULE DESTINATION CLASE CENTRALIZADA"
+ salience -200 //Antes de regla documento y lineas para que machaquen despues por ser mas especificas
+ agenda-group "bddrules" when 
+    ObjValue(PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+ //al poner como destino su propia maquina, no se replica ni arriba ni abajo
+        									
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="mi_empresa",idoEmpApp:IDOVALUE!=null,ovEmpApp:OBJECTVALUE)			
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="delegación",idoMiDel:IDOVALUE)
+	DatValue(IDO==idoMiDel, PROPNAME=="rdn", LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL,rdnMiDel:VALUE!=null)
+	 	
+ 	//notar que se desde un doc se crea o modifica una clase centralizada, dicha clase no recibe destino del documento porque no tiene dependencia estructural y por tanto no
+ 	//no se llega por recursividad
+ 	
+	Individual(idtoTarget:IDTO,idoTarget:IDO,clsName:CLASSNAME)	
+
+	//el siguiente exists es necesario por rendimiento, mayormente por la correlacion con system class
+	exists(	IndividualValue(IDO==idoTarget,initialValuesChanged==true))
+	
+	exists(FactHierarchy(IDTO==idtoTarget,CLASSSUP=="CONFIG_GUI"||=="COMISIÓN"||=="EXCLUSIÓN"||=="MÓDULO_NEGOCIO"||=="EMAIL_SMTP"||=="CUENTA_CONTABLE"||=="ÍNDICE"||=="ARTÍCULO"||=="TALLA"||=="COLOR"||=="FAMILIA"||=="SUBFAMILIA"||=="CATEGORIA_ARTICULO"||=="MARCA"||=="ALMACÉN"||=="DELEGACIÓN"||=="CONDICIÓN_ESPECIAL_VENTA"||=="AGENTE_COMERCIAL"||=="CLIENTE"||=="CLIENTE_POTENCIAL"||=="ASIENTO"||=="APUNTE"||=="CRÉDITO_TARJETA"||=="PROVEEDOR"||=="FLUJO_CAJA"||=="PRECIO_PROVEEDOR"||=="REGULARIZACIÓN"||=="INFORME"||=="SUBINFORME"||=="CONFIGURACIÓN_CONTABLE"))
+	//En estas clases, la empresa no depende del producto si no de aplicacion. A cliente se le puede indicar empresa mas especifica pero es opcional, y no parece necesario para replicas	
+	
+	backlinks:ArrayList() from accumulate((and  f:ObjValue(idProp:PROP,IDOVALUE==idoTarget||INITIALRANGE==idoTarget)
+												eval(dma.getDDM().isStructural(idProp))),
+												init(ArrayList res=new ArrayList();),
+												action(res.add(f);),
+												result(res))				
+		
+	orig_destino_alm: String() from accumulate ((and 	ObjValue(IDO==idoTarget, PROPNAME=="origen"||=="destino"||=="almacén", idoAlmacen:IDOVALUE)	
+													ObjValue(IDO==idoAlmacen,PROPNAME=="delegación",idoDelegacion:IDOVALUE)																																								
+													DatValue(IDO==idoDelegacion, PROPNAME=="rdn", rdnDestino:VALUE!=null)
+											),
+											init(String res="";),
+											action(													
+												if(!res.matches("(.+,)?"+rdnDestino+"(,.+)?")){
+													if(res.length()>0) res+=",";
+													res+=rdnDestino;
+												}
+											),
+											result(res))			
+	orig_destino_del: String() from accumulate ((and 	ObjValue(IDO==idoTarget, PROPNAME=="delegación", idoDelTarget:IDOVALUE)																																																					
+														DatValue(IDO==idoDelTarget, PROPNAME=="rdn", rdnDestino:VALUE!=null)
+											),
+											init(String res="";),
+											action(													
+												if(!res.matches("(.+,)?"+rdnDestino+"(,.+)?")){
+													if(res.length()>0) res+=",";
+													res+=rdnDestino;
+												}
+											),
+											result(res))												
+then
+
+	dma.printRule("============== REPLICA_RULE: DESTINATION CLASE CENTRALIZADA global: Tatget "+clsName); 		
+ 	
+ 			
+	//Debe estar articulo por si se crea desde un doc (en doc se excluye el producto)
+	//las comisiones serian globales, el distribuidor deberia ser creado manualmente en franquicias o por script
+	//cliente varios si debe propagarse
+	boolean idtoComercial= 	dma.isSpecialized(clsName,"AGENTE_COMERCIAL")||
+							dma.isSpecialized(clsName,"CLIENTE_PARTICULAR")||
+							dma.isSpecialized(clsName,"CLIENTE_EMPRESA")||
+							dma.isSpecialized(clsName,"CLIENTE_POTENCIAL")||
+							dma.isSpecialized(clsName,"CLIENTE_VARIOS");
+							
+	//almacen se añade por datos de stock total y disponible, que no son afectados por regla de propiedades centralizadas que atienden a estas mismas propiedades pero solo de genero
+	//es necesario que stock total de almacen viaje hacia la central para sincronizar con la web en presupuestos limitados de distribucion (corner celop)
+	boolean idtoPeer=dma.isSpecialized(clsName,"ASIENTO")||
+					dma.isSpecialized(clsName,"APUNTE")||
+					dma.isSpecialized(clsName,"PROVEEDOR")||
+					dma.isSpecialized(clsName,"FLUJO_CAJA")||
+					dma.isSpecialized(clsName,"PRECIO_PROVEEDOR")||
+					dma.isSpecialized(clsName,"REGULARIZACIÓN");
+	//Debe estar articulo por si se crea desde un doc (en doc se excluye el producto)	
+	//indice ya es descartado si ya existía
+	boolean idtoGlobal=	clsName.equals("TALLA")||clsName.equals("COLOR")|| //talla color puede estar excluida y fallaria isSpecialized
+						dma.isSpecialized(clsName,"CONFIG_GUI")||
+						dma.isSpecialized(clsName,"ALMACÉN")||
+						dma.isSpecialized(clsName,"COMISIÓN")||
+						dma.isSpecialized(clsName,"EXCLUSIÓN")||
+						dma.isSpecialized(clsName,"MÓDULO_NEGOCIO")||
+						dma.isSpecialized(clsName,"EMAIL_SMTP")||
+						dma.isSpecialized(clsName,"CUENTA_CONTABLE")||
+						dma.isSpecialized(clsName,"ÍNDICE")||
+						dma.isSpecialized(clsName,"ARTÍCULO")||
+						dma.isSpecialized(clsName,"FAMILIA")||
+						dma.isSpecialized(clsName,"SUBFAMILIA")||
+						dma.isSpecialized(clsName,"CATEGORIA_ARTICULO")||
+						dma.isSpecialized(clsName,"MARCA")||
+						dma.isSpecialized(clsName,"ALMACÉN")||
+						dma.isSpecialized(clsName,"DELEGACIÓN")||
+						dma.isSpecialized(clsName,"CONDICIÓN_ESPECIAL_VENTA");
+							
+	//Debe estar articulo por si se crea desde un doc (en doc se excluye el producto)
+	boolean idtoRed=dma.isSpecialized(clsName,"INFORME")||
+					dma.isSpecialized(clsName,"SUBINFORME")||
+					dma.isSpecialized(clsName,"CONFIGURACIÓN_CONTABLE")||
+					dma.isSpecialized(clsName,"CRÉDITO_TARJETA");	
+					
+	if(idtoRed||idtoGlobal||idtoPeer||idtoComercial){
+	 	String destination=null;
+	 	HashSet exclusion=null;
+	
+		int idoMiempResolved=0;
+		int idoDelCentral=0;
+		Domain target=new Domain(idoTarget,idtoTarget);
+		ObjectValue miEmpresaResolved=null;
+		try{
+			miEmpresaResolved=(ObjectValue)dma.getValue(target,"mi_empresa");		
+		}catch(Exception e){
+			dma.printRule("no es mi empresa");
+		}
+		if(miEmpresaResolved==null){
+			try{
+				miEmpresaResolved=(ObjectValue)dma.getValue(target,"empresa");
+				if(!dma.isSpecialized(miEmpresaResolved.getValueCls(),dma.getIdClass("MI_EMPRESA")))
+					miEmpresaResolved=null;
+			}catch(Exception e){
+				dma.printRule("no es empresa");
+			}
+		}
+		
+		//por defecto es empresa de aplicacion, pero prioritariamente si el target tiene empresa predomina
+		if(miEmpresaResolved==null) miEmpresaResolved=ovEmpApp;
+		
+		String rdnMiCentral=null;
+		if(miEmpresaResolved!=null){
+			idoMiempResolved=miEmpresaResolved.getValue();
+			ObjectValue delegCentral=(ObjectValue)dma.getValue(miEmpresaResolved,"delegacion_central");
+			if(delegCentral!=null){
+				rdnMiCentral=dma.getStringValue(delegCentral,"rdn");
+				idoDelCentral=delegCentral.getValue();
+			}
+		}
+	
+		
+	 	//en caso global, no distingo si es de otra empresa o no porque tambien debe dispararse y asignar destino nulo para macahacar el * que tiene por defecto todo fact
+	 	if(idtoGlobal){ 	 
+	
+	 			dma.printRule(" destino global, destin: "+destination+" bk size:"+backlinks.size());
+	 			 		
+	 			setDestination(dma,destination,backlinks,false);
+	 			
+	 			//if(!idoDelCentral.equals(idoMiDel){
+	 				//seria un dato global a mi red, pensado para que datos globales creados en una jerarquia inferior puedan subir (replicador admite subir * por su red)
+	 				//sin embargo si el dato se genera en una central, debe usar global que sirve igual para bajar pero al no subir no rebota
+	 				//en caso una franquicia que vende a dos redes (la franq es central), si en una central superior se crease un dato global con * no seria un problema por que al bajar a la franquicia no tiene donde subir por su red,
+	 				// pero si seria problema en una tienda de dos redes, por eso la condicion de solo poner * sólo si no soy central
+				//	destination="*[mired]";//asi sube si se crea desde una tienda, y tambien baja, pero no rebota un producto creado en una central hacia otra central a traves de una tienda comun
+			
+			//		No soportamos *, habria que poder especificar la red a la que pertenece el dato, y baja a todos pero solo sube a la central del dato. Ejemplo, una tienda con dos centrales,
+				//	en la central a la que pertenece un producto, esta excluido talla y color, al utilizar dicho producto en la tienda la regla le pone requiere talla por defecto, con *, que subiria la 
+					//central 1 por no distinguir en redes
+					//Los cambios globales solo deberia hacerlo una central, no una tienda para subir
+				//}
+	 	}
+	 		
+	 	if(idoMiempResolved==idoEmpApp){//si es misma red
+	 		dma.printRule("Misma red"); 
+	 		if(idtoRed){
+	 			boolean replicarSoloNuevosInformes=dma.isSpecialized(idtoTarget,dma.getIdClass("INFORME")) && idoTarget.intValue()<0;  		
+				destination="#";		
+				
+				if(dma.isSpecialized(idtoTarget,dma.getIdClass("CONFIGURACIÓN_CONTABLE"))) destination=rdnMiDel;
+				if(dma.isSpecialized(idtoTarget,dma.getIdClass("INFORME")) ) destination=""; //cambios de informe en tienda quedan en local 
+	 		}
+	 		if(idtoComercial){ 
+	 			//ahora mismo la @ significa un destino de mi red que agrupa todos mis comerciales, y solo mejora el rendimiento ya que las tiendas no tienen que traer estos datos, pero se podria usar #
+	 			// replicaMsg no lo entiende (si replicador de tablet), habria que poner un or con # para que lo utilize igual, tanto en metodo resuelve todos los destinos como en SQL. Adem
+	 			//no puede rebotar entre centrales porque ni siquiera baja por replicaMsg
+				destination="web";//discontinuado "#"; deberia la tablet traerse cosas por que el comercial sea de la delgacion central 
+				//actualmente no se soporta combinar # con destinos especificos de otra red. No lo soporta Replica.java por que cuando destino contains #, machaca a solo mi central perdiendo el resto
+				if(dma.isSpecialized(idtoTarget,dma.getIdClass("DISTRIBUIDOR"))){
+				 	destination=addDestinationToString(destination,orig_destino_alm);
+	 				destination=addDestinationToString(destination,orig_destino_del);
+	 				dma.printRule(" target distribuidor destino "+destination);
+	 				setDestination(dma,destination,backlinks,false);
+				}
+	 		}
+	 		 		
+	 		//si es una central, destino queda como lobal (franquicias si cuenta como central pero al ser lobal no sube. En tienda sube como peer
+	 		//para idto comercial tambien es peer, si no seria inconsistente con cuentas contables
+	 		if(idtoPeer)	destination=idoDelCentral==idoMiDel?rdnMiCentral:rdnMiCentral+","+rdnMiDel;		
+	
+			
+			exclusion=new HashSet(Arrays.asList("precios_compra"));
+		} 	
+	
+		
+	 	HashSet idosProcesados=new HashSet();
+		dma.printRule(" destino "+destination);
+		//Descartar significa que sus propiedades solo se protegen de cambios externos, no se propagan, pero si el indivudo puede y debe ser conocido en la red
+		dma.setDestinationRecursively(idosProcesados,idoTarget,destination,exclusion,rdnMiDel);	
+	}
+end
+
+
+rule "REPLICA_RULE DESTINATION CLASE DESCARTADA"
+ salience -200 //menos prioridad que clase centralizada 
+ agenda-group "bddrules" when 
+ //al poner como destino su propia maquina, no se replica ni arriba ni abajo	
+    ObjValue(PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+	FactHierarchy(idtoDescartada:IDTO,nameclaseDesc:CLASSSUP=="ÍNDICE"||=="CONFIGURACIÓN_REMESAS"||=="CODIFICACION_BANCARIA_BIC")	
+	Individual(idtoTarget:IDTO==idtoDescartada,idoTarget:IDO,classDescart:CLASSNAME)
+	
+	//Indices solo descarto modificaciones y eliminacion, pero no creacion. La creacion debe ser una clase global, que no sube
+	eval(!(nameclaseDesc.equals("ÍNDICE")&&idoTarget.intValue()<0))
+	
+	ObjValue(CLASSNAME=="APLICACIÓN",idoApp:IDO,PROPNAME=="delegación",idoDel:IDOVALUE)
+	DatValue(IDO==idoDel, PROPNAME=="rdn", destination:VALOR!=null)
+	
+	then
+ 	dma.printRule("\n\n============== REPLICA_RULE: DESTINATION CLASE DESCARTADA");	
+ 		
+	HashSet idosProcesados=new HashSet();
+	//Descartar significa qeu sus propiedades solo se protegen de cambios externos, no se propagan, pero si el indivudo puede y debe ser conocido en la red
+	dma.setDestinationRecursively(idosProcesados,idoTarget,destination,null,destination);
+end
+
+
+rule "REPLICA_RULE DESTINATION PROPIEDADES CENTRALIZADAS"
+ salience -220 //Despues de regla documento y lineas para que lo machaque
+ agenda-group "bddrules" when 
+    ObjValue(PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+ 	Individual(idtoDomain:IDTO,idoDomain:IDO,classDomain:CLASSNAME,STATE==Constants.INDIVIDUAL_STATE_READY)
+ 	
+ 	//notar que stock totales de almacen no debe correlar con esta regla pero getGroup no exige que dicho grupo pertenezca a este dominio 
+ 	fa:DatValue(IDO==idoDomain, initialValuesChanged==true,propName:PROPNAME!="coste")//coste debe viajar para se haga la foto en ventas y ticket de delegaciones	
+	
+	//para que no falle getGroup de genero en otros modelos no erp
+	exists(FactHierarchy(CLASSSUP=="GÉNERO"))
+	//estos datos pueden ser de un genero o de un agregado
+	eval(	Auxiliar.equals(dma.getDDM().getGroup(null,propName),"DATOS_TRAZA")||
+			Auxiliar.equals(dma.getDDM().getGroup("GÉNERO",propName),"STOCK")
+	)
+	
+	ObjValue(IDO==idoDomain,PROPNAME=="mi_empresa"||=="empresa",idoEmpDomain:IDOVALUE)
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="delegación",idoMiDel:IDOVALUE)
+	DatValue(IDO==idoMiDel, PROPNAME=="rdn",rdnMiDel:VALUE!=null)
+	
+	rdnDelCentralDomain:String() from accumulate((and 	ObjValue(IDO==idoEmpDomain,PROPNAME=="delegacion_central",idoDelCentralDomain:IDOVALUE)
+														DatValue(IDO==idoDelCentralDomain, PROPNAME=="rdn",rdnD:VALOR!=null)),
+														init(String res=rdnMiDel;),action(res=rdnD;),result(res))
+	
+	
+	
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="mi_empresa",idoMiEmp:IDOVALUE)
+	DatValue(IDO==idoDomain,PROPNAME=="rdn",rdnTarget:VALOR!=null)
+
+	empDomainTieneDel_central:ArrayList() from collect(	ObjValue(IDO==idoEmpDomain,PROPNAME=="delegacion_central",idoDelCentralDomain:IDOVALUE))
+	
+then
+ 	dma.printRule("\n\n============== REPLICA_RULE: REPLICA_RULE PROPIEDADES CENTRALIZADAS: central "+rdnDelCentralDomain+" propName="+propName+" ido="+idoDomain+" class="+classDomain);
+	String destination=rdnDelCentralDomain;
+	
+	//por ahora destino es esta máquina  o su central si tiene, solamente debo sobreescibir destino si el dominio tiene delegacion central y por tanto se replica, puedeo no tener
+	//si por ejemplo la empresa es un proveedor de un articulo
+	if(	empDomainTieneDel_central.size()>0 &&
+		(propName.equals("stock_total")||propName.equals("stock_disponible")||propName.equals("stock_reservado"))){		
+		//si soy central y la empresa del producto es de mi red, no debo replicar hacia arriba pero si hacia abajo, por tanto no puede ser *
+		if(idoEmpDomain.equals(idoMiEmp) && rdnMiDel.equals(rdnDelCentralDomain)){
+			destination="";//solo interesa disponible pero no importa total y reservado viajen
+		}else{
+			destination="*";//Si no soy central, no interesa replicar total pero no debe ser problema porque lo normal es que no se modifique ese dato desde tienda, ademas es incremental
+		}
+	}
+ 		
+	//dma.printRule("DBG..... Destination="+fa.getPROPNAME()+" "+destination);
+	fa.setDestinationSystem(destination,false);
+	
+end
+
+/*
+Le asigna destination a las lineas y sus hijos dependiendo de la central del producto de cada linea.
+Luego se le pone destination al documento sumando los destination de cada linea y descendiendo por los rangos estructurales(exceptuando linea ya que machacaria el valor asignado anteriormente en esta misma regla)
+*/
+rule "REPLICA_RULE DESTINATION DOCUMENTO Y LINEAS"
+ salience -210
+no-loop true
+ agenda-group "bddrules" when 
+    ObjValue(PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+ 	FactHierarchy(idtoDoc:IDTO,nameclase:CLASSSUP=="DOCUMENTO"||=="LIQUIDACIÓN_POR_CAMBIO_PRECIO"||=="ROTACION")
+ 	//debe ser ready para que se ejecute en ese ultimo estado, ya que hay reglas como trazaDoc que se ejecuta tb en ready, y aunque tiene mas prioridad se ejecutaria
+ 	//despues y habria fact existirian a posterior de ejecucion de regla de replicas, por lo que quedarian como globales
+ 	//Como solo hago setDestination a Fact el estado de individual no puede cambiar a lock
+ 
+	Individual(IDTO==idtoDoc,idoDoc:IDO,classDoc:CLASSNAME)	
+	
+	//el destino de regularizacion ya lo ha asignado regla centralizada. Uso rdn para tomar destino ya que individual es un reflejo que se asigna mas tarde
+	FI:DatValue(IDO==idoDoc,PROPNAME=="rdn")
+	//Correlamos tanto por necesidad de discriminar el destino por la empresa del producto, como por la necesidad de que documentos no sean globales.
+	//No todo lo que a un nivel inferior tiene producto debe ser con destino, por ejemplo una comision tiene producto y debe propagarse
+	//
+	//eval(dma.printRule("DBGRT 1 "+classDoc+" ido:"+idoDoc))
+	
+	anticipo: HashMap() from accumulate ((and 	ObjValue(IDO==idoDoc, PROPNAME=="cobro_anticipo",idoCobroCurr:IDOVALUE,idoCobroInit:INITIALRANGE) 
+												ObjValue(idoCobro:IDO==idoCobroCurr||==idoCobroInit,PROPNAME=="mi_empresa",idoEmp:IDOVALUE)																									
+												ObjValue(IDO==idoEmp,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE)													
+												DatValue(IDO==idoDelCentral, PROPNAME=="rdn",LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL, rdnDestinoCentral:VALUE)
+													
+											),
+											init(HashMap res=new HashMap();),
+											action(	
+													ArrayList list=(ArrayList)res.get(rdnDestinoCentral);
+													if(list==null){
+														list=new ArrayList();
+														res.put(rdnDestinoCentral,list);														
+													}
+													list.add(idoCobro);
+											),
+											result(res))	
+												
+	//Notar que las lineas pueden no estar cargadas, como en un cobro, en cuyo caso a los cambios solo aplica como destino la delegacion del documento.
+	//Actualmente las franquicias no se liquidan teniendo en cuenta sus cobros, si no las ventas esten cobradas o no, por lo que no importa. Si importase, o bien la deuda de la factura
+	//deberia replicarse, o bien precargar lineas en franquicias, o bien segmentar cobros con caja de cada red de empresa, o mejora habilitar la contabilidad, que tira de desgloses de iva que 
+	// si estan segmentados, o añadir deuda al desglose de iva y si precargar desgloses	
+	
+	//no tomo la empresa del producto porque una regla podria decidir que la venta es de otra empresa											
+	lineasArtic_desgIva: HashMap() from accumulate ((and 	FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA_ARTÍCULOS"||=="DESGLOSE_IVA")
+													f:ObjValue(IDO==idoDoc, VALUECLS==idtoLinea,PROPNAME=="línea"||=="consumo"||=="programación"||=="productos_y_precios"||=="linea_rotacion"||=="desglose_iva", 
+																												LEVEL!=Constants.LEVEL_FILTER, idoLineaCurr:IDOVALUE,idoLineaInit:INITIALRANGE)
+													//eval(dma.printRule("DBGRT 2 "+classDoc+" ido:"+idoDoc +" line:"+idoLineaCurr))																								
+													ObjValue(idoLinea:IDO==idoLineaCurr||==idoLineaInit,PROPNAME=="mi_empresa",idoEmp:IDOVALUE)
+													//eval(dma.printRule("DBGRT 3 "+classDoc+" ido:"+idoDoc +" emp:"+idoEmp))													
+													ObjValue(IDO==idoEmp,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE)
+													//eval(dma.printRule("DBGRT 4 "+classDoc+" ido:"+idoDoc +" cent:"+idoDelCentral))	
+													DatValue(IDO==idoDelCentral, PROPNAME=="rdn",LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL, rdnDestinoCentral:VALUE)
+													//eval(dma.printRule("DBGRT 5 "+classDoc+" ido:"+idoDoc +" rdn:"+rdnDestinoCentral))	
+											),
+											init(HashMap res=new HashMap();),
+											action(	
+													ArrayList list=(ArrayList)res.get(rdnDestinoCentral);
+													if(list==null){
+														list=new ArrayList();
+														res.put(rdnDestinoCentral,list);														
+													}
+													list.add(idoLinea);
+											),
+											result(res))														
+																																		
+	//Ademas de las centrales añado como destino un posible origen y destino como en traspaso			
+	//si exigiera exista origen y destino, este dato no existiria en ticket y por tanto su destino seria solo la central del producto. 
+	//Una franquicia en modo tienda requiere ver sus ventas. Una franq con sus propios productos tendria su propio backup	
+	//me sirve que ticket se repliquen a la tienda, en menu externo (abono externo) de esa manera vuelven para cierre de caja												
+	
+	//almacen se usa en regularizacion. si regularizas desde una tienda, el destino es si misma, por tanto no se envia a la central, por tanto no la trae en restauraciones (se pierde informacion)										
+	orig_destino: String() from accumulate ((and 	ObjValue(IDO==idoDoc, PROPNAME=="origen"||=="destino"||=="almacén", LEVEL!=Constants.LEVEL_FILTER, idoAlmacen:IDOVALUE)																								
+													ObjValue(IDO==idoAlmacen,PROPNAME=="delegación",idoDelegacion:IDOVALUE)																										
+													DatValue(IDO==idoDelegacion, PROPNAME=="rdn", rdnAlmacen:VALUE!=null)
+											),
+											init(String res="";),
+											action(													
+												if(!res.matches("(.+,)?"+rdnAlmacen+"(,.+)?")){
+													if(res.length()>0) res+=",";
+													res+=rdnAlmacen;
+												}
+											),
+											result(res))		
+											
+	delegacionDoc: String() from accumulate ((and 	ObjValue(IDO==idoDoc, PROPNAME=="delegación", LEVEL!=Constants.LEVEL_FILTER, idoDelegacion:IDOVALUE)																																																										
+													DatValue(IDO==idoDelegacion, PROPNAME=="rdn", rdnDel:VALUE!=null)
+											),
+											init(String res="";),
+											action(													
+												if(!res.matches("(.+,)?"+rdnDel+"(,.+)?")){
+													if(res.length()>0) res+=",";
+													res+=rdnDel;
+												}
+											),
+											result(res))
+																	
+																																															
+then
+ 	dma.printRule("\n\n============== REPLICA_RULE: REPLICA_RULE DESTINATION DOCUMENTO Y LINEAS: tipoObjeto="+nameclase+" ido="+idoDoc+" class="+classDoc+" lineas:"+lineasArtic_desgIva.size());
+	
+	HashSet idosProcesados=new HashSet();
+	//Meto el doc como procesado para que no se llege a el desde una inversa de linea
+	idosProcesados.add(idoDoc);
+	HashSet excluirLineas=null;
+	
+	orig_destino=addDestinationToString(orig_destino,delegacionDoc);
+				
+	String destinationDoc=orig_destino;
+
+	if(dma.isSpecialized(idtoDoc,dma.getIdClass("REGULARIZACIÓN"))){
+		//el destino de regularizacion ya lo ha asignado regla centralizada. Uso rdn porque destino de individual es un reflejo que se asigna mas tarde		
+		destinationDoc=addDestinationToString(destinationDoc,FI.getDestinationSystem());	
+	}
+	
+	destinationDoc=destino_estructura_doc(dma,idosProcesados,lineasArtic_desgIva,destinationDoc,orig_destino);	
+	destinationDoc=destino_estructura_doc(dma,idosProcesados,anticipo,destinationDoc,orig_destino);	
+		
+	if(lineasArtic_desgIva.size()>0){
+		//Solo lineas de articulos tienen mi empresa, si no tienen propago el destino del doc tambien por las lineas	
+		//Excluyo ademas cobro anticipo por ser centralizada
+		excluirLineas=new HashSet(Arrays.asList("línea","consumo","programación","productos_y_precios","linea_rotacion","cobro_anticipo","desglose_iva"));
+	}
+	
+	dma.printRule("...... Destination="+destinationDoc);	
+	//aqui, si se excluye la linea, al menos a la obj prop linea se asigna el destino que ya tenga el rango (el individuo linea)
+	//en estructural (lineas) si el destino  descarte es null, aplicara el del rango
+	// si es linea articulo, se excluye propiedades pero destino descarte es nulo,  
+	// si no es linea de articulo, no se excluye nada (excluirLineas es nulo), por tanto se propaga a lineas el destino del documento (y no el del rango)
+	dma.setDestinationRecursively(idosProcesados,idoDoc,destinationDoc,excluirLineas,null);
+	
+
+end
+
+rule "REPLICA_RULE DESTINATION LINEA: EVOLUCION DOCUMENTOS"
+
+ salience -211//menos priorida que regla de REPLICA_RULE DESTINATION DOCUMENTO Y LINEAS para ampliar lo que dice la anterior
+no-loop true
+ agenda-group "bddrules" when 
+    ObjValue(PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+
+	FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA_ARTÍCULOS")
+	f:ObjValue(idoDoc:IDO, VALUECLS==idtoLinea,PROPNAME=="línea"||=="consumo"||=="programación"||=="productos_y_precios"||=="linea_rotacion",LEVEL!=Constants.LEVEL_FILTER, idoLineaCurr:IDOVALUE,idoLineaInit:INITIALRANGE)																			
+	destinoEvo: String() from accumulate ((and 	ObjValue(IDO==idoLineaCurr||==idoLineaInit,PROPNAME=="documento",idoDocAny:IDOVALUE)																										
+													ObjValue(IDO==idoDocAny,PROPNAME=="delegación",idoDel:IDOVALUE)																										
+													DatValue(IDO==idoDel, PROPNAME=="rdn",rdest:VALOR!=null)													
+											),
+											init(String res="";),
+											action(													
+												if(!res.matches("(.+,)?"+rdest+"(,.+)?")){
+													if(res.length()>0) res+=",";
+													res+=rdest;
+												}
+											),
+											result(res))
+	facts: ArrayList(size>0) from collect (IndividualValue(IDO==idoLineaCurr||==idoLineaInit, LEVEL!=Constants.LEVEL_FILTER))																																																																																																										
+then
+ 	dma.printRule("\n\n=============REPLICA_RULE DESTINATION LINEA: EVOLUCION DOCUMENTOS "+destinoEvo);
+	
+	setDestination(dma,destinoEvo,facts,true);
+end
+
+function String destino_estructura_doc(DataModelAdapter dma,HashSet idosProcesados,HashMap detalle,String destinationDoc,String orig_destino){	
+	if(detalle.size()>0){	
+		//Poner destino a lineas y subniveles recursivamente		
+		// si creo productos desde doc, son datos globales
+		
+		Iterator itr=detalle.keySet().iterator();
+		while(itr.hasNext()){
+			String rdnDestinoLinea=(String)itr.next();
+			
+			ArrayList idosLineas=(ArrayList)detalle.get(rdnDestinoLinea);
+			
+			//cogemos el rdn de las delegaciones y lo ponemos como destination multiple
+			destinationDoc=addDestinationToString(destinationDoc,rdnDestinoLinea);
+			String destinationLinea=orig_destino;
+			destinationLinea=addDestinationToString(destinationLinea,rdnDestinoLinea);
+			
+			for(int i=0;i<idosLineas.size();i++){
+				Integer idoLinea=(Integer)idosLineas.get(i);
+				// notar que aqui no se fija el destino a la object prop linea.
+				// producto no debe recibir destino porque puede ser creado desde doc, pero al no ser estructural no debe propagarlo
+				
+				dma.setDestinationRecursively(idosProcesados,idoLinea,destinationLinea,null,null);
+			}
+		}
+	}
+	return destinationDoc;
+}
+
+
+rule "REPLICA_RULE DESTINATION PROPIEDADES DESCARTADAS"
+ salience -250 //Con menos prioridad que cualquier otra que le pueda cambiar el valor como la de documentos
+no-loop true
+ agenda-group "bddrules" when 
+    ObjValue(PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+	FactHierarchy(idtoDoc:IDTO,nameclase:CLASSSUP=="APLICACIÓN"||=="CUENTA_CONTABLE"||=="CLIENTE")
+	DatValue(IDTO==idtoDoc,idoDoc:IDO,PROPNAME=="rdn", classDoc:CLASSNAME,LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL)
+	fa:IndividualValue(IDO==idoDoc, p:PROPNAME=="deuda"||=="fecha_última_compra"||=="saldo"||=="delegación"||=="mi_empresa"||=="almacén_entradas_por_defecto"||=="almacén_por_defecto"||=="almacén_salidas_por_defecto", initialValuesChanged==true)
+	eval(!(nameclase.equals("CUENTA_CONTABLE")&&!p.equals("saldo")) && !((p.equals("delegación")||p.equals("mi_empresa")||p.contains("almacén"))&&!nameclase.equals("APLICACIÓN")))
+	
+	
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="delegación",idoDel:IDOVALUE)
+	DatValue(IDO==idoDel, PROPNAME=="rdn",LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL, rdnDelegacion:VALUE)
+then
+ 	dma.printRule("\n\n============== REPLICA_RULE DESTINATION PROPIEDADES DESCARTADAS: tipoObjeto="+nameclase+" ido="+idoDoc+" class="+classDoc);
+	String destination=rdnDelegacion;
+	dma.printRule("...... Destination="+fa.getPROPNAME()+" "+destination);
+	((Fact)fa).setDestinationSystem(destination,false);
+end
+
+/*
+rule "ABONO EXTERNO DESCARTAR DOC"
+ salience -300 //Con menos prioridad que cualquier otra que le pueda cambiar el valor como la de documentos
+no-loop true
+ agenda-group "bddrules" when 
+    ObjValue(CLASSNAME=="Task_ABONO_EXTERNO",idoUTask:IDO,idtoUTask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+  
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)	
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="mi_empresa",idoMiEmp:IDOVALUE)
+	ObjValue(IDO==idoMiEmp,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE)
+	DatValue(IDO==idoDelCentral, PROPNAME=="rdn",LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL, rdnDelegacionCentral:VALUE)
+	FactHierarchy(idtoDoc:IDTO,nameclase:CLASSSUP=="TICKET")
+	Individual(IDTO==idtoDoc,idoTarget:IDO)		
+then
+ 	dma.printRule("\n\n============== ABONO EXTERNO DESCARTAR DOC");
+
+	dma.printRule("...... Destination="+rdnDelegacionCentral);
+	dma.setDestinationRecursively(new HashSet(),idoTarget,rdnDelegacionCentral,new HashSet(Arrays.asList("cobro_anticipo")),rdnDelegacionCentral);//Cobro anticipo sigue siendo centralizada(peer) para los cierres de caja		
+end*/
+
+rule "REPLICA_RULE EVITAR CAMBIAR DESTINO DE DOC YA REPLICADO"
+ agenda-group "rules" when
+ 	DocDataModel(user:USER)
+ 	//ido Target no se puede condicionar a distinto de nulo porque lo es al eliminar una delegacion en pop multiple como condicion especial
+ 	//no debe actuar en aplicacion puesto que la regla CONFIGURACIÓN DATOS APLICACION A PARTIR DEL USUARIO modifica dicho dato para personalizar la vista de un usuario a su delegacion
+	ObjValue(idoDoc:IDO, idtoDoc:IDTO,propDireccion:PROPNAME=="delegación"||=="origen"||=="destino"||=="delegacion_origen"||=="delegacion_destino", idoTarget:IDOVALUE,idtoAlm:VALUECLS,classDoc:CLASSNAME!="APLICACIÓN",initAlm:INITIALVALOR,initCh:initialValuesChanged)
+	Individual(IDO==idoDoc,st:STATE)
+	
+	//debe tener delegacion central para tener replicas
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="mi_empresa",idoMiEmp:IDOVALUE)
+	ObjValue(IDO==idoMiEmp,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE!=null)
+
+	//nunca puede ser si ya existía, pero tampoco si es por ejemplo un traspaso a partir de pedido, y en dicho traspaso cambiamos origen o destino
+	//TODO drools 6, uso acumulates porque falla compilacion con or
+	cambioDelegacion:Long() from accumulate((and 
+												 FactHierarchy(IDTO==idtoAlm,CLASSSUP=="ALMACÉN")			
+												 ObjValue(ID==initAlm,PROPNAME=="delegación", idoDelInit:IDOVALUE)
+												 //pongo la condicion distinto de nulo para que permita quitar delegaciones por ejemplo en una condicion especial (pero no añadir)
+												 ObjValue(IDO==idoTarget,PROPNAME=="delegación",IDOVALUE!=null,IDOVALUE!=idoDelInit,IDOVALUE!=idoDelCentral)
+												 eval(idoDoc>0)
+												 //si se permite cambiar a delegacion de central,esto puede pasar por un pedido que viene de la web
+											),count(idoDelInit))
+
+	//El siguiente caso supone que
+	evolucionIncompatible:Long() from accumulate((and 	ObjValue(IDO==idoDoc,PROPNAME=="línea", idoLineaAny:IDOVALUE)
+														ObjValue(IDO==idoLineaAny,PROPNAME=="documento", idoDocAny:IDOVALUE)
+														ObjValue(IDO==idoDocAny,PROPNAME==propDireccion, idoAlmacenEvolucion:IDOVALUE)
+														ObjValue(IDO==idoTarget,PROPNAME=="delegación",idoDelAlmacen:IDOVALUE)
+														ObjValue(IDO==idoAlmacenEvolucion,PROPNAME=="delegación",IDOVALUE!=idoDelAlmacen)),
+													count(idoDocAny))
+											
+	eval(idoDoc>0&&propDireccion.contains("delegación")&&initCh && initAlm!=null && (st.equals(Constants.INDIVIDUAL_STATE_DELETED)||!idoTarget.equals(idoDelCentral))||cambioDelegacion.intValue()>0||evolucionIncompatible.intValue()>0)
+then
+ 	dma.printRule("\n\n============== REPLICA_RULE EVITAR CAMBIAR DESTINO DE DOC YA REPLICADO: ido="+idoDoc+" class="+classDoc);
+	if(user.equals("admin")) dma.showMessage("ATENCION si cambias en el destino no se replicaran los datos");	
+	else throw new OperationNotPermitedException("No esta permitido cambiar esta propiedad ya que sus datos han sido ya replicados");
+end
+
+rule "REPLICA_RULE EVITAR CAMBIAR DOCUMENTO EVOLUCIONABLE PASADO TIEMPO"
+ agenda-group "rules" when
+ 	ddm:DocDataModel(USER!="admin")
+	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	Lock(IDTO==idtoDoc,idoDoc:IDO>0,STATE==Constants.INDIVIDUAL_STATE_LOCK||==Constants.INDIVIDUAL_STATE_DELETED)
+
+	//debe tener delegacion central para tener replicas
+	ObjValue(CLASSNAME=="APLICACIÓN",idoApp:IDO,PROPNAME=="mi_empresa",idoMiEmp:IDOVALUE)
+	ObjValue(IDO==idoMiEmp,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE!=null)		
+	ObjValue(IDO==idoApp,PROPNAME=="delegación", IDOVALUE!=idoDelCentral)
+	
+	DatValue(IDO==idoDoc,PROPNAME=="fecha",fecha:DATE!=null)
+
+	eval(Auxiliar.separadosAlMenosNhoras(fecha,null,8))
+	
+	(or exists(ObjValue(IDO==idoDoc,PROPNAME=="línea", IDOVALUE==null))					
+		exists(ObjValue(IDO==idoDoc,PROPNAME=="línea", IDOVALUE<0))
+		exists((and ObjValue(IDO==idoDoc,PROPNAME=="línea", idoAny:IDOVALUE)
+					DatValue(IDO==idoAny,PROPNAME=="cantidad",hasCHANGED==true)))					
+	)
+	DatValue(IDO==idoDoc,PROPNAME=="rdn",rdnDoc:DATE!=null)			
+then
+ 	dma.printRule("============== REPLICA_RULE EVITAR CAMBIAR DOCUMENTO EVOLUCIONABLE PASADO TIEMPO");
+	
+	throw new OperationNotPermitedException("No puede eliminar lineas (ya enviadas), o añadir lineas pasado 8 horas del doc "+rdnDoc+", debe modificarse desde la central");
+end
+
+rule "REPLICA: NO MODIFICABLE DOCUMENTOS DE OTRO GRUPO EMPRESA"
+ agenda-group "rules" when
+ 	ddm:DocDataModel(USER!="admin")
+	FactHierarchy(idtoDoc:IDTO,clsSup:CLASSSUP=="DELEGACIÓN"||=="ALMACÉN"||=="DOCUMENTO_COMERCIAL"||=="VALOR_POR_DEFECTO"||=="CONDICIÓN_ESPECIAL_VENTA")//para permitir traspasos entre empresas
+	IndividualState(idoDoc:IDO,IDTO==idtoDoc,STATE==Constants.INDIVIDUAL_STATE_LOCK||==Constants.INDIVIDUAL_STATE_DELETED) 
+	
+	not(FactHierarchy(IDTO==idtoDoc,CLASSSUP=="TICKET_VENTA"))//los ticket tienen sus propias restricciones y admiten abonos
+	
+	//en delegaciones, solo se dispara error si cambia mi empresa
+	forall(	FactHierarchy(IDTO==idtoDoc,CLASSSUP=="DELEGACIÓN"||=="ALMACÉN")
+			ObjValue(IDO==idoDoc,PROPNAME=="mi_empresa"||=="empresa",hasCHANGED==true)
+		)
+			
+	ObjValue(CLASSNAME=="APLICACIÓN",idoApp:IDO,PROPNAME=="mi_empresa",idoMiEmp:IDOVALUE)
+	ObjValue(IDO==idoMiEmp,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE!=null)
+	ObjValue(IDO==idoApp,PROPNAME=="delegación",idoMiDel:IDOVALUE!=null)
+	FactHierarchy(CLASSSUP=="MI_EMPRESA",idtoEmp:IDTO)
+	ObjValue(IDO==idoDoc,PROPNAME=="mi_empresa"||=="empresa",idEmpDocInit:INITIALVALOR!=null,idEmpDoc:VALOR)
+	ObjValue(ID==idEmpDoc||==idEmpDocInit,PROPNAME=="delegacion_central"||=="empresa",IDOVALUE!=idoDelCentral&&!=idoMiEmp)
+	DatValue(IDO==idoDoc,PROPNAME=="rdn",rdnDoc:VALOR!=null)
+then 		
+	throw new OperationNotPermitedException("No esta permitido modificar un documento de otro grupo de empresas, codigo doc "+rdnDoc+")");
+end
+
+rule "REPLICA: NO MODIFICABLE MI EMPRESA YA EXISTENTE OTRO GRUPO"
+ agenda-group "rules" when
+ 	ddm:DocDataModel(USER!="admin")
+	FactHierarchy(idtoTarget:IDTO,CLASSSUP=="MI_EMPRESA")
+	Lock(IDTO==idtoTarget,idoTarget:IDO>0,STATE==Constants.INDIVIDUAL_STATE_END_LOCK) 		
+	
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="mi_empresa",idoMiEmp:IDOVALUE)
+	ObjValue(IDO==idoMiEmp,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE!=null)
+		
+	not(ObjValue(IDO==idoTarget,PROPNAME=="delegacion_central",IDOVALUE==idoDelCentral))
+		
+then 		
+	throw new OperationNotPermitedException("No esta permitido modificar una empresa de otro grupo de empresas");
+end
+
+rule "REPLICA: NO MODIFICABLE DELEGACION YA EXISTENTE OTRO GRUPO"
+ agenda-group "rules" when
+ 	ddm:DocDataModel(USER!="admin")
+	FactHierarchy(idtoTarget:IDTO,CLASSSUP=="DELEGACIÓN")
+	Lock(IDTO==idtoTarget,idoTarget:IDO>0,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+	IndividualValue(IDO==idtoTarget,PROPNAME!="fecha_última_venta",hasCHANGED==true) 
+	ObjValue(IDO==idoTarget,PROPNAME=="empresa",idoEmpDel:IDOVALUE)
+	
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="mi_empresa",idoMiEmp:IDOVALUE)
+	ObjValue(IDO==idoMiEmp,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE!=null)
+		
+	not(ObjValue(IDO==idoEmpDel,PROPNAME=="delegacion_central",IDOVALUE==idoDelCentral))	
+then 		
+	throw new OperationNotPermitedException("No esta permitido modificar una delegacion de otro grupo de empresas");
+end
+

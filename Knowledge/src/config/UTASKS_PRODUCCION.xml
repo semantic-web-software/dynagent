@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+
+<CONFIG>
+	<UTASKS>
+	<!--AREA PRODUCCIÓN-->
+		
+		<UT A_FUNC="Producción" NAME="PRODUCCIÓN_MATERIAL">
+			<TG_CLASS CLASS="PRODUCCIÓN_MATERIAL" />
+		</UT>
+				
+		<UT A_FUNC="Producción" NAME="PRODUCCIÓN_EN_CADENA">
+			<TG_CLASS CLASS="PRODUCCIÓN_CADENA" />
+		</UT>
+		<UT A_FUNC="Producción" NAME="ESCANDALLO">
+			<TG_CLASS CLASS="ESCANDALLO" />
+		</UT>
+		
+		<UT A_FUNC="Producción" NAME="PRODUCTIVIDAD">
+			<TG_CLASS CLASS="PRODUCTIVIDAD" />
+		</UT>
+		
+	</UTASKS>
+</CONFIG>
+	

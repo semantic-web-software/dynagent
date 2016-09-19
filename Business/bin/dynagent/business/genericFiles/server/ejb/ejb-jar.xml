@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ejb-jar xmlns="http://java.sun.com/xml/ns/j2ee" version="2.1"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee http://java.sun.com/xml/ns/j2ee/ejb-jar_2_1.xsd">
+
+	<display-name>expert</display-name>
+
+	<description>EJB module that contains one Container Managed Entity Bean, namely the AddressBook bean</description>
+
+	<enterprise-beans>
+		<!-- Entity Block -->
+		<!-- Session Block -->
+	</enterprise-beans>
+	<assembly-descriptor>
+		<security-role>
+			<description>Users</description>
+			<role-name>administrators</role-name>
+		</security-role>
+		<!-- Container-transaction Block -->
+	</assembly-descriptor>
+</ejb-jar>

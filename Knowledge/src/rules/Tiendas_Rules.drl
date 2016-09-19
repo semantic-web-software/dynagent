@@ -1,0 +1,1605 @@
+package dynagent.ruleengine.src.ruler.ERPrules
+import dynagent.ruleengine.src.ruler.*;
+import dynagent.ruleengine.src.ruler.ERPrules.datarules.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.knowledge.*;
+import dynagent.common.basicobjects.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.ruleengine.CreateIdo;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+
+import java.text.*;
+
+global DataModelAdapter dma;
+
+function  boolean separadosAlMenosNdias(boolean diaVentaCompleto,Date dEnd,Date dIni, int ndias){
+		boolean result=false;
+		Calendar calEnd = Calendar.getInstance();
+		calEnd.setTime(dEnd);
+		Calendar calIni = Calendar.getInstance();
+		calIni.setTime(dIni);
+		if(diaVentaCompleto){			
+			calIni.set(Calendar.HOUR_OF_DAY,0);
+			calIni.set(Calendar.MINUTE,0);
+			calIni.set(Calendar.SECOND,1);
+			calEnd.set(Calendar.HOUR_OF_DAY,23);
+			calEnd.set(Calendar.MINUTE,59);
+			calEnd.set(Calendar.SECOND,59);		
+		}
+				
+		Long dif=Math.abs(calEnd.getTimeInMillis()-calIni.getTimeInMillis());
+		Long msecondsNdias=new Long((long)ndias*24*3600*Constants.TIMEMILLIS);
+		return dif>msecondsNdias;
+} 
+
+rule "IMPORTE EN BASE A ENTREGADO"
+agenda-group "rules" when 
+	
+	FactHierarchy(idtoTicket:IDTO,CLASSSUP=="TICKET")	
+	DatValue(IDTO==idtoTicket,idoDoc:IDO, PROPNAME=="importe",importeDoc:DOUBLEVALUE!=null)
+	
+	ObjValue(IDO==idoDoc,PROPNAME=="cobro_anticipo",idoCobro:IDOVALUE,ovCobro:OBJECTVALUE)
+	Lock(IDO==idoCobro,idtoCobro:IDTO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+    //not(DatValue(IDO==idoCobro,PROPNAME=="importe",DOUBLEVALUE!=null))	
+
+	entrgMet:Double()	from accumulate(DatValue(IDO==idoCobro,PROPNAME=="entregado_metálico",i:DOUBLEVALUE!=null),
+                      							 sum(i))	 
+                      									
+	totalAnticipadoResto:Double()	from accumulate((and 	ObjValue(IDO==idoDoc,PROPNAME=="cobro_anticipo",idoCobroAny:IDOVALUE!=idoCobro)
+    				 									DatValue(IDO==idoCobroAny,PROPNAME=="importe",i:DOUBLEVALUE!=null)),
+                      									sum(i))	 
+then
+	dma.printRule("==========IMPORTE EN BASE A ENTREGADO " +entrgMet);
+		
+	Double importePendienteCobro=importeDoc-totalAnticipadoResto;
+	if(importeDoc.doubleValue()==0.0){
+		dma.printRule("Recortamos a cero");
+		dma.setValue(idoCobro,idtoCobro,"importe",new DoubleValue(0.0));
+		dma.setValue(idoCobro,idtoCobro,"devuelto_metálico",new DoubleValue(0.0));
+	}else{		
+		if(entrgMet.doubleValue()!=0.0){		
+			double importe=Math.min(importePendienteCobro,entrgMet);
+			dma.setValue(idoCobro,idtoCobro,"importe",new DoubleValue(importe));
+			dma.setValue(idoCobro,idtoCobro,"devuelto_metálico",new DoubleValue(Auxiliar.redondea(entrgMet-importe,2)));
+			dma.consumirEventoCambio(idoCobro,"entregado_metálico");
+		}else{
+			DoubleValue importeCobroOld=(DoubleValue)dma.getValue(idoCobro,idtoCobro,"importe");
+			if(importeCobroOld==null)
+				dma.setValue(idoCobro,idtoCobro,"importe",new DoubleValue(importePendienteCobro));
+		}
+	}	
+end
+
+
+rule "NO SE PUEDE CONFIRMAR UN TICKET VENTA SI NO HA SIDO PAGADO"
+salience 100
+agenda-group "rules" when 
+	FactHierarchy(idtoVenta:IDTO,CLASSSUP=="TICKET")
+	Lock(IDTO==idtoVenta,idDoc:ID!=null,IDO<0,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+	
+	//DatValue(ID==idDoc, PROPNAME=="rectificativo",BOOLEANVALOR=="true")
+	DatValue(ID==idDoc, PROPNAME=="importe",importe:DOUBLEVALUE!=null)
+	DatValue(ID==idDoc, PROPNAME=="entregado_metálico",DOUBLEVALUE!=null)//debe existir entregado
+
+	totalAnticipado:Double()	from accumulate((and 	ObjValue(ID==idDoc,PROPNAME=="cobro_anticipo",idoCobroAny:IDOVALUE)
+    				 									DatValue(IDO==idoCobroAny,PROPNAME=="importe",i:DOUBLEVALUE!=null)),
+                      									sum(i))	 	
+	eval(Auxiliar.incrementoRelevante(importe,totalAnticipado,0.01))
+then
+	Double restoporpagar=importe-totalAnticipado;
+	dma.printRule("\n\n===========RULE NO SE PUEDE CONFIRMAR UN TICKET VENTA SI NO HA SIDO PAGADO idDoc="+idDoc+"  importe="+importe+"  totalEntregadoDinero="+totalAnticipado );
+	throw new OperationNotPermitedException("El ticket aún no se ha pagado. Faltan "+Auxiliar.redondea(restoporpagar,2)+"  euros.</b>"+
+											"Un ticket es anónimo, para que un documento quede con deuda debe ser nominativo, como un albarán.");
+end
+
+rule "ABONOS: CANTIDAD SIEMPRE NEGATIVA EN ARTICULOS EXISTEN EN TICKET CARGO"
+salience -100
+agenda-group "rules" when 
+	FactHierarchy(idtoTicket:IDTO,CLASSSUP=="TICKET")
+
+	//TODO, hacer que se numeren las lineas directamente para que sirva para referencia unica. Esta misma regla podria numerar
+	Lock(IDTO==idtoTicket,idoAbono:IDO<0,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(IDO==idoAbono, PROPNAME=="rectifica_a",idoTicketCargo:IDOVALUE!=null)	
+	
+	not((and 	ObjValue(IDO==idoAbono, PROPNAME=="línea",idoLinLock:IDOVALUE)
+				Lock(IDO==idoLinLock,LOCKEDBYUSER==true)))
+				
+	lineasNeg:TreeMap() 
+   	from accumulate(
+             	(and 	             	             	
+	             	ObjValue(IDO==idoAbono, PROPNAME=="línea",idoLinea:IDOVALUE!=null,idto:VALUECLS)
+	             	not FactHierarchy(IDTO==idto,CLASSSUP=="LÍNEA_ARTÍCULOS_FINANCIERA")
+	             	DatValue(IDO==idoLinea,PROPNAME=="cantidad", QMIN<0)
+             		DatValue(IDO==idoLinea,PROPNAME=="clave_producto", key2:VALOR!=null)
+             		
+             		DatValue(IDO==idoLinea,PROPNAME=="precio", p2:QMIN!=null)
+             		//eval(key2.compareTo(keyAbono)<=0)
+			    ),
+			    init(TreeMap res=new TreeMap()),
+			    action(res.put(key2+"#"+rellenaCerosIzq(dma,p2),new Domain(idoLinea,idto));),
+			    result(res))
+			    
+	lineasPos:TreeMap() 
+   	from accumulate(
+             	(and 	             	
+	             	ObjValue(IDO==idoAbono, PROPNAME=="línea",idoLinAny:IDOVALUE,idto:VALUECLS)
+	             	not FactHierarchy(IDTO==idto,CLASSSUP=="LÍNEA_ARTÍCULOS_FINANCIERA")
+	             	DatValue(IDO==idoLinAny,PROPNAME=="cantidad", QMIN>0)	             
+             		ObjValue(IDO==idoLinAny,PROPNAME=="producto", prod:IDOVALUE!=null)
+             		DatValue(IDO==idoLinAny,PROPNAME=="precio", p2:QMIN!=null)	             	
+	             	//eval(key2.compareTo(keyAbono)<=0)     								
+			    ),
+			    init(TreeMap res=new TreeMap()),
+			    //no ordeno por key porque al añadir lineas el orden de las procesadas puede cambiar
+			    action(res.put(rellenaCerosIzq(dma,prod)+"#"+Math.abs(idoLinAny),new Domain(idoLinAny,idto));),
+			    result(res))	
+	
+then	
+	dma.printRule("\n\n===========ABONOS: CANTIDAD SIEMPRE NEGATIVA EN ARTICULOS EXISTEN EN TICKET CARGO : Neg:"+ +lineasNeg.size()+" Pos:"+lineasPos.size() );
+	
+	//Esta regla es para respetar precios de oferta en los cambios. En un abono, aparece en negativo lo que se devuelve y en positivo lo que se lleva
+	//No se tiene en cuenta las lineas del ticket de cargo. SI lo que se lleva supera a lo que se devuelve se parte la linea positiva de lo que se lleva
+	//y no se aplica precio oferta al excedente
+	//por cada linea positiva, determino cantidad hasta ella, y busco linea negativa misma cantidad y asigno ese precio
+	
+	double qNeg=0.0,qPos=0.0,saldo=0.0,lastNegPrecio=0.0,lastNegPrecioII=0.0,lastPosPrecio=0.0,lastIdo=0,lastIdto=0;
+	String lastNegKey=null,lastPosKey=null;
+	int currIdoProd=0,prevProd=0;
+	double tmpQtot=0.0;
+	Iterator<String> itrPos=lineasPos.keySet().iterator();
+	while(itrPos.hasNext()){
+		String key=itrPos.next();
+		Domain lin=(Domain)lineasPos.get(key);
+				
+		saldo+=dma.getDoubleValue(lin,"importe",true);
+		
+		ObjectValue ov=(ObjectValue)dma.getValue(lin,"producto");
+		if(ov!=null) currIdoProd=ov.getValue();
+		
+
+		if(currIdoProd!=prevProd){
+			dma.printRule("RESET "+ov.getValue());
+			tmpQtot=0.0;
+			qPos=0.0;
+		}
+		String keyLinPos=dma.getStringValue(lin,"clave_producto");
+		double incrementoPos=dma.getDoubleValue(lin,"cantidad",true);
+		qPos+=incrementoPos;
+		tmpQtot+=incrementoPos;
+		dma.printRule("PRO "+keyLinPos+" keyPOS "+key+" Q pos:"+qPos+" tmpPos:"+tmpQtot);	
+		
+		Iterator<String> itrNeg=lineasNeg.keySet().iterator();
+
+		while(itrNeg.hasNext()){
+			String keyN=itrNeg.next();
+			Domain linN=(Domain)lineasNeg.get(keyN);		
+
+			ObjectValue ov2=(ObjectValue)dma.getValue(linN,"producto");
+			if(ov2==null || !ov2.getValue().equals(currIdoProd)) continue;
+		
+			String keyLinNeg=dma.getStringValue(linN,"clave_producto");
+			tmpQtot+=dma.getDoubleValue(linN,"cantidad",true);					
+			
+			double tmpTotMinimoIncremento=tmpQtot-incrementoPos+Math.min(incrementoPos,1);
+			dma.printRule("PRO "+keyLinNeg+" keyN "+keyN+" Q pos:"+qPos+" tmpPos:"+tmpQtot+" minInc:"+tmpTotMinimoIncremento);
+			if(tmpTotMinimoIncremento<=0 ){
+				if(tmpQtot>0){
+					dma.printRule("HAY QUE PARTIR ");
+					Domain newLinePos=partirLinea(dma,lin.getIdo(),lin.getIdto(),incrementoPos,tmpQtot);
+				}
+				lastNegPrecio=dma.getDoubleValue(linN,"precio",true);
+				lastNegPrecioII=dma.getDoubleValue(linN,"precio_iva_incluido",true);
+				lastNegKey=dma.getStringValue(linN,"clave_producto");
+				dma.printRule("CUBIERTO new precio "+lastNegPrecio+" II:"+lastNegPrecioII);
+					
+				dma.setDoubleValue(lin,"precio",lastNegPrecio);
+				dma.setDoubleValue(lin,"precio_iva_incluido",lastNegPrecioII);	
+	
+				consumeCambioPrecio(dma,lin.getIdo());
+				//reseteo qTotal a todo lo positivo hasta aqui, porque siguiente vez volvere a sumar todo lo negativo
+				tmpQtot=qPos;
+				break;
+			}
+			
+		}
+		prevProd=currIdoProd;			
+	}
+	
+end
+
+function Domain partirLinea(DataModelAdapter dma,int idoLinea,int idtoLinea,double qSource,double qAplica){
+	dma.printRule("PARTIR :"+qSource+" aplica:"+qAplica);
+	//partir linea
+	Domain targetLinea=dma.cloneIndividual(idoLinea,idtoLinea,idtoLinea, "rdn#número#cantidad#descuento#precio#precio_iva_incluido");								
+	
+	dma.setValue(targetLinea,"cantidad",new DoubleValue(qAplica));
+	dma.setValue(idoLinea,idtoLinea,"cantidad",new DoubleValue(qSource-qAplica));
+
+	return targetLinea;
+}
+
+function String rellenaCerosIzq(DataModelAdapter dma,double dValue){
+		String value=""+dValue;
+		int pos=value.indexOf('.');		
+		
+		if(pos<0) pos=value.length();
+		
+		return "0000000000".substring(0,10-pos)+dValue;
+}
+
+rule "ENTREGADO METÁLICO EN TICKET IMPORTE CERO"
+salience -50 //Menos prioridad que ENTREGADO METALICO TICKET: DEPENDENCIA ANTICIPOS, y que calculo importe total
+agenda-group "rules" when 	
+	FactHierarchy(cls:CLASSSUP=="TICKET_VENTA",idto:IDTO)	
+	Lock(IDTO==idto,ido:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	existeImportesLinea:Long() from accumulate((and	ObjValue(IDO==ido,PROPNAME=="línea",idoLin:IDOVALUE!=null)
+													DatValue(IDO==idoLin,PROPNAME=="importe",QMIN!=null)),count(idoLin))
+				
+	DatValue(IDO==ido, PROPNAME=="importe",previo:PREVIODOUBLEVALUE,curr:QMIN!=null)
+	
+	//anticipos:ArrayList() from collect(ObjValue(IDO==ido,PROPNAME=="cobro_anticipo",IDOVALUE!=null))											
+then
+	dma.printRule("=================ENTREGADO METÁLICO EN TICKET IMPORTE CERO "+previo+" "+curr);
+	// El problema es que entregado metalico es un campo grafico ( GUI asistido por reglas ), y por tanto en ciertas condiciones hay que anularlo, ya que de lo contrario las reglas razonan que debe existir un cobro
+	// de tarjeta
+	//	pruebas soporta:
+	// Se abona un ticket (regla añade lineas ya pone entregado metalico a cero), y añades mismo producto, por tanto se agregan lineas. Antes de eso se anulara entregado metalico
+	// despues volvemos a poner el mismo producto. Como existe unalinea con ese articulo ya no se le pone cantidad negativa automaticamente (reglas celop), y es positivo
+	//es necesario consumir ya que si no en el primer paso (linea agregada cantidad cero, importe doc con previo valor negativo), se resetearia entregado metalico=0  
+	//Probar tambien, habiendo abono prendas total negativo, añadir mas lineas positivas otras prendas para que total sea positivo
+	
+	if(existeImportesLinea.intValue()>0 && curr.doubleValue()==0.0 && !(previo!=null&&previo.doubleValue()==0.0)){
+		dma.printRule("set Entregado met. a cero");
+		dma.setValue(ido,idto,"entregado_metálico",new DoubleValue(0.0));
+		dma.consumirEventoCambio(ido,"importe");
+	}
+	
+	if(	curr.doubleValue()==0.0 && existeImportesLinea.intValue()==0 || 
+		previo!=null && (previo.doubleValue()*curr.doubleValue()<0.0 || previo.doubleValue()==0.0 && curr.doubleValue()>0.0)){
+		
+		DoubleValue em=(DoubleValue)dma.getValue(ido,idto,"entregado_metálico");
+		if(em!=null){
+			dma.printRule("reset Entregado metalico");
+			dma.delValuesNotLock(ido,idto,"entregado_metálico");
+			dma.delValues(ido, idto, "cobro_anticipo");
+			/*for(int i=0;i<anticipos.size();i++){		
+				ObjValue oba=(ObjValue)anticipos.get(i);		
+				dma.delValue(ido, idto, "cobro_anticipo", oba.getOBJECTVALUE());								
+			}*/
+		}
+	}	
+end
+
+rule "NO SE PUEDE ABONAR UN TICKET VENTA SI HAN PASADO EL MAXIMO DIAS PERMITIDO"
+agenda-group "rules" when 
+	FactHierarchy(idtoVenta:IDTO,CLASSSUP=="TICKET")
+	Lock(IDTO==idtoVenta,idDoc:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	DatValue(ID==idDoc, PROPNAME=="rectificativo",BOOLEANVALOR=="true")
+	DatValue(ID==idDoc,PROPNAME=="fecha",dateAbono:DATE!=null)
+	ObjValue(ID==idDoc, PROPNAME=="rectifica_a",idTicketVenta:VALOR!=null)
+	DatValue(ID==idTicketVenta,PROPNAME=="fecha",dateTicketVenta:DATE!=null)
+	ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="config_tickets",configTick:VALOR!=null)
+	DatValue(ID==configTick, PROPNAME=="período_días_abonable", ndiasMaragen:INTVALUE!=null)
+	diaVentaEsCompleto:Long() from accumulate((and 	DatValue(CLASSNAME=="PARAMETRO_VERDADERO",idoParam:IDO,PROPNAME=="rdn",VALOR=="DIA_VENTA_ES_DIA_COMPLETO_EN_DEVOLUCIONES")
+														DatValue(IDO==idoParam,PROPNAME=="activo",VALOR=="true")),
+														count(idoParam))
+														
+	eval(separadosAlMenosNdias(diaVentaEsCompleto.intValue()>0,dateAbono,dateTicketVenta,ndiasMaragen))//MENOS DE N DIAS DESDE LA VENTA
+then
+	System.err.println("\n\n ================= RULE NO SE PUEDE ABONAR UN TICKET VENTA SI HAN PASADO EL MAXIMO DIAS PERMITIDO: díasMargenParaAbono="+ndiasMaragen+"  dateAbono="+dateAbono+" dateTicketVenta="+dateTicketVenta);
+	throw new OperationNotPermitedException("Ha pasado el plazo permitido para abonar "+ndiasMaragen+" (días)");
+end
+
+
+rule "PRECARGA DOCUMENTOS EN ABONO"
+salience 100 //mas prioridad que PRECARGA DOCUMENTOS EN ABONO
+agenda-group "rules" when 
+	FactHierarchy(idtoVenta:IDTO,CLASSSUP=="TICKET")
+	Individual(IDTO==idtoVenta,idoAbono:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	DatValue(IDO==idoAbono, PROPNAME=="rectificativo",BOOLEANVALOR=="true")
+	ObjValue(IDO==idoAbono,PROPNAME=="rectifica_a",ticketVenta:OBJECTVALUE!=null)
+	
+	//voya precargar otros abonos sobre el mismo ticket de cargo, y tambien lo que abona a este propio ticket de abono
+	//funcionara recursivamente
+	
+	//debo precargar el ticket de venta, ya que en acciones antes de mostrarse el grafico otras reglas pueden razonar sin conocer el cargo, en concreto la regla
+	//MODIFICAR MANTENIENDO PRECIOS que mira si es coherente la delegacion de abono y cargo
+	eval( dma.preload(ticketVenta.getValue(), ticketVenta.getValueCls()) )
+then
+	dma.printRule("========== PRECARGA DOCUMENTOS EN ABONO ");
+	HashMap<String, Value> values=new HashMap<String, Value> ();
+	values.put("rectifica_a",ticketVenta);
+	instance instancefilter=dma.buildInstanceWith("TICKET", values,null,null,null);
+	HashSet<IDIndividual> idosAbonos=dma.loadIndividualsWithSatisficedFilter(instancefilter,3,false);
+	dma.printRule("....abonos encontrados sobre el ticket: "+ticketVenta+"  idosAbonos="+idosAbonos);
+	
+	values=new HashMap<String, Value> ();
+	values.put("rectifica_a",new ObjectValue(idoAbono,idtoVenta));
+	instancefilter=dma.buildInstanceWith("TICKET", values,null,null,null);
+	idosAbonos=dma.loadIndividualsWithSatisficedFilter(instancefilter,3,false);
+	dma.printRule("....abonos encontrados sobre el ticket: "+idoAbono+"  idosAbonos="+idosAbonos);
+end
+
+rule "ABONO: ADVERTENCIA TODO ABONADO"
+salience -200 
+agenda-group "rules" when 
+	FactHierarchy(idtoVenta:IDTO,CLASSSUP=="TICKET")
+	Lock(IDTO==idtoVenta,idoAbono:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	DatValue(IDO==idoAbono, PROPNAME=="rectificativo",BOOLEANVALOR=="true")
+	ObjValue(IDO==idoAbono,PROPNAME=="rectifica_a",idoVenta:IDOVALUE!=null)
+	not(ObjValue(IDO==idoAbono,PROPNAME=="línea",IDOVALUE!=null))	
+	
+	otrosAbonos:String(length>0) from accumulate((and 	ObjValue(idoAbonoAny:IDO!=idoAbono,PROPNAME=="rectifica_a",IDOVALUE==idoVenta)
+													DatValue(IDO==idoAbonoAny,PROPNAME=="rdn",rdnAbono:VALOR!=null)),
+											init(String res="";),
+											action(
+												if(!res.contains(" "+rdnAbono+" ")){
+													res+=" "+rdnAbono+" ";
+												};),
+											result(res))
+then
+	dma.printRule("========== ABONO: ADVERTENCIA TODO ABONADO ");
+	dma.showMessage("El ticket de cargo ya esta abonado por los ticket "+otrosAbonos);
+end
+
+/*
+rule "TARJETA REGALO NO ABONABLE"
+salience -200 
+agenda-group "rules" when 
+	FactHierarchy(idtoVenta:IDTO,CLASSSUP=="TICKET")
+	Lock(IDTO==idtoVenta,idoAbono:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(IDO==idoAbono,PROPNAME=="rectifica_a",idoVenta:IDOVALUE!=null)
+	ObjValue(IDO==idoVenta,PROPNAME=="línea", idoLinea:IDOVALUE)
+	ObjValue(IDO==idoLinea,PROPNAME=="tarjeta", VALOR!=null)
+	not ObjValue(IDO==idoVenta,PROPNAME=="línea",IDOVALUE!=idoLinea)
+	//Si de verdad queiere devolver la tarjeta debe incluir previamente una linea cualquiera de 0
+	not ObjValue(IDO==idoAbono,PROPNAME=="línea",IDOVALUE!=null)	
+then
+	dma.printRule("========== TARJETA REGALO NO ABONABLE");
+	throw new OperationNotPermitedException("Las tarjetas regalo deben aplicarse en las lineas de producto. Si realmente desea la devolución de la tarjeta incluya previamente una linea de venta de 0 euros");
+end*/
+
+rule "AL SELECCIONAR EL TICKET_CARGO DE UN ABONO SE ASIGNAN PRODUCTOS AÚN NO ABONADOS"
+salience 10 //mas prioridad que "ASIGNACIÓN OBJECTVALOR POR DEFECTO NUEVO A PROTOTIPO (EL CONFIGURABLE POR USUARIO)" para saber si esta o no inicializado ticket
+agenda-group "rules" when 
+	
+	FactHierarchy(idtoAbono:IDTO,CLASSSUP=="TICKET"||=="RECTIFICACIÓN")
+	//Locked by user puesto que podemos abonar un ticket, que ya tenia abono parcial anterior, y no debe actuar sobre dicho abono
+	Lock(IDTO==idtoAbono,idoAbono:IDO<0,STATE==Constants.INDIVIDUAL_STATE_LOCK,LOCKEDBYUSER==true)
+	forall(	FactHierarchy(IDTO==idtoAbono,CLASSSUP=="TICKET")		
+			DatValue(IDO==idoAbono, PROPNAME=="rectificativo",BOOLEANVALOR=="true"))
+	
+	ObjValue(IDO==idoAbono,PROPNAME=="rectifica_a",idoRectificado:IDOVALUE,ticketVenta:VALOR!=null)
+
+	ObjValue(ID==ticketVenta, PROPNAME=="línea",idoLineaVenta:IDOVALUE!=null)	
+	DatValue(IDO==idoLineaVenta,idtoLineaVenta:IDTO,PROPNAME=="clave_producto", key:VALOR!=null)
+	
+	DatValue(IDO==idoLineaVenta,PROPNAME=="precio_iva_incluido",ppII:QMIN!=null)
+	ObjValue(IDO==idoLineaVenta,PROPNAME=="producto", idoProducto:IDOVALUE,idtoProducto:VALUECLS)
+	
+	piiabono:Double() from accumulate((and 	ObjValue(IDO==idoAbono,PROPNAME=="línea",lineaAbonoAny:VALOR)	
+											DatValue(ID==lineaAbonoAny,PROPNAME=="clave_producto", VALOR==key)
+											DatValue(ID==lineaAbonoAny,PROPNAME=="precio_iva_incluido",p:QMIN)),
+											init(Double res=0.0;),
+											action(res=p;),
+											result(res))
+											
+	not((and 	ObjValue(IDO==idoAbono,PROPNAME=="línea",lineaAbonoAny:VALOR)
+				DatValue(ID==lineaAbonoAny,PROPNAME=="clave_producto", VALOR==key)
+				DatValue(ID==lineaAbonoAny,PROPNAME=="precio_iva_incluido",QMIN==ppII)))
+	
+	
+	//not((and not(FactHierarchy(IDTO==idtoProducto,CLASSSUP=="ARTÍCULO_FINANCIERO"))
+	//			ObjValue(IDO==idoAbono,PROPNAME=="línea",VALOR==null)))
+	//Comentado excepcion articulo financiero, es un problema si he eliminado una tarjeta que esta siendo abonada y no consumida
+	
+	//Que no haya habido interacción del usuario eliminando una linea
+	not(ObjValue(IDO==idoAbono,PROPNAME=="línea",VALOR==null))
+
+	DatValue(IDO==idoProducto,PROPNAME=="rdn", rdnProducto:VALOR!=null)
+	cantidadVendida:Double() 
+   	from accumulate(
+             	(and 	             	             	
+	             	ObjValue(ID==ticketVenta, PROPNAME=="línea",linea:VALOR!=null)
+             		DatValue(ID==linea,PROPNAME=="clave_producto", VALOR==key)
+             		DatValue(ID==linea,PROPNAME=="precio_iva_incluido",pany:QMIN)
+             		eval(!Auxiliar.incrementoRelevante(pany,ppII,0.01))
+             		DatValue(ID==linea,PROPNAME=="cantidad",cantidad:DOUBLEVALUE!=null)  
+             		forall( ObjValue(IDO==idoLineaVenta,PROPNAME=="tarjeta", idoT:IDOVALUE!=null)
+             				ObjValue(ID==linea,PROPNAME=="tarjeta", IDOVALUE==idoT))//cuando es tarjeta, solo es mismo producto si es mismo id
+			    ),
+			    sum(cantidad))
+			    
+	cantidadAbonada:Double() 
+   	from accumulate(
+             	(and 
+	             	ObjValue(abono:ID,PROPNAME=="rectifica_a",VALOR==ticketVenta)
+	             	ObjValue(ID==abono, PROPNAME=="línea",linea:VALOR!=null)
+             		DatValue(ID==linea,PROPNAME=="clave_producto",VALOR==key)
+             		DatValue(ID==linea,PROPNAME=="precio_iva_incluido",pany:QMIN)
+					eval(!Auxiliar.incrementoRelevante(pany,ppII,0.01))
+             		f:DatValue(ID==linea,PROPNAME=="cantidad",cantidad:DOUBLEVALUE!=null)  
+             		forall( ObjValue(IDO==idoLineaVenta,PROPNAME=="tarjeta", idoT:IDOVALUE!=null)
+             				ObjValue(ID==linea,PROPNAME=="tarjeta", IDOVALUE==idoT))//cuando es tarjeta, solo es mismo producto si es mismo id           								
+			    ),
+			    init(Double res=0.0;),
+			    action(res=res.doubleValue()+cantidad;),
+			    result(res))
+
+	//Si es articulo financiero no impongo la condicion de cantidad disponible, ya que aunque no haya cantidad de euros disponible debo añadir la
+	//linea de tarjeta de credito para que restaurar su consumo.
+	
+	devolTarjetaActiva:Boolean() from accumulate((and  ObjValue(IDO==idoLineaVenta,PROPNAME=="tarjeta", tarjeta:VALOR!=null)							
+														ObjValue(idCredito:ID,CLASSNAME=="CRÉDITO_TARJETA",PROPNAME=="documento_activación",VALOR==ticketVenta)),
+														init(Boolean res=false;),
+														action(res=true;),
+														result(res))
+	esArticuloFinanciero:ArrayList() from collect(FactHierarchy(IDTO==idtoProducto,CLASSSUP=="ARTÍCULO_FINANCIERO"))
+	
+	eval(	esArticuloFinanciero.size()>0 && !devolTarjetaActiva.booleanValue() && (cantidadVendida+cantidadAbonada<0) ||
+			(cantidadVendida+cantidadAbonada>0)  			
+		)
+	 
+	inicializData:ArrayList() from collect(ObjValue(IDO==idoRectificado, PROPNAME=="cliente"||=="proveedor",VALOR!=null))
+	//inicializar tiene por objetivo copiar cliente de un albaran, pero en ticket que es mismo cliente, tambien es necesario que actue para consumir
+	//el cambio de cliente que ha sido puesto previamente por regla por defecto, ya que de lo contrario al clonar y añadir lineas de abono no respeta el precio
+	//si despues de actuar esta regla el usuario cambiara el cliente, igualmente no actuaria si ya hay suficiente cantidad abonada
+	//no puedo entender como "inicializado" el que ya existan lineas en el ticket de abono porque quizas el usuario ha comenzado insertando lineas de venta
+	inicializado:ArrayList() from collect(ObjValue(IDO==idoAbono, PROPNAME=="cliente"||=="proveedor",hasCHANGED==false))
+	
+	modeloTarifaAplicada:ArrayList() from collect(Model(PROPNAME=="tarifa_aplicada"))
+then
+
+	dma.printRule("=========== AL SELECCIONAR EL TICKET_CARGO DE UN ABONO SE ASIGNAN PRODUCTOS "+rdnProducto+" pvp:"+ppII+" AÚN NO ABONADOS  productosYaAbonados="+cantidadAbonada+" vend:"+cantidadVendida+" venta:"+key+" "+ppII+" abono:"+piiabono);
+
+	Double cantidadDisponible=cantidadVendida+cantidadAbonada;
+
+	String excluproperties="documento#cantidad#tarifa_aplicada";	
+
+	Domain newlineaAbono=dma.cloneIndividual(idoLineaVenta, idtoLineaVenta, idtoLineaVenta, excluproperties);
+	
+	dma.setValue(newlineaAbono,"cantidad",new DoubleValue(-cantidadDisponible));
+	//if(modeloTarifaAplicada.size()>0) dma.setValue(newlineaAbono,"tarifa_aplicada",new StringValue("ABONO"));
+	//dma.setValue(newlineaAbono,"producto",producto);
+
+	//Debo consumir los cambios que dispararian el calculo de iva de la linea, ya que debe respetarse el anterior	
+	dma.consumirEventoCambio(newlineaAbono.getIdo(),"producto");
+	dma.consumirEventoCambio(newlineaAbono.getIdo(),"cantidad");
+	dma.consumirEventoCambio(newlineaAbono.getIdo(),"precio");
+	dma.consumirEventoCambio(newlineaAbono.getIdo(),"precio_iva_incluido");
+	dma.consumirEventoCambio(newlineaAbono.getIdo(),"descuento");
+	dma.consumirEventoCambio(newlineaAbono.getIdo(),"iva");
+	dma.consumirEventoCambio(newlineaAbono.getIdo(),"mi_empresa");
+
+	dma.addValue(idoAbono,idtoAbono,"línea",new ObjectValue(newlineaAbono));
+	dma.consumirEventoCambio(idoAbono,"línea",newlineaAbono.getIdo(),newlineaAbono.getIdto());
+
+	if(inicializado.size()==0){
+		for(Object dato: inicializData){
+			ObjValue ov=(ObjValue)dato;			
+			dma.printRule("clonando propiedad "+ov.getPROPNAME());
+			dma.setValue(idoAbono,idtoAbono,ov.getPROPNAME(),ov.getOBJECTVALUE());
+			dma.consumirEventoCambio(idoAbono,ov.getPROPNAME());	
+		}
+	}
+
+end
+
+function void consumeCambioPrecio(DataModelAdapter dma,Integer ido){
+	dma.consumirEventoCambio(ido,"producto");
+	dma.consumirEventoCambio(ido,"cantidad");
+	dma.consumirEventoCambio(ido,"precio");
+	dma.consumirEventoCambio(ido,"precio_iva_incluido");
+	dma.consumirEventoCambio(ido,"descuento");
+	dma.consumirEventoCambio(ido,"iva");
+	dma.consumirEventoCambio(ido,"mi_empresa");
+}
+
+/* lo comento por rendimineto, ya que seria dificil atender a bloqueos de linea            		
+rule "LOS ABONOS DE UN PRODUCTO NO PUEDEN EXCEDER LA CANTIDAD VENDIDA"
+salience -100
+agenda-group "rules" when 
+	FactHierarchy(idtoVenta:IDTO,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	Lock(IDTO==idtoAbono,idoVenta:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(IDO==idoVenta, PROPNAME=="línea",idolineaVenta:IDOVALUE!=null)	
+	ObjValue(IDO==idoLineaVenta, PROPNAME=="producto",idoProducto:IDOVALUE!=null,idtoProducto:VALUECLS)	
+	not(FactHierarchy(IDTO==idtoProducto,CLASSSUP=="ARTÍCULO_FINANCIERO"))		
+	Individual(producto:ID!=null)
+    
+    cantidadVentas: Double() 
+   	from accumulate(
+             	(and 
+             	    ObjValue(IDO==idoVenta, PROPNAME=="línea",linea:VALOR!=null)
+				    ObjValue(ID==linea,PROPNAME=="producto",IDOVALUE==idoProducto)
+   					DatValue(ID==linea,PROPNAME=="cantidad",cantidad:DOUBLEVALUE!=null)
+             		forall( ObjValue(ID==lineaVenta,partidaProp:PROPNAME=="lote"||=="n._serie"||=="talla"||=="color", partidaIdent:VALOR!=null)
+							ObjValue(ID==linea,PROPNAME==partidaProp, VALOR==partidaIdent))					
+			    ),
+			    sum(cantidad))
+	cantidadAbonos: Double() 
+   	from accumulate(
+             	(and 
+	             	ObjValue(VALOR==ticketVenta, PROPNAME=="rectifica_a",abono:ID!=null)
+             		ObjValue(ID==abono, PROPNAME=="línea",linea:VALOR!=null)
+             		ObjValue(ID==linea,PROPNAME=="producto", IDOVALUE==idoProducto)
+             		DatValue(ID==linea,PROPNAME=="cantidad",cantidadabonada:DOUBLEVALUE!=null)
+             		forall( ObjValue(ID==lineaVenta,partidaProp:PROPNAME=="lote"||=="n._serie"||=="talla"||=="color", partidaIdent:VALOR!=null)
+							ObjValue(ID==linea,PROPNAME==partidaProp, VALOR==partidaIdent))						
+			    ),
+			    sum(cantidadabonada))
+	eval(cantidadAbonos+cantidadVentas<0)
+	eval(cantidadAbonos>0)//hay que asegurar que hay abonos
+
+then
+	dma.printRule("\n\n===========RULE LOS ABONOS DE UN PRODUCTO NO PUEDEN EXCEDER LA CANTIDAD VENDIDA: cantidadNetaVendida"+cantidadAbonos+cantidadVentas);
+	String codigopr=dma.getValue(idoProducto,idtoProducto,"rdn").getValue_s();
+	throw new OperationNotPermitedException("Los abonos del producto "+ dma.getDDM().getAliasOfClass(idtoProducto)+" '"+codigopr+"' exceden la cantidad comprada en " + (cantidadAbonos+cantidadVentas) +" unidades");
+end
+
+rule "CARGA DE ABONOS SOBRE  UN TICKET DE VENTA ANTES DE BORRARLO"
+salience 100
+agenda-group "rules" when 
+	
+	Individual(CLASSNAME=="TICKET",idticket:ID!=null,idoTicket:IDO,idtoTicket:IDTO,STATE==Constants.INDIVIDUAL_STATE_PREDELETED||==Constants.INDIVIDUAL_STATE_DELETED)
+	DatValue(IDO==idoTicket, PROPNAME=="rectificativo",BOOLEANVALOR=="false")
+then
+	dma.printRule("\n\n$$$$$$$$$$$$$ PRECARGA_RULE: CARGA DE ABONOS SOBRE  UN TICKET DE VENTA ANTES DE BORRARLO ");
+	HashMap<String, Value> values=new HashMap<String, Value> ();
+	values.put("rectifica_a",new ObjectValue(idoTicket,idtoTicket));
+	instance instancefilter=dma.buildInstanceWith("TICKET", values,null,null,null);
+	HashSet<IDIndividual> idosAbonos=dma.loadIndividualsWithSatisficedFilter(instancefilter);
+	dma.printRule("....abonos encontrados sobre el ticket: "+idticket+"  idosAbonos="+idosAbonos);
+end*/
+
+
+rule "PRECARGA ARTICULO FINANCIERO"
+salience -100 
+agenda-group "rules" when 
+	  
+	FactHierarchy(tipoProductoFinan:IDTO,CLASSSUP=="ARTÍCULO_FINANCIERO")
+	//ObjValue(RANGENAME==tipoProductoFinan,idoArtFin:IDOVALUE!=null)
+	not(Individual(IDTO==tipoProductoFinan))
+then
+	dma.printRule("\n\n ================  PRECARGA ARTICULO FINANCIERO ================");
+	HashMap<String,Value> where=new HashMap<String,Value>();
+	instance  filter=dma.buildInstanceWith("ARTÍCULO_FINANCIERO",where,null,null,null);
+	HashSet<IDIndividual> idos=dma.loadIndividualsWithSatisficedFilter(filter);
+end
+
+
+rule "TARJETA REGALO: DESACTIVAR EN ELIMINACION"
+	salience -100
+ 	agenda-group "rules"
+	when 
+		FactHierarchy(idtoTarjeta:IDTO,CLASSSUP=="CRÉDITO_TARJETA")
+		ObjValue(IDTO==idtoTarjeta,idoTarjeta:IDO, PROPNAME=="documento_activación", idoVenta:IDOVALUE!=null,idtoVenta:VALUECLS)
+		Individual(IDO==idoTarjeta,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+		eval( dma.preload(idoVenta, idtoVenta) )
+		ObjValue(IDO==idoVenta,PROPNAME=="línea",idoLinF:IDOVALUE,linea:OBJECTVALUE)
+		ObjValue(IDO==idoLinF,PROPNAME=="tarjeta",IDOVALUE==idoTarjeta)
+	then
+	 	dma.printRule("===========TARJETA REGALO: DESACTIVAR EN ELIMINACION");	 	
+	 	dma.delValues(new Domain(linea),"tarjeta");	
+end	
+
+
+rule "TARJETA REGALO: CREACIÓN EN ABONO HABIENDO PASADO PLAZO DEVOLUCION CON DINERO"
+	no-loop true
+ 	agenda-group "rules"
+	when 
+		FactHierarchy(idtoAbono:IDTO,CLASSSUP=="TICKET"||=="RECTIFICACIÓN")
+    			
+		Lock(IDTO==idtoAbono,idoAbono:IDO<0,STATE==Constants.INDIVIDUAL_STATE_LOCK)//antes tenía lockedbyuser=true ¿pq?, se ha quitado porque ahora tb hay reglas que crean tickets de abono
+		//Tambien crear en los casos que se puede abonar sin ticket previo a rectificar (ej en migracion)
+		//forall(	FactHierarchy(IDTO==idtoAbono,CLASSSUP=="TICKET")		
+		//		DatValue(IDO==idoAbono, PROPNAME=="rectificativo",BOOLEANVALOR=="true"))
+							
+	
+		not((and    FactHierarchy(CLASSSUP=="Anular_venta",clsAccion:CLASS)
+    				ObjValue(CLASSNAME==clsAccion,PROPNAME=="estadoRealizacion",VALUE!=null)))
+    										
+		FactHierarchy(tipoProducto:CLASS,CLASSSUP=="ARTÍCULO_FINANCIERO")
+		Individual(CLASSNAME==tipoProducto, idoProFinan:IDO, idtoProFinan:IDTO)
+		  											 		
+		importeDoc: Double(doubleValue<0.0)
+           	from accumulate((and 	ObjValue(IDO==idoAbono, PROPNAME=="desglose_iva", idoDesglose:IDOVALUE)
+           							forall(	ObjValue(IDO==idoProFinan, PROPNAME=="empresa", idoEmpresa:IDOVALUE!=null)
+           									ObjValue(IDO==idoDesglose, PROPNAME=="mi_empresa", IDOVALUE==idoEmpresa))
+									DatValue(IDO==idoDesglose, PROPNAME=="importe", base:QMIN!=null)), 
+									sum(base))
+		DatValue(IDO==idoAbono, PROPNAME=="fecha", fechaAbono:DATE!=null)
+		
+		fechaCargo:Date() from accumulate((and 	ObjValue(IDO==idoAbono,PROPNAME=="rectifica_a",idoCargo:IDOVALUE)
+													DatValue(IDO==idoCargo, PROPNAME=="fecha", f:DATE!=null)),
+													init(Date res=new Date(0);),
+													action(res=f;),
+													result(res))	
+		
+		//Si el usuario edita una linea esta regla le hace perder el foco
+		not((and  	ObjValue(IDO==idoAbono,PROPNAME=="línea", idoLineaAny:IDOVALUE!=null)
+					Lock(IDO==idoLineaAny, LOCKEDBYUSER==true)))	
+		
+		/* No evitar que se dispare al existir otro vale porque quizas se está abonando (inyectando saldo) y aun asi queda importe negativo para crear nuevo vale
+		Igualmente solo se dispara si el importe total es negativo
+		not((and 	ObjValue(IDO==idoAbono, PROPNAME=="línea", idoLinea:IDOVALUE!=null)     
+				    FactHierarchy(tipoProductoAny:CLASS, CLASSSUP=="ARTÍCULO_FINANCIERO")							
+				    ObjValue(IDO==idoLinea, PROPNAME=="producto", RANGENAME==tipoProductoAny, prod:OBJECTVALUE)))*/
+	    
+		//La configuración de TICKETS tiene que especificar el número de días en los que es posible abonar con tarjeta:
+		//	- Nº días abonable != null && > 0.
+		//	- Nº días permite abono dinero != null < Nº días abonable.
+		//	- Fecha del documento > Nº días permite abono dinero && < Nº días abonable
+		ObjValue(CLASSNAME=="MI_EMPRESA"||=="APLICACIÓN", PROPNAME=="config_tickets", idoConfigTickets:IDOVALUE!=null, idtoConfigTickets:VALUECLS)
+		eval( dma.preload(idoConfigTickets, idtoConfigTickets) )
+			
+		//Si es cero, no se permiten abonos:
+		DatValue(IDO==idoConfigTickets, PROPNAME=="período_días_abonable", periodoAbonable:INTVALUE) 	
+		//Si es igual al periodoAbonable, no se permiten abonos con tarjeta regalo:
+		DatValue(IDO==idoConfigTickets, PROPNAME=="período_días_abonar_con_dinero", periodoAbonarConDinero:INTVALUE) //<periodoAbonable&&>=0
+		
+		diaVentaEsCompleto:Long() from accumulate((and 	DatValue(CLASSNAME=="PARAMETRO_VERDADERO",idoParam:IDO,PROPNAME=="rdn",VALOR=="DIA_VENTA_ES_DIA_COMPLETO_EN_DEVOLUCIONES")
+														DatValue(IDO==idoParam,PROPNAME=="activo",VALOR=="true")),
+														count(idoParam))
+	then
+	 	dma.printRule("===========TARJETA REGALO: CREACIÓN EN ABONO HABIENDO PASADO PLAZO DEVOLUCION CON DINERO "+importeDoc);
+	 	
+	 	//Obtenemos la fecha en la que se hace el abono (ahora mismo) y en la que se creó el documento y 
+	 	//comprobamos cuantos días han pasado:
+
+		if(fechaCargo.getTime()==0) fechaCargo=fechaAbono;
+		
+		
+	 	if(!separadosAlMenosNdias(diaVentaEsCompleto.intValue()>0,fechaAbono,fechaCargo, periodoAbonable)&&
+	 		separadosAlMenosNdias(diaVentaEsCompleto.intValue()>0,fechaAbono,fechaCargo, periodoAbonarConDinero)){
+	 				 	
+		 	Domain dominioTarjeta = dma.creaIndividualOfClass("CRÉDITO_TARJETA");
+			dma.setValue(dominioTarjeta,"producto",new ObjectValue(idoProFinan,idtoProFinan));
+			dma.setValue(dominioTarjeta,"saldo_máximo",new DoubleValue(0.0));
+			dma.setValue(dominioTarjeta,"saldo",new DoubleValue(0,0));			
+			dma.setValue(dominioTarjeta,"documento_activación",new ObjectValue(idoAbono,idtoAbono));	
+			dma.setValue(dominioTarjeta,"descuento",new DoubleValue(0,0));
+			
+			Calendar calendario = Calendar.getInstance();
+			calendario.set(calendario.get(Calendar.YEAR)+1,calendario.get(Calendar.MONTH),1);
+			dma.setValue(dominioTarjeta,"garantía_caducidad",new TimeValue(calendario.getTimeInMillis()/Constants.TIMEMILLIS));	 	
+				
+		   	Domain domLinea = dma.creaIndividualOfClass("LÍNEA_ARTÍCULOS_FINANCIERA");
+			dma.setValue(domLinea,"producto",new ObjectValue(idoProFinan,idtoProFinan));
+			dma.setValue(domLinea,"cantidad", new DoubleValue(0.0));	// da igual porque se machaca al activarse
+			dma.setValue(domLinea,"tarjeta",new ObjectValue(dominioTarjeta));
+			
+			Domain domDoc = new Domain(idoAbono,idtoAbono);
+			
+			//Añadimos la línea financiera al documento de abono.
+			dma.addValue(domDoc,"línea",new ObjectValue(domLinea));
+		}else{
+			dma.printRule("[DEVOLUCIÓN CON TARJETA REGALO] Se devuelve con dinero, ya que no está en el plazo de devolver con tarjeta");
+		}
+end			    
+
+rule "TARJETA REGALO: CREACION EN VENTA"
+	no-loop true
+ 	agenda-group "rules"
+	when 
+		FactHierarchy(idtoDocumento:IDTO,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	
+		Lock(IDTO==idtoDocumento,idoDocumento:IDO<0,STATE==Constants.INDIVIDUAL_STATE_LOCK)//antes tenía lockedbyuser=true ¿pq?, se ha quitado porque ahora tb hay reglas que crean tickets de abono
+
+		FactHierarchy(idtoLinea:IDTO, CLASSSUP=="LÍNEA_ARTÍCULOS_FINANCIERA")
+		ObjValue(IDO==idoDocumento, PROPNAME=="línea", idoLinea:IDOVALUE,VALUECLS==idtoLinea)    
+		not Lock(IDO==idoLinea,LOCKEDBYUSER==true) 
+								
+		ObjValue(IDO==idoLinea, PROPNAME=="producto", idtoProFin:VALUECLS, idoProFinan:IDOVALUE,prod:OBJECTVALUE)		
+		
+		factTarjeta:ArrayList() from collect(ObjValue(IDO==idoLinea,PROPNAME=="tarjeta")) //no actua si ha sido eliminada la tarjeta				
+		    											 		
+		DatValue(IDO==idoLinea, PROPNAME=="importe_con_iva", importeIvaFin:DOUBLEVALUE>0 )
+		DatValue(IDO==idoDocumento, PROPNAME=="fecha", fechaDocumento:QMIN!=null)
+		
+		//Si el usuario edita una linea esta regla le hace perder el foco
+		not((and  	ObjValue(IDO==idoDocumento,PROPNAME=="línea", idoLineaAny:IDOVALUE!=null)
+					Lock(IDO==idoLineaAny, LOCKEDBYUSER==true)))		   		
+	then
+	 	dma.printRule("===========TARJETA REGALO: CREACION EN VENTA");
+	 	
+	 	//Obtenemos la fecha en la que se hace el abono (ahora mismo) y en la que se creó el documento y 
+	 	//comprobamos cuantos días han pasado:
+	 	Domain dominioTarjeta = null;
+	 	boolean creacion=true;
+	 	if(factTarjeta.size()==0){
+	 		dominioTarjeta=dma.creaIndividualOfClass("CRÉDITO_TARJETA");
+		}else{		
+			ObjValue ob=(ObjValue)factTarjeta.get(0);
+			if(ob!=null){
+				creacion=false;
+				dominioTarjeta= new Domain(ob.getIDOVALUE(),ob.getVALUECLS());
+			}
+		}
+		
+		if(dominioTarjeta!=null){
+			
+			//el saldo lo actualiza la regla ACTUALIZACIÓN SALDO CREDITO
+			
+			if(creacion){
+				dma.setValue(dominioTarjeta,"saldo_máximo",new DoubleValue(Auxiliar.redondea(importeIvaFin,2)));
+				dma.setValue(dominioTarjeta,"saldo",new DoubleValue(0,0));	
+				dma.setValue(dominioTarjeta,"producto",new ObjectValue(idoProFinan,idtoProFin));
+				dma.setValue(dominioTarjeta,"documento_activación",new ObjectValue(idoDocumento,idtoDocumento));	
+				dma.setValue(dominioTarjeta,"descuento",new DoubleValue(0,0));
+				Calendar calendario = Calendar.getInstance();
+				
+				calendario.set(calendario.get(Calendar.YEAR)+2,calendario.get(Calendar.MONTH),1);
+				dma.setValue(dominioTarjeta,"garantía_caducidad",new TimeValue(calendario.getTimeInMillis()/Constants.TIMEMILLIS));	 	
+				
+		   		Domain domLinea = new Domain(idoLinea,idtoLinea);
+				dma.setValue(domLinea,"producto",new ObjectValue(idoProFinan,idtoProFin));			
+				dma.setValue(domLinea,"tarjeta",new ObjectValue(dominioTarjeta));
+			}								
+		}					
+end			    
+
+rule "TARJETA REGALO: EMPRESA"
+ 	agenda-group "rules"
+	when 
+		FactHierarchy(idtoLinea:IDTO, CLASSSUP=="LÍNEA_ARTÍCULOS_FINANCIERA")
+		Individual(idoLinea:IDO, IDTO==idtoLinea,STATE==Constants.INDIVIDUAL_STATE_READY)
+		ObjValue(IDO==idoLinea,PROPNAME=="tarjeta",idoTarjeta:IDOVALUE<0,idtoTarjeta:VALUECLS)		
+		ObjValue(IDO==idoLinea,PROPNAME=="producto",prodLinea:IDOVALUE!=null)
+		ObjValue(IDO==prodLinea,PROPNAME=="empresa",OBJECTVALUE!=null,RANGENAME=="MI_EMPRESA",miEmpreProducto:OBJECTVALUE!=null)	     												
+	then
+	 	dma.printRule("===========TARJETA REGALO: EMPRESA");
+		dma.setValue(idoTarjeta,idtoTarjeta,"mi_empresa",miEmpreProducto);	 			
+end	
+
+
+rule "PAGO A PROVEEDORES CON TARJETA REGALO"
+salience 120 //Mayor prioridad que la que calcula el importe de la factura.
+agenda-group "rules"
+	when
+		
+		FactHierarchy(classRoot:CLASS,CLASSSUP=="DOCUMENTO_COMPRA")
+		Individual(idRoot:ID, idoRoot:IDO, idtoRoot:IDTO, CLASSNAME==classRoot)
+		DatValue(IDO==idoRoot, PROPNAME=="importe", importe:DOUBLEVALUE>0 ) //Importe con IVA
+		
+		//Se ha creado una línea financiera con producto financiero y cantidad
+		//	-> No tiene todavía una tarjeta regalo.
+		//  -> La cantidad será el importe total de la tarjeta regalo
+		ObjValue(IDO==idoRoot, PROPNAME=="línea", RANGENAME=="LÍNEA_ARTÍCULOS_FINANCIERA", idoLinea:IDOVALUE!=null)
+		ObjValue(IDO==idoLinea, idtoLinea:IDTO, PROPNAME=="producto", idoProFinan:IDOVALUE!=null)
+		DatValue(IDO==idoLinea, PROPNAME=="cantidad", cantidad:INTVALUE>0)
+		precioConIVA: Double() 
+		    from accumulate(
+					DatValue(IDO==idoLinea, PROPNAME=="precio_iva_incluido", precio:DOUBLEVALUE>0),
+				sum(precio)
+			)
+		DatValue(IDO==idoLinea, PROPNAME=="precio", precioSinIVA:DOUBLEVALUE>0)
+		ObjValue(IDO==idoLinea, PROPNAME=="iva", idoIva:IDOVALUE!=null)
+		DatValue(IDO==idoIva, PROPNAME=="porcentaje_iva", porcentajeIVA:DOUBLEVALUE)		
+		nDigitosPrecio: ArrayList() from collect(DatValue(CLASSNAME=="APLICACIÓN", IDO!=null,PROPNAME=="n._dígitos_en_precio",INTVALUE>0))				
+		not( ObjValue(IDO==idoLinea, PROPNAME=="tarjeta", VALOR!=null) )
+		not( ObjValue(IDO==idoLinea, PROPNAME=="importe", VALOR!=null) )
+
+		FactHierarchy(tipoProducto:CLASS,CLASSSUP=="ARTÍCULO_FINANCIERO")	
+		Individual(CLASSNAME==tipoProducto, IDO==idoProFinan, idtoProFinan:IDTO)
+		
+	then
+		dma.printRule("[PAGO A PROVEEDORES CON TARJETA REGALO]");
+		
+		//precio será el precio CON IVA, si no tiene todavía, lo calculamos a partir del precio SIN IVA
+		Double precio = 0D;
+		if(precioConIVA.equals(0.0) || precioConIVA == null){
+			//Si no ha acumulado un precio con iva, lo calculamos.
+			precio = precioSinIVA * (1D + (porcentajeIVA / 100D));
+		}else{
+			precio = precioConIVA;
+			//dma.printRule(">>>> final CON IVA encontrado. precio: "+precio);			
+		}
+		
+		Domain dominioTarjeta = dma.creaIndividualOfClass("CRÉDITO_TARJETA");
+		dma.setValue(dominioTarjeta,"producto",new ObjectValue(idoProFinan,idtoProFinan));
+		dma.setValue(dominioTarjeta,"saldo",new DoubleValue(0,0));			
+		dma.setValue(dominioTarjeta,"saldo_máximo",new DoubleValue(cantidad.doubleValue()));			
+		dma.setValue(dominioTarjeta,"documento_activación",new ObjectValue(idoRoot,idtoRoot));	
+		
+		Double descuento = 0D;
+		if((cantidad*precio) > (importe-(cantidad*precio))){
+			dma.printRule(">>> cantidad*precio: "+cantidad+", "+precio+", importe: "+importe);		
+			descuento = 100-((importe*100)/(cantidad*precio));
+		}
+		dma.setValue(dominioTarjeta, "descuento", new DoubleValue(descuento));
+		dma.setValue(idoLinea, idtoLinea, "descuento", new DoubleValue(descuento));
+		dma.setValue(idoLinea, idtoLinea, "cantidad", new DoubleValue(cantidad.doubleValue()*-1));
+		
+			
+		Calendar calendario = Calendar.getInstance();
+		calendario.set(calendario.get(Calendar.YEAR)+1,calendario.get(Calendar.MONTH),1);
+		dma.setValue(dominioTarjeta,"garantía_caducidad",new TimeValue(calendario.getTimeInMillis()/Constants.TIMEMILLIS));	
+		
+		//Enganchamos la tarjeta regalo a la línea financiera:
+		dma.setValue(idoLinea, idtoLinea, "tarjeta", new ObjectValue(dominioTarjeta));
+end
+
+rule "ACTUALIZACIÓN PAGO A PROVEEDOR CON TARJETA REGALO"
+agenda-group "rules"
+salience -100
+	when
+		
+		FactHierarchy(classRoot:CLASS,CLASSSUP=="DOCUMENTO_COMPRA")
+		Individual(idRoot:ID, idoRoot:IDO, idtoRoot:IDTO, CLASSNAME==classRoot)
+		DatValue(IDO==idoRoot, PROPNAME=="importe", importe:DOUBLEVALUE!=0 ) //Importe con IVA	
+		
+		ObjValue(IDO==idoRoot, PROPNAME=="línea", RANGENAME=="LÍNEA_ARTÍCULOS_FINANCIERA", idoLinea:IDOVALUE!=null)
+		ObjValue(IDO==idoLinea, idtoLinea:IDTO, PROPNAME=="producto", idoProFinan:IDOVALUE!=null)
+		DatValue(IDO==idoLinea, PROPNAME=="cantidad", cantidad:INTVALUE<0)
+				precioConIVA: Double() 
+		    from accumulate(
+					DatValue(IDO==idoLinea, PROPNAME=="precio_iva_incluido", precio:DOUBLEVALUE>0),
+				sum(precio)
+			)
+		DatValue(IDO==idoLinea, PROPNAME=="precio", precioSinIVA:DOUBLEVALUE>0)
+		ObjValue(IDO==idoLinea, PROPNAME=="iva", idoIva:IDOVALUE!=null)
+		DatValue(IDO==idoIva, PROPNAME=="porcentaje_iva", porcentajeIVA:DOUBLEVALUE)		
+		nDigitosPrecio: ArrayList() from collect(DatValue(CLASSNAME=="APLICACIÓN", IDO!=null,PROPNAME=="n._dígitos_en_precio",INTVALUE>0))	
+		DatValue(IDO==idoLinea, PROPNAME=="descuento", descuento:DOUBLEVALUE!=null)
+		ObjValue(IDO==idoLinea, PROPNAME=="tarjeta", idoTarjeta:IDOVALUE!=null, idtoTarjeta:VALUECLS)
+		
+		FactHierarchy(tipoProducto:CLASS,CLASSSUP=="ARTÍCULO_FINANCIERO")	
+		Individual(CLASSNAME==tipoProducto, IDO==idoProFinan, idtoProFinan:IDTO)
+	then
+		dma.printRule("[ACTUALIZACIÓN PAGO A PROVEEDOR CON TARJETA REGALO]");		
+		
+		//precio será el precio CON IVA, si no tiene todavía, lo calculamos a partir del precio SIN IVA
+		Double precio = 0D;
+		if(precioConIVA.equals(0.0) || precioConIVA == null){
+			//Si no ha acumulado un precio con iva, lo calculamos.
+			precio = precioSinIVA * (1D + (porcentajeIVA / 100D));
+		}else{
+			precio = precioConIVA;
+			//dma.printRule(">>>> final CON IVA encontrado. precio: "+precio);			
+		}
+		
+		Double incrementoDescuento = importe/(cantidad*precio)*100;
+		Double nuevoDescuento = descuento + incrementoDescuento;	
+		dma.printRule(">>> incrementoDescuento: "+incrementoDescuento);	
+		dma.printRule(">>> nuevoDescuento: "+nuevoDescuento);	
+				
+		dma.setValue(idoTarjeta, idtoTarjeta, "descuento", new DoubleValue(nuevoDescuento));
+		dma.setValue(idoLinea, idtoLinea, "descuento", new DoubleValue(nuevoDescuento));
+end	
+
+
+rule "PRECARGA CREDITO"
+salience 100 
+no-loop true
+agenda-group "rules" when 
+  	  	
+	FactHierarchy(classRoot:CLASS, CLASSSUP=="DOCUMENTO_VENTA") 
+	//debo precargar aunque no esté bloqueado, ya que en abonos el ticket de venta no está bloqueado y debo conocer la tarjeta antes de crear las lineas de abono
+	Individual(idRoot:ID,idoRoot:IDO,idtoRoot:IDTO,CLASSNAME==classRoot)
+	ObjValue(ID==idRoot,PROPNAME=="línea",idLinea:VALOR!=null)     
+    FactHierarchy(tipoProducto:CLASS,CLASSSUP=="ARTÍCULO_FINANCIERO")							
+    ObjValue(ID==idLinea,PROPNAME=="producto", RANGENAME==tipoProducto,prod:OBJECTVALUE)										
+    ObjValue(ID==idLinea,PROPNAME=="tarjeta", idoSerie:IDOVALUE,serie:OBJECTVALUE!=null)
+	not(DatValue(CLASSNAME=="CRÉDITO_TARJETA",IDO==idoSerie))																															    
+then
+		dma.printRule("\n\n ================PRECARGA CREDITO serie "+serie);
+		
+	 	dma.ruleGetFromServer(serie.getValue(),serie.getValueCls(),1,false);		
+end
+
+/*PRECARGAR TARJETA SI ELIMINO TICKET CON PRODUCTO FINANCIERO PARA QUE RESTAURE
+
+SI SE BORRA UN TICKET QUE ACTIVA UNA TARJETA TRATO DE BORRAR LA TARJETA
+
+LIMPIAR NUEVA TARJETA DEVOLUCION SI TIENE SALDO CERO*/
+
+rule "ACTUALIZACIÓN SALDO CREDITO" 
+salience 150
+ agenda-group "rules" when 
+  	
+	DatValue(idoCredito:IDO,idCredito:ID,idtoCredito:IDTO,CLASSNAME=="CRÉDITO_TARJETA",PROPNAME=="rdn",rdnCredito:VALOR!=null)
+    Individual(ID==idCredito,STATE==Constants.INDIVIDUAL_STATE_READY)
+    ObjValue(ID==idCredito,PROPNAME=="producto", idProducto:VALOR!=null)			
+                              	
+	contributionInit: Double() 
+    	from accumulate((and	    																	
+							ObjValue(idRoot:ID,classRoot:CLASSNAME,PROPNAME=="línea",idLinea:INITIALVALOR)																				    							    						    											  														 						
+    						ObjValue(ID==idLinea,PROPNAME=="tarjeta", INITIALVALOR==idCredito)
+    						FactHierarchy(CLASS==classRoot, tipoDoc:CLASSSUP=="DOCUMENTO_VENTA"||=="DOCUMENTO_COMPRA")							    													
+							DatValue(ID==idLinea,PROPNAME=="cantidad", cantidadInitial:INITIALDOUBLE)),
+                                   		
+                      		sum(cantidadInitial*(tipoDoc.equals("DOCUMENTO_COMPRA")?-1:1)))
+	contributionCurr: Double() 
+    	from accumulate((and
+							ObjValue(idRoot:ID,PROPNAME=="línea",idLinea:VALOR)																									    										    														    													    					
+							ObjValue(ID==idLinea,PROPNAME=="tarjeta", IDOVALUE==idoCredito)
+							Individual(ID==idRoot,classRoot:CLASSNAME,STATE==Constants.INDIVIDUAL_STATE_READY)
+							FactHierarchy(CLASS==classRoot, tipoDoc:CLASSSUP=="DOCUMENTO_VENTA"||=="DOCUMENTO_COMPRA")							 						    											    													
+							DatValue(ID==idLinea,PROPNAME=="cantidad", cantidad:DOUBLEVALUE)
+							),
+							
+							sum(cantidad*(tipoDoc.equals("DOCUMENTO_COMPRA")?-1:1)))
+	DatValue(CLASSNAME=="APLICACIÓN", idoApp:IDO,PROPNAME=="n._dígitos_en_importe_linea",digitosRedondeo:INTVALUE>0)							                     
+then
+	dma.printRule("=====ACTUALIZACIÓN SALDO CREDITO " +contributionInit+","+contributionCurr );	
+			 
+	dma.setIncrementalValue(idoCredito,idtoCredito,dma.getIdProperty("saldo"),contributionCurr-contributionInit,digitosRedondeo);			
+end
+
+rule "TARJETA CREDITO REGALO: CONSUMO" 
+//La tarejta es usada cuando ya existía y se vincula a un doc de venta
+
+salience -50
+ agenda-group "rules" when 
+  	//Dado que el importe del doc queremos que sea cero, si no es cero, represetna lo que falta por abonar
+  	//El saldo y el saldo maximo son iva no incluido
+  	not((and    FactHierarchy(CLASSSUP=="Anular_venta",clsAccion:CLASS)
+    			ObjValue(CLASSNAME==clsAccion,PROPNAME=="estadoRealizacion",VALUE!=null)))
+    				
+	FactHierarchy(classRoot:CLASS, CLASSSUP=="DOCUMENTO_VENTA") 
+	IndividualState(idoDocumento:IDO,CLASSNAME==classRoot,STATE==Constants.INDIVIDUAL_STATE_LOCK||==Constants.INDIVIDUAL_STATE_DELETED)
+	FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA_ARTÍCULOS_FINANCIERA")
+	ObjValue(IDO==idoDocumento,PROPNAME=="línea",VALUECLS==idtoLinea,idoLinea:IDOVALUE!=null,linea:OBJECTVALUE)         							    										    
+    ObjValue(IDO==idoLinea,PROPNAME=="tarjeta", idoTarjeta:IDOVALUE!=null)	        
+    DatValue(IDO==idoTarjeta,PROPNAME=="garantía_caducidad",caducidad:QMIN!=null)
+	eval(caducidad*Constants.TIMEMILLIS>System.currentTimeMillis())
+	
+	baseDoc: Double()
+           	from accumulate((and 	ObjValue(IDO==idoDocumento, PROPNAME=="desglose_iva", idoDesglose:IDOVALUE)
+           							forall(	ObjValue(IDO==idoTarjeta,PROPNAME=="mi_empresa", idoEmpT:IDOVALUE!=null)
+           									ObjValue(IDO==idoDesglose, PROPNAME=="mi_empresa", IDOVALUE==idoEmpT))
+									DatValue(IDO==idoDesglose, PROPNAME=="importe", base:QMIN!=null)), 
+									sum(base))	
+									
+	baseDocPrev: Double()
+           	from accumulate((and 	ObjValue(IDO==idoDocumento, PROPNAME=="desglose_iva", idoDesglose:IDOVALUE)
+           							forall(	ObjValue(IDO==idoTarjeta,PROPNAME=="mi_empresa", idoEmpT:IDOVALUE!=null)
+           									ObjValue(IDO==idoDesglose, PROPNAME=="mi_empresa", IDOVALUE==idoEmpT))
+									DatValue(IDO==idoDesglose, PROPNAME=="importe", base:PREVIODOUBLEVALUE!=null)), 
+									sum(base))									     												
+							
+	                      
+
+	DatValue(IDO==idoTarjeta,PROPNAME=="saldo_máximo",saldoMaximo:DOUBLEVALUE!=null)
+	
+	DatValue(IDO==idoTarjeta,PROPNAME=="saldo",saldo:DOUBLEVALUE!=null)
+	DatValue(IDO==idoLinea, PROPNAME=="precio_iva_incluido", precioLinea:DOUBLEVALUE!=null)
+
+	//la tarjeta no debe consumirse al modificar el ticket original, ni en un abono de dicho ticket
+	not(ObjValue(IDO==idoTarjeta,PROPNAME=="documento_activación",IDOVALUE==idoDocumento)) 
+	not((and 	ObjValue(IDO==idoDocumento,PROPNAME=="rectifica_a",idTicketV:VALOR) 
+				DatValue(ID==idTicketV, PROPNAME=="rectificativo",BOOLEANVALOR=="false")
+				ObjValue(IDO==idoTarjeta,PROPNAME=="documento_activación",VALOR==idTicketV)
+				)) 
+				
+	//para permitir anular un vale directamente en un nuevo ticket, sin utilizar "rectifica a", poniendo manualmente cantidad en negativo
+	//por valor del importe a anular, se añade siguiente condicion (es necesario manualemnte asignar la forma de pago)				
+	(or	exists(ObjValue(IDO==idoDocumento,PROPNAME=="línea",IDOVALUE!=null&&!=idoLinea||IDOVALUE==null))
+		not(DatValue(IDO==idoLinea,PROPNAME=="cantidad",VALOR!=null))
+		)
+
+	//no debe actuar en ticket existentes, salvo que los esté editando y cambie previamente su importe. 
+	//Sin esta condicion, podía pasar que un ticket donde se ha usado un vale hasta agotar su saldo, sale a pagar, más tarde realizo un abono 
+	// que inyecta saldo a dicho vale. En esas condiciones el ticket anterior podría consumir mayor crédito del vale antes de haberse modificado los importes totales 
+	//(o desgloses de iva por empresa)
+	// La condicion <0 que es necesaria para que se asigne cantidad cero cuando solo se ha añadido una linea que es financiera con un vale, y tampoco se abona nada, ya sea
+	// porque se está siguiendo este orden o porque se quiere vender un vale. Y la condicion de distinta base es para evitar la inyeccion de saldo en ticket anterior
+	eval(idoDocumento<0 || !baseDocPrev.equals(baseDoc))
+then
+	dma.printRule("=================TARJETA CREDITO REGALO: CONSUMO saldo "+saldo +" base "+baseDoc +" prev:"+baseDocPrev+" precioLin:"+precioLinea);	
+	double incremento=0.0;
+	if( saldo>saldoMaximo ) saldo=saldoMaximo;
+	if( saldo<0 ) saldo=0.0;
+	
+	if(baseDoc.doubleValue()>0){		
+		incremento=Math.min( baseDoc.doubleValue(),saldo.doubleValue());
+	}else{
+		incremento=-Math.min( -baseDoc.doubleValue(),saldoMaximo.doubleValue()-saldo.doubleValue());
+	}
+	
+	dma.printRule(" incremento pre "+incremento);
+	
+	dma.printRule(" incremento "+incremento);
+	Domain domLinea=new Domain(linea);
+	double cantidadPrevia=dma.getDoubleValue(domLinea,"cantidad",true);
+	double descuentoLinea=dma.getDoubleValue(domLinea,"descuento",true);
+	if( descuentoLinea!=0.0 ){
+		precioLinea= precioLinea*(1.0-descuentoLinea)/100;
+		dma.printRule(" aplica descuento linea "+descuentoLinea);
+	}
+	double incrementoQ=-incremento/precioLinea;
+
+	double nuevaQ=incrementoQ;
+	if(cantidadPrevia!=0){
+		nuevaQ=incrementoQ+cantidadPrevia;
+		dma.printRule(" incrementoQ "+incrementoQ+ " nueva q "+nuevaQ+" cantidadPrevia" +cantidadPrevia);
+	}
+	
+	//if(Math.abs(Auxiliar.redondea(incrementoQ*precioLinea,2))>=0.01){		
+		dma.printRule(" cantidadPrevia, nueva "+cantidadPrevia+","+nuevaQ);
+		//Un incremento negativo aumenta el saldo de la tarejta, por tanto lo recorto para evitar que dicho saldo supere el maximo
+
+		dma.setValue(domLinea,"cantidad",new DoubleValue(nuevaQ,nuevaQ));	
+	//}
+end
+/*
+rule "ABONO TARJETA CREDITO REGALO CON SALDO CONSUMIDO" 
+salience -50
+ agenda-group "rules" when 
+  	
+	FactHierarchy(classRoot:CLASS, CLASSSUP=="TICKET")	 
+	IndividualState(idRoot:ID,CLASSNAME==classRoot,STATE==Constants.INDIVIDUAL_STATE_LOCK||==Constants.INDIVIDUAL_STATE_DELETED)
+	DatValue(ID==idRoot, PROPNAME=="rectificativo",BOOLEANVALOR=="true")
+	ObjValue(ID==idRoot,PROPNAME=="línea",idLinea:VALOR!=null,linea:OBJECTVALUE)
+	DatValue(ID==idRoot,PROPNAME=="importe",importeDoc:DOUBLEVALUE!=null) 
+    FactHierarchy(tipoProducto:CLASS,CLASSSUP=="ARTÍCULO_FINANCIERO")							
+    ObjValue(ID==idLinea,PROPNAME=="producto", RANGENAME==tipoProducto,prod:VALOR)										
+    ObjValue(ID==idLinea,PROPNAME=="tarjeta", serie:VALOR!=null)
+	DatValue(ID==idLinea,PROPNAME=="cantidad", cantidad:DOUBLEVALUE!=null)	
+	DatValue(ID==idLinea,PROPNAME=="precio", precio:DOUBLEVALUE!=null)
+	DatValue(idCredito:ID==serie,CLASSNAME=="CRÉDITO_TARJETA",PROPNAME=="rdn")	                      
+	DatValue(ID==idCredito,PROPNAME=="saldo_máximo",saldoMaximo:DOUBLEVALUE!=null)
+	DatValue(ID==idCredito,PROPNAME=="saldo",saldo:DOUBLEVALUE!=null)	
+	DatValue(ID==idCredito,PROPNAME=="descuento",descuento:DOUBLEVALUE!=null)	
+	ObjValue(ID==idRoot,PROPNAME=="rectifica_a",idTicketV:VALOR) 
+	ObjValue(ID==idCredito,PROPNAME=="documento_activación",VALOR==idTicketV)
+				
+then
+	dma.printRule("=================ABONO TARJETA CREDITO REGALO  CON SALDO CONSUMIDO: saldo, importe "+saldo+","+importeDoc +", precio "+precio );	
+	//El saldo ya tiene descontado la cantidad a abonar que es la comprada en negativa. Entonces si la tarjeta ya llevaba consumo
+	// el saldo es negativo (de lo contrario ya seria cero) y en valor absoluto representa el total consumido. DIcho saldo tengo que
+	//descontarlo a la cantidad para que quede a cero
+
+	DoubleValue nuevaQ=new DoubleValue(cantidad-(saldo/(precio*(100-descuento)/100)));
+	dma.setValue(new Domain(linea),"cantidad",nuevaQ);
+end*/
+	
+rule "ACTIVACION TARJETA CREDITO REGALO Y ACTUALIZACIÓN SALDO_MAXIMO" 
+//Activar significa dinmaizar o actulizar un credito tarjeta acorde a la linea financiera de venta
+//Esta regla solo tiene sentido cuando la tarjea que esta siendo creada y vendida depende del valor de productos a abonar, en cuyo caso debe actualizarse pues pueden variar los productos
+//La cantidad de la linea (que contribuye al saldo de la tarjeta) coincide con la del documento activacion PROTOTIPO
+
+// sería lo mismo que instalar directamente modificando cantidad linea
+	salience -100
+	agenda-group "rules"
+	when 
+	  	
+		FactHierarchy(classRoot:CLASS, claseDoc:CLASSSUP=="DOCUMENTO_VENTA") 
+		IndividualState(idoRoot:IDO, CLASSNAME==classRoot, LEVEL==Constants.LEVEL_PROTOTYPE, STATE==Constants.INDIVIDUAL_STATE_LOCK||==Constants.INDIVIDUAL_STATE_DELETED)
+		ObjValue(IDO==idoRoot, PROPNAME=="línea", idoLinea:IDOVALUE!=null, idtoLinea:VALUECLS)
+		ObjValue(IDO==idoLinea, PROPNAME=="mi_empresa", idoEmpresa:IDOVALUE!=null)
+		
+		DatValue(IDO==idoLinea, PROPNAME=="importe_con_iva", importeLineaFin:DOUBLEVALUE!=null)
+	
+	    FactHierarchy(tipoProducto:CLASS, CLASSSUP=="ARTÍCULO_FINANCIERO")			    
+	    ObjValue(IDO==idoLinea, PROPNAME=="producto", RANGENAME==tipoProducto,idoProducto:IDOVALUE, prod:VALOR)	    	    
+	   	DatValue(IDO==idoLinea, PROPNAME=="precio_iva_incluido", precioLinea:DOUBLEVALUE!=null)	
+	   	
+	   	ObjValue(IDO==idoLinea, PROPNAME=="tarjeta", idoTarjeta:IDOVALUE!=null)
+	   	importeTicket: Double()
+           	from accumulate((and 	ObjValue(IDO==idoRoot, PROPNAME=="desglose_iva", idoDesglose:IDOVALUE)
+           							forall(	ObjValue(IDO==idoTarjeta,PROPNAME=="mi_empresa", idoEmpT:IDOVALUE!=null)
+           									ObjValue(IDO==idoDesglose, PROPNAME=="mi_empresa", IDOVALUE==idoEmpresa))
+           							//importe de desglose es iva incluido
+									DatValue(IDO==idoDesglose, PROPNAME=="importe", base:QMIN!=null)), 
+									init(Double res=0.0;),
+									action(res=res.doubleValue()+base;),
+									result(res.doubleValue()))
+										   	
+	   	/*Provisional mientras el precio con iva no se calcule automaticamente a partir del precio sin iva
+   		ObjValue(IDO==idoLinea, PROPNAME=="iva", idoIva:IDOVALUE!=null)
+		DatValue(IDO==idoIva, PROPNAME=="porcentaje_iva", porcentaje:DOUBLEVALUE)	
+		fdigitosPrecio: ArrayList() from collect(DatValue(CLASSNAME=="APLICACIÓN", IDO!=null,PROPNAME=="n._dígitos_en_precio",INTVALUE>0))*/	
+		//XXX
+		
+	    
+	    DatValue(IDO==idoLinea, PROPNAME=="cantidad", cantidadPrevia:DOUBLEVALUE!=null)
+
+		//Exigimos este docuemnto de venta (que esta siendo creado o prototipo) sea el documento de activacion de la tarjeta, por tanto se podria decir que la tarjeta esta siendo creada
+		ObjValue(IDO==idoTarjeta, idtoTarjeta:IDTO, CLASSNAME=="CRÉDITO_TARJETA", PROPNAME=="documento_activación", IDOVALUE==idoRoot)
+		DatValue(IDO==idoTarjeta, PROPNAME=="descuento", descuento:DOUBLEVALUE!=null)	
+		DatValue(IDO==idoRoot, PROPNAME=="rectificativo",rectificativo:BOOLEANVALOR)
+		
+		//el saldo de la tarjeta es dinamico (o se activa) si hay productos a abonar, de lo contrario manda lo que ponga el usuario
+		exists((and ObjValue(IDO==idoRoot, PROPNAME=="línea", IDOVALUE!=null, idtoLineaAny:VALUECLS)
+					not(FactHierarchy(IDTO==idtoLineaAny, CLASSSUP=="LÍNEA_ARTÍCULOS_FINANCIERA")))) 
+	then
+		dma.printRule("===============ACTIVACION TARJETA CREDITO REGALO "+importeTicket +" importeLineaFin="+importeLineaFin);	
+		
+		Value saldoMaximoV = dma.getValue(idoTarjeta, idtoTarjeta, "saldo_máximo");
+		if(saldoMaximoV != null){
+			Double saldoMaximo = ((DoubleValue)saldoMaximoV).getNumericValue();
+					
+			Double precioConIVA = precioLinea;
+						
+			if(claseDoc.equals("DOCUMENTO_VENTA")){
+				DoubleValue nuevoSaldoMaximo=null;
+				if(importeTicket.doubleValue()!=0.0){
+					nuevoSaldoMaximo = new DoubleValue(Auxiliar.redondea(Math.max(0.0,saldoMaximo - importeTicket),2));//No puede ser negativo pues el vale actuaria como credito sin que haya deuda
+				
+				/*if(importeTicket.doubleValue()>0.0){
+					nuevoSaldoMaximo = new DoubleValue(Auxiliar.redondea(Math.max(0.0,saldoMaximo - importeTicket),2));
+					//nuevoSaldoMaximo = new DoubleValue(Auxiliar.redondea(Math.max(0,Math.min(importeTicket,importeLineaFin)),2));
+				}*/								
+					dma.setValue(idoTarjeta, idtoTarjeta, "saldo_máximo", nuevoSaldoMaximo);
+				
+					DoubleValue nuevaCantidad = new DoubleValue(nuevoSaldoMaximo.getNumericValue()/precioConIVA);	
+					dma.printRule(" nueva cantidad tarjeta "+nuevaCantidad);
+					dma.setValue(idoLinea, idtoLinea, "cantidad", nuevaCantidad);
+					dma.setValue(idoLinea, idtoLinea, "descuento", new DoubleValue(descuento));							
+				}
+			}
+		}
+end	
+
+
+
+rule "TARJETA REGALO: LIMPIAR NUEVA SI TIENE SALDO MÁXIMO CERO Y ES PROTOTIPO"
+	agenda-group "bddrules"
+	when
+	    	
+	    //Dada una tarjeta regalo con saldo máximo y saldo a cero....
+	    ObjValue(idoTarjeta:IDO, idtoTarjeta:IDTO, CLASSNAME=="CRÉDITO_TARJETA", LEVEL==Constants.LEVEL_PROTOTYPE, objTarjeta:OBJECTVALUE)
+	    DatValue(IDO==idoTarjeta, PROPNAME=="saldo_máximo", DOUBLEVALUE==0)
+	    DatValue(IDO==idoTarjeta, PROPNAME=="saldo", DOUBLEVALUE==0)
+
+	    //Esa tarjeta aparece en la línea de un documento
+	    ObjValue(idoDoc:IDO, idtoDoc:IDTO, PROPNAME=="línea", idoLinea:IDOVALUE!=null, objLinea:OBJECTVALUE)
+	    ObjValue(IDO==idoLinea, idtoLinea:IDTO, PROPNAME=="tarjeta", IDOVALUE==idoTarjeta)
+
+	    //Ese documento tiene que se su documento de activación
+	    ObjValue(IDO==idoTarjeta, PROPNAME=="documento_activación", IDOVALUE==idoDoc, objDoc:OBJECTVALUE)
+
+	then
+		dma.printRule("==================== TARJETA REGALO: LIMPIAR NUEVA SI TIENE SALDO MÁXIMO CERO Y ES PROTOTIPO");
+		dma.delValue(idoTarjeta, idtoTarjeta, "documento_activación", objDoc);
+		dma.delValue(idoDoc, idtoDoc, "línea", objLinea);
+		dma.deleteObject(idoTarjeta, idtoTarjeta);	
+end
+
+rule "CANTIDAD NO ES MODIFICABLE EN TICKET EXISTENTES"
+salience 300
+agenda-group "rules" when 
+    ddm:DocDataModel(USERROL!="administrador")
+	FactHierarchy(idtoVenta:IDTO,CLASSSUP=="TICKET")
+	Lock(IDTO==idtoVenta,idoTicket:IDO>0,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(IDO==idoTicket, PROPNAME=="línea", idoLinea:IDOVALUE!=null) 
+	DatValue(IDO==idoLinea, prop:PROPNAME=="cantidad", q:QMIN,hasCHANGED==true)	
+	DatValue(IDO==idoTicket, PROPNAME=="rdn", rdnDoc:VALOR!=null)
+	ObjValue(IDO==idoLinea, PROPNAME=="producto", idopro:IDOVALUE!=null)
+	DatValue(IDO==idopro, PROPNAME=="rdn", rdnPro:VALOR!=null)
+then
+	dma.printRule("================= CANTIDAD NO ES MODIFICABLE EN TICKET EXISTENTES");
+	throw new OperationNotPermitedException("No se puede modificar "+prop+" "+q+" pro:"+rdnPro+" del doc "+rdnDoc);
+end
+
+rule "TARJETA REGALO: PRECIO NO ES MODIFICABLE EN TICKET"
+salience -300
+agenda-group "rules" when     
+	FactHierarchy(idtoVenta:IDTO,CLASSSUP=="TICKET")
+	Lock(IDTO==idtoVenta,idoTicket:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(IDO==idoTicket, PROPNAME=="línea", idoLinea:IDOVALUE!=null) 
+	FactHierarchy(tipoProductoAny:IDTO, CLASSSUP=="ARTÍCULO_FINANCIERO")
+	ObjValue(IDO==idoLinea, idtoLinea:IDTO, PROPNAME=="producto", idoProductoFinanciero:IDOVALUE,VALUECLS==tipoProductoAny)	
+				    
+	DatValue(IDO==idoProductoFinanciero,PROPNAME=="pvp",precioPF:QMIN!=null)
+	DatValue(IDO==idoLinea, PROPNAME=="precio", precioLinea:QMIN!=precioPF)
+	DatValue(IDO==idoLinea, PROPNAME=="precio_iva_incluido", precioIILinea:QMIN)			
+then
+	dma.printRule("================= TARJETA REGALO: PRECIO NO ES MODIFICABLE EN TICKET");
+	
+	dma.setValue(idoLinea,idtoLinea,"cantidad",new DoubleValue(precioIILinea));
+	dma.setValue(idoLinea,idtoLinea,"precio",new DoubleValue(precioPF));
+	dma.showMessage("Debe modificar el campo cantidad (significa \"cantidad de euros vendidos\"), el campo precio es fijo 1Euro");
+end
+
+
+rule "NO ES MODIFICABLE NINGUN CAMPO DIRECTO EN TICKET EXISTENTES"
+salience 300
+agenda-group "rules" when 
+    ddm:DocDataModel(USERROL!="administrador")
+	FactHierarchy(idtoVenta:IDTO,CLASSSUP=="TICKET")
+	IndividualState(IDTO==idtoVenta,idoTicket:IDO,STATE==Constants.INDIVIDUAL_STATE_END_LOCK||==Constants.INDIVIDUAL_STATE_DELETED,LEVEL==Constants.LEVEL_INDIVIDUAL)
+	DatValue(IDO==idoTicket,PROPNAME=="rdn",rdn:VALOR!=null)
+		
+	ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="delegación",idoMiDelegacion:IDOVALUE!=null)	
+	ObjValue(IDO==idoTicket,PROPNAME=="origen",idoOrigen:IDOVALUE!=null)
+	//no puedo impedir cambios de totales, como importe total, porque puede ser incoherente debido a haberse limpiado lineas al replicar desde franquicias
+	(or exists(IndividualValue(IDO==idoTicket,PROPNAME=="cargos"||=="línea"||=="descuentos_globales", initialValuesChanged==true ))
+		exists((and not((and 	DatValue(CLASSNAME=="PARAMETRO_VERDADERO",idoParam:IDO,PROPNAME=="rdn",VALOR=="PERMITIDO_MODIFICAR_FORMA_PAGO_TICKET")
+								DatValue(IDO==idoParam,PROPNAME=="activo",VALOR=="true")))
+					IndividualValue(IDO==idoTicket,PROPNAME=="entregado_metálico", initialValuesChanged==true )))
+		exists((and ObjValue(IDO==idoTicket,PROPNAME=="cargos"||=="línea"||=="descuentos_globales", idoSub:IDOVALUE)
+					DatValue(IDO==idoSub,PROPNAME=="importe"||=="cantidad"||=="descuento",initialValuesChanged==true,qi:INITIALDOUBLE,qc:QMIN!=null)
+					eval(Auxiliar.incrementoRelevante(qi,qc,0.009))))
+		exists(Individual(IDO==idoTicket,STATE==Constants.INDIVIDUAL_STATE_DELETED))
+	)
+	//no impido cambio de producto por accion cambio de talla
+then
+
+	dma.printRule("================= NO ES MODIFICABLE NINGUN CAMPO DIRECTO EN TICKET EXISTENTES ");
+	throw new OperationNotPermitedException("No se puede modificar el ticket "+rdn);
+end
+
+rule "NO ES MODIFICABLE STOCK EN TICKET EXISTENTES OTRAS TIENDAS"
+salience 300
+agenda-group "rules" when 
+    ddm:DocDataModel(USERROL!="administrador")
+	FactHierarchy(idtoVenta:IDTO,CLASSSUP=="TICKET")
+	Lock(IDTO==idtoVenta,idoTicket:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK,LEVEL==Constants.LEVEL_INDIVIDUAL)
+	DatValue(IDO==idoTicket,PROPNAME=="rdn",rdn:VALOR!=null)
+	
+	ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="delegación",idoMiDelegacion:IDOVALUE!=null)	
+	ObjValue(IDO==idoTicket,PROPNAME=="origen",idoOrigen:IDOVALUE!=null)
+	ObjValue(IDO==idoOrigen,PROPNAME=="delegación",IDOVALUE!=idoMiDelegacion)	
+	ObjValue(IDO==idoTicket,PROPNAME=="línea", idoLinea:IDOVALUE)
+	ObjValue(IDO==idoLinea,PROPNAME=="producto", initialValuesChanged==true )
+then
+	dma.printRule("================= NO ES MODIFICABLE STOCK EN TICKET EXISTENTES OTRAS TIENDAS ");
+	throw new OperationNotPermitedException("No se puede modificar productos del ticket "+rdn);
+end
+
+rule "ENTREGADO METALICO TICKET: DEPENDENCIA ANTICIPOS"
+//tambien realicionado con regla ABONOS:DEVUELTO
+//soporta hasta dos medios de pagos distintos
+salience -50 //menos prioridad que PRECARGA DOCUMENTOS EN ABONO y menos que "CALCULO IMPORTE TOTAL"
+agenda-group "rules" when 
+
+	Lock(CLASSNAME=="TICKET_VENTA",idoDoc:IDO,idtoDoc:IDTO,LOCKEDBYUSER==true)
+	
+	DatValue(IDO==idoDoc, PROPNAME=="importe",importe:DOUBLEVALUE!=null)
+	
+	entreg_met_docArr:ArrayList() from collect(DatValue(IDO==idoDoc, PROPNAME=="entregado_metálico",met:DOUBLEVALUE!=null))
+	
+	DatValue(IDO==idoDoc, PROPNAME=="fecha",fechaDoc:QMIN!=null)
+	
+	//not(ObjValue(IDO==idoDoc,PROPNAME=="cobro_anticipo",IDOVALUE!=null)) 
+	anticipoMetalico:Domain()	from accumulate((and 	ObjValue(IDO==idoDoc,PROPNAME=="cobro_anticipo",idoCobroAny:IDOVALUE,idtoC:VALUECLS)
+														ObjValue(IDO==idoCobroAny,PROPNAME=="medio_de_pago",idoMedio:IDOVALUE)	
+														DatValue(IDO==idoMedio,PROPNAME=="rdn",VALOR=="Metálico")
+    				 									),
+                      									init(Domain d=new Domain(0,0);),
+                      									action( d=new Domain(idoCobroAny,idtoC);),
+                      									result(d))
+	
+	anticipoOtro:Domain()	from accumulate((and 	ObjValue(IDO==idoDoc,PROPNAME=="cobro_anticipo",idoCobroAny:IDOVALUE,idtoC:VALUECLS)
+													ObjValue(IDO==idoCobroAny,PROPNAME=="medio_de_pago",idoMedio:IDOVALUE)	
+													DatValue(IDO==idoMedio,PROPNAME=="rdn",VALOR!="Metálico")
+    				 									),
+                      									init(Domain d=new Domain(0,0);),
+                      									action( d=new Domain(idoCobroAny,idtoC);),
+                      									result(d))
+                      									
+	DatValue(CLASSNAME=="TIPO_PAGO",idoTarj:IDO,idtoTarj:IDTO,VALOR=="Tarjeta_crédito")
+	DatValue(CLASSNAME=="TIPO_PAGO",idoMet:IDO,idtoMet:IDTO,VALOR=="Metálico")   	 
+	DatValue(IDO==idoDoc,PROPNAME=="rdn",rdn:VALOR!=null)  		
+			 									
+	ObjValue(IDO==idoDoc, PROPNAME=="delegación",idoDel:IDOVALUE!=null,idtoDel:VALUECLS)
+	
+	rectificaciones:ArrayList()	from collect(ObjValue(PROPNAME=="rectifica_a",IDOVALUE!=null))
+	
+	totalAnticipado:Double() from accumulate((and 	ObjValue(IDO==idoDoc,PROPNAME=="cobro_anticipo",idoCobroAny:IDOVALUE)
+													DatValue(IDO==idoCobroAny,PROPNAME=="importe",i:DOUBLEVALUE!=null)
+													DatValue(IDO==idoCobroAny,PROPNAME=="rdn", VALOR!="#TEMPORAL")													
+    				 						),
+                      				  		sum(i)) 		
+ 					    											
+then	
+	dma.printRule("===========ENTREGADO METALICO TICKET: DEPENDENCIA ANTICIPOS (del) "+entreg_met_docArr.size()+" "+idoDel+" "+rdn+" "+importe+" "+idoDoc+" "+anticipoMetalico.getIdo()+" total anticipado "+totalAnticipado);
+		
+	HashSet network=new HashSet();
+	network.add(idoDoc);
+	ArrayList resto=new ArrayList(rectificaciones);
+	
+	//primero averiguo todos los ticket relacionados con este cliente. La regla de precarga a cargado todos los ticket posibles navegando por dominio que puedan estar abonando cualquier ticket de memoria, y rango
+	//Este algoritmo soporta que un ticket tenga dos padres (rectica a varios)
+	int oldSize=resto.size();
+	for(int i=0;i<1000;i++){				
+		Iterator itrRest=resto.iterator();
+		while(itrRest.hasNext()){
+			ObjValue opr=(ObjValue)itrRest.next();
+			boolean encontrado=false;
+			if(network.contains(opr.getIDOVALUE())){
+				network.add(opr.getIDO());
+				encontrado=true;
+			}
+			if(network.contains(opr.getIDO())){
+				network.add(opr.getIDOVALUE());
+				encontrado=true;
+			}
+			if(encontrado){			
+				itrRest.remove();			
+				resto.remove(opr);										
+			} 		
+		}
+		if(resto.size()==oldSize) break;
+		oldSize=resto.size();
+	}	
+	
+	//incluye todo lo pagado en metalico (siendo lo cargado el positivo) ticket asociados, tanto ancestor como child, exceptuando this. Contra dicha cantidad positiva puedo hacer abono negativo sin superarlo
+	double saldoMetalicoResto=0.0; 
+	double saldoTarjetaResto=0.0;
+	Iterator itr=network.iterator();
+	while(itr.hasNext()){	
+		Integer ido=(Integer)itr.next();
+		if(!ido.equals(idoDoc)){	
+			Domain domTick=new Domain(ido,idtoDoc);
+			LinkedList<Value> cobros=null;
+			boolean incoherencia=false;
+			try{
+				cobros=dma.getValues(domTick,"cobro_anticipo");
+			}catch(Exception e){
+				throw new OperationNotPermitedException("Hay un problema, es posible que exista un ticket externo relacionado, pruebe desde menu ticket externo"); 
+			}
+			if(cobros.size()==0){
+				//seguramente es un abono externo de otra empresa en cuyo caso no se replican los cobros. Deduciré lo pagado si es un cargo, si es abono no lo tengo en cuenta (con lo cual seria posible abonar mas de lo pagado por algun medio) 
+				double importeTick=dma.getDoubleValue(domTick,"importe",true);
+				double entregMet=dma.getDoubleValue(domTick,"entregado_metálico",true);
+				if(importeTick>0){
+					double tmpMet=Math.min(entregMet,importeTick);
+					saldoMetalicoResto+=tmpMet;
+					saldoTarjetaResto+=importeTick-tmpMet;					
+				}
+			}else{
+				for(Value v:cobros){
+					Domain d=new Domain((ObjectValue)v);					
+					ObjectValue medio=(ObjectValue)dma.getValue(d,"medio_de_pago");
+					double importeC= dma.getDoubleValue(d,"importe",true);
+					if(medio.getValue().equals(idoTarj)){				
+						saldoTarjetaResto+=importeC;
+					}
+					if(medio.getValue().equals(idoMet)){
+						saldoMetalicoResto+=importeC;	
+					}
+				}
+			}
+		}
+	}	
+	dma.printRule("pagado metalico "+saldoMetalicoResto+", tarje "+saldoTarjetaResto);
+	Double entreg_met_doc=0.0;
+	if(entreg_met_docArr.size()>0){
+		entreg_met_doc=((DatValue)entreg_met_docArr.get(0)).getDOUBLEVALUE();
+		dma.printRule("Entregado metalico acumulado "+entreg_met_doc);
+		//no se puede decidir hasta saber como se paga. Entregado es reseteado por regla ENTREGADO METÁLICO EN TICKET IMPORTE CERO
+	}
+
+	//la variable booleana actualizarImporte debia servir para evitar modificar datos si el total pagado con el reparto de anticipos actual ya cuadra, 
+	// asi permitimos en casos de ambiguedad (cuando es posible abonar la cantidad actual tanto en tarjeta como metalico por haber saldo cargada a ambos), que el usuario modifique lo propuesto
+	//Excepto en importe positivo que se regula por entregado metalico
+	boolean actualizarImporte= Auxiliar.incrementoRelevante(importe,totalAnticipado,0.005) || importe.doubleValue()>0;	
+	
+	double newAnticipado=0.0;
+	
+	if(entreg_met_docArr.size()>0){//espero este definido el entregado
+		double oldValueAnticipoTarjeta= anticipoOtro.getIdo()==0 ?0.0:dma.getDoubleValue(anticipoOtro,"importe",true);		
+		double tarjeta=importe-entreg_met_doc;
+		//si hay que devolver en tarjeta practicamente lo mismo del importe, puede haber fallo de redondeo, en cuyo caso me quedo con el importe
+		if(tarjeta<0 && saldoTarjetaResto>=0 && Auxiliar.incrementoRelevante(-tarjeta,saldoTarjetaResto,0.005)) tarjeta=Math.max(tarjeta,-saldoTarjetaResto);		
+		
+		if(importe.doubleValue()>0 && entreg_met_doc.doubleValue()>=importe.doubleValue() || importe.doubleValue()<0.0 && saldoTarjetaResto<=0.0) tarjeta=0.0;
+		
+		dma.printRule("Existe importe pendiente "+actualizarImporte +" old tarj "+oldValueAnticipoTarjeta+ " new  "+tarjeta);		
+		if(actualizarImporte){// && Auxiliar.incrementoRelevante(oldValueAnticipoTarjeta,tarjeta,0.005)){. No debo cortar la propagacion del dato corregido, para corregir error redondeo
+			if(tarjeta!=0.0){	
+				dma.printRule("Debe modificarse tarjeta");		
+				if(anticipoOtro.getIdo()==0){				
+					dma.printRule("CREANDO ANTICIPO TARJETA "+(importe-entreg_met_doc));
+					anticipoOtro= dma.creaIndividualOfClass("COBRO_ANTICIPO");		
+					dma.addValue(idoDoc,idtoDoc,"cobro_anticipo", new ObjectValue(anticipoOtro));
+					dma.setValue(anticipoOtro,"medio_de_pago",new ObjectValue(idoTarj,idtoTarj));
+					dma.setValue(anticipoOtro,"fecha",new TimeValue(fechaDoc.longValue()));//es necesario si el ticket estaba incompleto, que no cuente por hoy					
+					dma.setValue(anticipoOtro,"importe",new DoubleValue(Auxiliar.redondea(tarjeta,2)));					
+				}else{
+					dma.printRule("ACTUALIZANDO ANTICIPO TARJETA "+tarjeta);					
+					dma.setValue(anticipoOtro,"importe",new DoubleValue(Auxiliar.redondea(tarjeta,2)));	
+				}							
+			}else{
+				if(anticipoOtro.getIdo()!=0){
+					dma.printRule("ELIMINANDO ANTICIPO TARJETA");
+					dma.deleteObject(anticipoOtro);
+				}
+			}
+		}
+		newAnticipado=tarjeta; //lo computo auqnue no haya sido modificado
+	}	
+	
+	double oldValueAnticipoMetalico= anticipoMetalico.getIdo()==0 ?0.0:dma.getDoubleValue(anticipoMetalico,"importe",true);
+	double metalico=Math.min(importe,entreg_met_doc);
+
+	//pagable es lo que resta por pagar despues de lo ya pagado con tarjeta
+	double pagableMetalico=importe-newAnticipado;
+	if(pagableMetalico*metalico<=0.0) metalico=0.0;
+		
+	if( metalico!=0.0 && Math.abs(pagableMetalico)<Math.abs(metalico)) metalico=pagableMetalico;		//mayor o igual a cero, igual a cero es cuando pagable es cero
+
+	//y no puedo abonar mas de lo cargado en otros ticket. Ademas si practicamente el sado devolvible coincide con el total, me quedo con el total para evitar problemas de redondeo
+	if(metalico<0.0 && saldoMetalicoResto>=0 && Auxiliar.incrementoRelevante(-metalico,saldoTarjetaResto,0.005)) metalico=Math.max(metalico,-saldoMetalicoResto);	
+	
+	if(entreg_met_doc.doubleValue()==0.0 && importe.doubleValue()>=0.0 || importe.doubleValue()<0.0 && saldoMetalicoResto<=0.0) metalico=0.0;			
+
+	metalico=Auxiliar.redondea(metalico,2);
+	
+	dma.printRule("Existe importe pendiente " + actualizarImporte + " old Meta " + oldValueAnticipoMetalico + " new met " + metalico);
+	
+	if(actualizarImporte){// && Auxiliar.incrementoRelevante(oldValueAnticipoMetalico,metalico,0.005)){
+		if( metalico!=0.0){ 			
+			dma.printRule("Debe modificarse metalico  (pagable metalico ="+pagableMetalico + " total ant "+newAnticipado);	
+			if(anticipoMetalico.getIdo()==0 ){
+				dma.printRule("CREANDO ANTICIPO METALICO "+entreg_met_doc);
+				anticipoMetalico= dma.creaIndividualOfClass("COBRO_ANTICIPO");		
+				dma.addValue(idoDoc,idtoDoc,"cobro_anticipo", new ObjectValue(anticipoMetalico));
+				dma.setValue(anticipoMetalico,"medio_de_pago",new ObjectValue(idoMet,idtoMet));
+				dma.setValue(anticipoMetalico,"fecha",new TimeValue(fechaDoc.longValue()));//es necesario si el ticket estaba incompleto, que no cuente por hoy
+			}else{
+				dma.printRule("ACTUALIZANDO ANTICIPO METALICO "+metalico);						
+			}		
+			dma.setValue(anticipoMetalico,"entregado_metálico",new DoubleValue(entreg_met_doc));
+			dma.setValue(anticipoMetalico,"importe",new DoubleValue(metalico));
+		}else{
+		//elimino cobro metalico si:
+		// si importe es positivo, y no ha entregado metalico, esta claro no puede haber anticipo. Pero si importe es negativo y entregado es cero, puede haber anticipo de devolucion
+		// o bien es un abono pero no hay suficiente saldo positivo pagado en metalico para devolver
+			if( anticipoMetalico.getIdo()!=0){		
+				dma.deleteObject(anticipoMetalico);
+				dma.printRule("ELIMINANDO ANTICIPO METALICO");	
+			}
+		}
+	}
+			
+								
+	//fecha ultima venta de delegacion para evitar fraude cambio de fecha pc
+	dma.setValue(idoDel,idtoDel,"fecha_última_venta",new TimeValue(fechaDoc.longValue()));
+end
+
+
+/*
+// Para la versión 2.0 debido a problemas con el borrado de ciclos.
+rule "SI SE ELIMINA EL DOCUMENTO DE ACTIVACIÓN DE UNA TARJETA REGALO, SE ELIMINA LA TARJETA"
+	agenda-group "rules"
+	salience 150
+	when
+	    	
+	    Individual(idoDoc:IDO, estado:STATE==Constants.INDIVIDUAL_STATE_DELETED||==Constants.INDIVIDUAL_STATE_PREDELETED)
+	    ObjValue(IDO==idoDoc, idtoDoc:IDTO, PROPNAME=="línea", idoLinea:IDOVALUE!=null, idtoLinea:VALUECLS, objLinea:OBJECTVALUE)    	    
+	    eval( dma.preload(idoLinea, idtoLinea) )
+	    ObjValue(IDO==idoLinea, PROPNAME=="tarjeta", idoTarjeta:IDOVALUE, objTarjeta:OBJECTVALUE)
+	    	    
+	    ObjValue(IDO==idoTarjeta, idtoTarjeta:IDTO, CLASSNAME=="CRÉDITO_TARJETA") 
+	    DatValue(IDO==idoTarjeta, PROPNAME=="saldo_máximo", saldoMax:DOUBLEVALUE!=null)
+	    DatValue(IDO==idoTarjeta, PROPNAME=="saldo", DOUBLEVALUE==saldoMax)
+	    ObjValue(IDO==idoTarjeta, PROPNAME=="documento_activación", IDOVALUE==idoDoc, objDoc:OBJECTVALUE)
+ 
+	then
+		dma.printRule("\n [TARJETAS REGALO] SI SE ELIMINA EL DOCUMENTO DE ACTIVACIÓN DE UNA TARJETA REGALO, SE ELIMINA LA TARJETA");
+		//dma.delValue(idoTarjeta, idtoTarjeta, "documento_activación", objDoc);
+		//dma.delValue(idoLinea, idtoLinea, "tarjeta", objTarjeta);
+		dma.delValue(idoDoc, idtoDoc, "línea", objLinea);
+		dma.deleteObject(idoLinea, idtoLinea);	
+		dma.deleteObject(idoTarjeta, idtoTarjeta);	
+end
+*/
+
+
+
+rule "TICKETS: NO ABRIR CAJA SI NO SE PAGA EN METALICO"
+agenda-group "rules" when 
+	FactHierarchy(idtoTicket:IDTO, CLASSSUP=="TICKET")
+	Lock(IDTO==idtoTicket, idoTicket:IDO, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	DatValue(IDO==idoTicket, PROPNAME=="entregado_metálico",entrMetalico:DOUBLEVALUE!=null)
+	DatValue(IDO==idoTicket, PROPNAME=="devuelto_metálico",devMetalico:DOUBLEVALUE!=null)
+	Model(reportIdto:IDTO, PROPNAME=="targetClass",VALUECLS==idtoTicket,OP==Constants.OP_INTERSECTION)
+	Model(IDTO==reportIdto, PROPNAME=="impresión_directa", DEFAULTVALUE=="true", OP=="DEFVAL")
+	Fact(reportIdo:IDO, IDTO==reportIdto, PROPNAME=="rdn", VALUE!=null)
+then
+	dma.printRule("=================TICKETS: ABRIR CAJA SI SE PAGA EN METALICO idoTicket:"+idoTicket+" idtoTicket:"+idtoTicket+" idoReport:"+reportIdo+" idtoReport:"+reportIdto);
+	boolean printsequence=entrMetalico.doubleValue()!=0.0 || devMetalico.doubleValue()!=0.0;
+	dma.printRule(" secuencia "+printsequence);
+	dma.setValue(reportIdo,reportIdto,Constants.PROP_REPORT_EXEC_PRINTSEQUENCE, new BooleanValue(printsequence));
+end
+
+rule "TICKETS: MOSTRAR DETALLES ULTIMO TICKET VENDIDO"
+agenda-group "bddrules" when 
+	FactHierarchy(idtoTicket:IDTO, CLASSSUP=="TICKET")
+	Individual(IDTO==idtoTicket, idoTicket:IDO, LEVEL==Constants.LEVEL_PROTOTYPE)
+	//Lock(IDTO==idtoTicket, idoTicket:IDO, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	DatValue(IDO==idoTicket, PROPNAME=="entregado_metálico",metalico:DOUBLEVALUE!=null)
+	DatValue(IDO==idoTicket, PROPNAME=="devuelto_metálico",devuelto:DOUBLEVALUE!=null)
+	DatValue(IDO==idoTicket, PROPNAME=="importe",importe:DOUBLEVALUE!=null)
+then
+	System.err.println("=================TICKETS: MOSTRAR DETALLES ULTIMO TICKET VENDIDO idoTicket:"+idoTicket+" idtoTicket:"+idtoTicket+" entregado_metalico:"+metalico+" devuelto_metalico:"+devuelto+" importe:"+importe);
+	dma.showNoticeMessage("Importe: "+importe+" Entregado: "+metalico+" Devuelto: "+devuelto,true);
+end
+
+rule "TICKET: IMPORTES FUNCION METÁLICO"
+salience -100
+agenda-group "rules" when 
+	
+
+	FactHierarchy(cls:CLASSSUP=="TICKET_VENTA",idtoDoc:IDTO)	
+	Individual(IDTO==idtoDoc,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	entregadoMetalico:DoubleChanged() from accumulate (	DatValue(IDO==idoDoc, PROPNAME=="entregado_metálico",e:DOUBLEVALUE!=null,ch:hasCHANGED),
+                              							init( 	DoubleChanged res = new DoubleChanged(0.0,false);),
+                              							action( res=new DoubleChanged(e,ch);),                            
+                              						result(	res))
+                              			
+	//ObjValue(IDO==idoDoc, PROPNAME=="medio_de_pago",idoMedioPago:IDOVALUE!=null)
+	//DatValue(IDO==idoMedioPago, PROPNAME=="rdn",VALOR=="Metálico")
+	DatValue(IDO==idoDoc, PROPNAME=="importe",importe:DOUBLEVALUE!=null,chi:hasCHANGED)
+	
+	devuelto:Double() from accumulate((and 	ObjValue(IDO==idoDoc, PROPNAME=="cobro_anticipo",idoCobroAnt:IDOVALUE!=null)    										
+    										DatValue(IDO==idoCobroAnt,PROPNAME=="devuelto_metálico",i:DOUBLEVALUE!=null)
+    										),
+    									init(Double res=new Double(0);),action(res+=i;),result(res))   
+    eval(entregadoMetalico.isChanged()||chi)
+then
+	dma.printRule("=================TICKET: IMPORTES FUNCION METÁLICO "+devuelto);
+	dma.setValue(idoDoc,idtoDoc,"devuelto_metálico",new DoubleValue(Auxiliar.redondea(devuelto,2)));
+	if(entregadoMetalico.getValor().doubleValue()==0.0 && !entregadoMetalico.isChanged()&&chi&&importe.doubleValue()<0)
+		dma.setValue(idoDoc,idtoDoc,"entregado_metálico",new DoubleValue(0.0));
+end
+
+
+rule "TARJETA REGALO: COMPATIBILIDAD PRODUCTO FINANCIERO" 
+ agenda-group "rules" when 
+  	
+	DatValue(idoCredito:IDO,idCredito:ID,idtoCredito:IDTO,CLASSNAME=="CRÉDITO_TARJETA",PROPNAME=="rdn",rdnCredito:VALOR!=null)
+    Individual(ID==idCredito,STATE==Constants.INDIVIDUAL_STATE_READY)    		
+    ObjValue(PROPNAME=="línea",idoLinea:IDOVALUE)																				    										    														    													    						
+	ObjValue(IDO==idoLinea,PROPNAME=="tarjeta", IDOVALUE==idoCredito)
+	ObjValue(ID==idCredito,PROPNAME=="producto", idoProducto:IDOVALUE!=null)
+	ObjValue(IDO==idoLinea,PROPNAME=="producto",IDOVALUE!=null&&!=idoProducto)
+	DatValue(IDO==idoProducto,PROPNAME=="rdn", rdnProd:VALOR!=null)
+then
+	dma.printRule("=====TARJETA REGALO: COMPATIBILIDAD PRODUCTO FINANCIERO");	
+			 
+	throw new OperationNotPermitedException("Producto y tarjeta incompatible, la tarjeta seleccionada requiere utilizar el producto "+rdnProd);
+end
+
+
+rule "CONDICIONES DE TICKET"
+salience 100
+agenda-group "rules" when
+	Lock(CLASSNAME=="TICKET_VENTA",idoDoc:IDO<0,idtoDoc:IDTO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="mi_empresa",idoMiEmp:IDOVALUE!=null)
+	
+	condicion:TreeMap(size>0) from accumulate((and 	ObjValue(IDO==idoDoc, PROPNAME=="desglose_iva", idoDesg:IDOVALUE!=null)
+     											ObjValue(IDO==idoDesg,PROPNAME=="mi_empresa" ,idoEmpresa:IDOVALUE!=null)
+     											ObjValue(CLASSNAME=="VALOR_POR_DEFECTO",idoVD:IDO,PROPNAME=="mi_empresa",IDOVALUE==idoEmpresa)
+     											ObjValue(IDO==idoVD,PROPNAME=="dominio",idoDom:IDOVALUE)
+												DatValue(IDO==idoDom,PROPNAME=="rdn",VALOR=="TICKET_VENTA")
+												ObjValue(IDO==idoVD,PROPNAME=="propiedad",idoProp:IDOVALUE)
+												DatValue(IDO==idoProp,PROPNAME=="rdn",VALOR=="observaciones_a_imprimir")
+												DatValue(IDO==idoVD,PROPNAME=="valor",v:VALOR!=null))
+												init(TreeMap res=new TreeMap();),
+												action(
+														if(idoEmpresa!=idoMiEmp) res.put("1",v);
+														else res.put("2",v);
+													),
+												result(res))
+then
+ 	dma.printRule("=========== CONDICIONES DE TICKET "+condicion.size());
+	String content=(String)condicion.firstEntry().getValue();
+	dma.setStringValue(idoDoc,idtoDoc,"observaciones_a_imprimir",content);
+end 
+
+rule "FRAUDE FECHA"     
+salience 200 //mas prioridad que "ENTREGADO METALICO TICKET: DEPENDENCIA ANTICIPOS" que pone la fecha a delegacion
+ agenda-group "rules" when 
+ 	ddm:DocDataModel(USER!="admin")
+ 	Individual(CLASSNAME=="TICKET_VENTA",idoDoc:IDO<0,idtoDoc:IDTO)
+	DatValue(IDO==idoDoc, PROPNAME=="fecha",fechaDoc:QMIN!=null)
+	ObjValue(IDO==idoDoc, PROPNAME=="delegación",idoDel:IDOVALUE!=null,idtoDel:VALUECLS)
+	
+	then
+	dma.printRule("=========FRAUDE FECHA");
+	TimeValue ultima=(TimeValue)dma.getValue(idoDel,idtoDel,"fecha_última_venta");
+	if(ultima!=null){
+		long ultTime=ultima.getRelativeSecondsMin();
+		if(ultTime>fechaDoc.longValue())	throw new OperationNotPermitedException("La fecha del ticket es incorrecta");
+	}
+end

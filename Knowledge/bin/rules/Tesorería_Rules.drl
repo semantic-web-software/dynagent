@@ -1,0 +1,2623 @@
+//created on: 01-dic-2008
+package dynagent.ruleengine.src.ruler.ERPrules
+
+import dynagent.ruleengine.src.ruler.*;
+import dynagent.ruleengine.src.ruler.ERPrules.datarules.*;
+import java.util.*;
+import java.util.regex.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.exceptions.*;
+import dynagent.common.Constants;
+import org.drools.WorkingMemory;
+import java.text.*;
+import dynagent.common.basicobjects.*;
+
+global DataModelAdapter dma;
+
+function  Date calculaFechaVencimientos(DataModelAdapter dma, Date fechaFactura,ObjectValue formaPago,Double retrocesoDiaPago) {
+//		esta función servirá temporalmente tanto para el modelo de FORMA_PAGO ANTIGUO como para el nuevo.
+						
+						//, mientras que en el modelo nuevo es el nombre de la clase 
+						if(dma==null){
+							System.err.println("ERROR DDM NULL:"+dma);							
+						}
+						
+						String tipoAplazamiento=dma.getClassName(formaPago.getValueCls());
+											
+						Date fechaRes=null;
+						if(tipoAplazamiento.equals("FECHA_PAGO")){															
+							Calendar fechaFacturaCalendario= new GregorianCalendar();
+							fechaFacturaCalendario.setTimeInMillis(fechaFactura.getTime());
+							Calendar fechaVencimientoCalendario= new GregorianCalendar();
+							fechaVencimientoCalendario.setTimeInMillis(fechaFactura.getTime());
+								
+							DataValue prdias=(DataValue)dma.getValue(formaPago.getValue(),formaPago.getValueCls(),"día");
+							Double dias=prdias.getNumericValue();
+							
+							DataValue prMeses=(DataValue)dma.getValue(formaPago.getValue(),formaPago.getValueCls(),"mes");
+							Double meses=prMeses.getNumericValue()-1;
+							
+							fechaVencimientoCalendario.set(Calendar.DATE, dias.intValue());
+							fechaVencimientoCalendario.set(Calendar.MONTH, meses.intValue());
+							//si la fecha a cobrar es más antigua que hace 28 dias considero se trata del año que viene
+									
+							if(fechaVencimientoCalendario.getTimeInMillis()/Constants.TIMEMILLIS<(fechaFacturaCalendario.getTimeInMillis()/Constants.TIMEMILLIS-2419200)){									
+								fechaVencimientoCalendario.add(Calendar.YEAR, 1);
+							}
+							fechaRes=fechaVencimientoCalendario.getTime();
+							
+						}						
+						else if(tipoAplazamiento.equals("PAGO_ADELANTADO")||tipoAplazamiento.equals("A_LA_ENTREGA")){
+							Calendar fechaVencimiento = new GregorianCalendar();
+							fechaVencimiento.setTimeInMillis(fechaFactura.getTime());
+							fechaRes=fechaVencimiento.getTime();
+							SimpleDateFormat sd=new SimpleDateFormat();
+							dma.printRule("formateado a la entrega "+sd.format(fechaRes));
+						}
+						else if(tipoAplazamiento.equals("DÍA_PAGO")){
+							Double meses_relativos_factura=((DataValue)dma.getValue(formaPago.getValue(),formaPago.getValueCls(),"meses_relativos_factura")).getNumericValue();
+							int meses=meses_relativos_factura.intValue();
+							Double diaPago=((DataValue)dma.getValue(formaPago.getValue(),formaPago.getValueCls(),"día")).getNumericValue();
+							int dia=diaPago.intValue();
+							//en el caso de que meses relativo sea 0 y el día de la factura sea mayor que el día de pago, se paga el mes siguiente
+							//en el resto de los casos se paga en el mes=mes actual+(meses_relativos_factura)
+							
+							int diaFactura=fechaFactura.getDate();
+							dma.printRule("CALCULO DIA PAGO retroceso:"+retrocesoDiaPago+" dia factura:"+diaFactura+" dia pago:"+dia+", meses:"+meses);
+							if(diaFactura>dia&&diaFactura-dia>retrocesoDiaPago.intValue()){
+								dma.printRule("incremento meses");
+								meses++;
+							}
+							Calendar fechaVencimiento = new GregorianCalendar();
+							fechaVencimiento.setTimeInMillis(fechaFactura.getTime());
+							fechaVencimiento.add(Calendar.MONTH,meses);					
+							//modificamos el dia por el dia de pago
+							fechaVencimiento.set(Calendar.DATE,dia);
+							fechaRes=fechaVencimiento.getTime();
+						}
+						
+						else if(tipoAplazamiento.equals("APLAZAMIENTO")){
+							Double dias=((DataValue)dma.getValue(formaPago.getValue(),formaPago.getValueCls(),"número_días")).getNumericValue();
+							Double meses=((DataValue)dma.getValue(formaPago.getValue(),formaPago.getValueCls(),"número_meses")).getNumericValue();
+							Calendar fechaVencimiento = new GregorianCalendar();
+							fechaVencimiento.setTimeInMillis(fechaFactura.getTime());
+							fechaVencimiento.add(Calendar.DATE,dias.intValue());
+							fechaVencimiento.add(Calendar.MONTH,meses.intValue());					
+							fechaRes=fechaVencimiento.getTime();
+						}
+						else{
+							dma.printRule("\n WARNING: CASO NO CONTEMPLADO EN METODO calculaFechaVencimientos PARA TIPOAPLAZAMIENTO="+tipoAplazamiento);
+						}
+						
+						System.err.println("");
+						System.err.println("FECHAS VENCIMIENTOS CALCULADAS PARA LA FORMA DE PAGO IDFORMAPAGO="+formaPago);
+						return fechaRes;
+					}
+
+	 function  void calculaVencimientosporformadepago(DataModelAdapter dma, String tipeSujeto, ObjectValue sujeto,Domain domFactura, String rdnFormaPago,ObjectValue formapago, Domain legacyDomVenc,double importeLibre,Date fechaFactura,Double retrocesoDiaPago) { 
+						String ClaseVencimiento=null;						
+					 	if(tipeSujeto.equals("cliente")){
+					 		ClaseVencimiento="VENCIMIENTO_DE_COBRO";
+					 	}
+					 	else if(tipeSujeto.equals("proveedor")){
+					 		ClaseVencimiento="VENCIMIENTO_DE_PAGO";
+					 	}
+					 	System.err.println("funcion calculaVencimientosporformadepago  factura="+domFactura+" fechaFactura:"+fechaFactura);
+						System.err.println(".....tiposujeto="+tipeSujeto+"   tipovencimientos="+ClaseVencimiento);
+						
+						//dma.delValues(domFactura,"vencimientos");//borramos los vencimientos que pudiera tener pq se le van a calcular los nuevos						
+						//dma.printRule("..debug despues borrrar vencimientos (posibles) previos: "+dma.getValues(domFactura,"vencimientos"));
+					 	
+					 	ArrayList<Domain> asiganciónVencimientosConPagoPorAdelantado=new ArrayList<Domain>(); 
+					 	Value medioPagoEnPagoPorAdelantado=null;
+						
+						int nFormasPago=1;
+						int nFormasPagoProcesadas=0;
+						
+						int i=1;
+						  	
+						Date fechaVencimiento=calculaFechaVencimientos(dma,fechaFactura,formapago,retrocesoDiaPago); 
+						 	
+						//vamos a asingar a los (n-1) primeros vencimientos importes enteros y al vencimiento n el resto de decimales hasta completar el importeTotal a pagar con esa forma de pago.
+						
+						//Double deudaVencimientoSinDecimales=Math.floor(importeLibre);
+						//Double deudaVencimiento=null;
+					 	
+						//deudaVencimiento=deudaVencimientoSinDecimales;
+						 	  	
+					 	nFormasPagoProcesadas++;
+						 	  						 	
+						Domain domVencimiento=legacyDomVenc;
+						if(legacyDomVenc==null){
+							domVencimiento=dma.creaIndividualOfClass(ClaseVencimiento);
+							dma.addValue(domFactura,"vencimientos",new ObjectValue(domVencimiento));
+						}
+						//si la factura tiene valor en miEmpresa hay que ponerselo al vencimiento
+						if(dma.getMetaData().hasProperty(ClaseVencimiento,"mi_empresa")){
+						 	Value valMiEmpresa=dma.getValue(domFactura,"mi_empresa");
+						 	if(valMiEmpresa!=null){
+						 		dma.setValue(domVencimiento,"mi_empresa",valMiEmpresa);
+						 	}
+						}
+								
+						Value mediopago=dma.getValue(formapago.getValue(),formapago.getValueCls(), "medio_de_pago");
+						if(mediopago!=null){
+							 dma.setValue(domVencimiento, "medio_de_pago", mediopago);
+						}
+						//el concepto a poner al vencimiento es "nombreClaseFormaPago"+conceptoFormaPago (opcional)+"cuenta_bancariaFormaPago(opcional)
+						String conceptoVencimiento=null;
+								 
+						StringValue conceptoFormaPago=(StringValue)dma.getValue(formapago.getValue(),formapago.getValueCls(), "concepto");
+						if(conceptoFormaPago!=null){
+						 	dma.printRule(" concepto no nulo");
+							conceptoVencimiento+=", "+conceptoFormaPago.getValue_s();
+						}else{
+						 	dma.printRule(" concepto nulo");
+							ObjectValue cuentaBancariaFormaPago=(ObjectValue)dma.getValue(formapago.getValue(),formapago.getValueCls(), "cuenta_bancaria");
+							StringValue medioLabel=(StringValue)dma.getValue(((ObjectValue)mediopago).getValue(),((ObjectValue)mediopago).getValueCls(), "rdn");
+									
+							SimpleDateFormat sdf=new SimpleDateFormat("dd/MM/yy");
+							conceptoVencimiento=medioLabel.getValue()+","+sdf.format(fechaVencimiento);
+									
+							if(cuentaBancariaFormaPago!=null){
+								dma.printRule("cuenta 2");
+								String cuenta=null;
+								Integer ibanProp=dma.getIdProperty("IBAN");
+								StringValue tmp=null;
+								if(ibanProp!=null){
+									tmp=(StringValue)dma.getValue(cuentaBancariaFormaPago.getValue(), cuentaBancariaFormaPago.getValueCls(),"IBAN");
+									cuenta=tmp==null?null:tmp.getValue_s();
+								}
+										
+								if(ibanProp==null||cuenta==null||cuenta.length()==0){
+									tmp=(StringValue)dma.getValue(cuentaBancariaFormaPago.getValue(), cuentaBancariaFormaPago.getValueCls(),"entidad");										
+									cuenta=tmp==null?"":tmp.getValue_s();
+									tmp=(StringValue)dma.getValue(cuentaBancariaFormaPago.getValue(), cuentaBancariaFormaPago.getValueCls(),"oficina");
+									cuenta+=tmp==null?"":"-"+tmp.getValue_s();
+									tmp=(StringValue)dma.getValue(cuentaBancariaFormaPago.getValue(), cuentaBancariaFormaPago.getValueCls(),"dígito_de_control");
+									cuenta+=tmp==null?"":"-"+tmp.getValue_s();
+									tmp=(StringValue)dma.getValue(cuentaBancariaFormaPago.getValue(), cuentaBancariaFormaPago.getValueCls(),"número_cuenta");
+									cuenta+=tmp==null?"":"-"+tmp.getValue_s();											
+								}
+								conceptoVencimiento+=", "+cuenta;
+							}								 
+						}
+								 
+						dma.setValue(domVencimiento, "concepto", new StringValue(conceptoVencimiento));
+								 
+						dma.setValue(domVencimiento,tipeSujeto,sujeto);
+						dma.setValue(domVencimiento,"deuda",new DoubleValue(importeLibre));
+						dma.setValue(domVencimiento,"importe",new DoubleValue(importeLibre));
+
+						dma.setValue(domVencimiento,"fecha",new TimeValue(fechaVencimiento));
+						dma.setValue(domVencimiento,"número_vencimiento",new IntValue(new Integer(i)));
+						dma.printRule("DEBUG FORMAPAGO: "+rdnFormaPago+" "+formapago.getValue()+"  importeTotalFormaPago:"+importeLibre);
+						//debe llamarse como la forma de pago, y debe contener # para que no actue la regla RDN CLASES ESTRUCTURALES
+						dma.setValue(domVencimiento,"rdn",new StringValue(rdnFormaPago+"#&id"+domVencimiento.getIdo()+"&"));
+							 	
+						boolean pagoAdelantado=false;
+						Integer idPropTipoAplazamiento=dma.getIdProperty("tipo_aplazamiento");//modelo 1.1 y anterior tiene esta propiedad
+							 	
+						if(idPropTipoAplazamiento!=null&&dma.getMetaData().hasProperty(formapago.getValueCls(),idPropTipoAplazamiento)){
+						 	ObjectValue vtipoAplazamiento=(ObjectValue)dma.getValue(formapago.getValue(),formapago.getValueCls(),"tipo_aplazamiento");
+						 	String tipoAplazamiento=dma.getValue(vtipoAplazamiento.getValue(),vtipoAplazamiento.getValueCls(),"rdn").getValue_s();
+						 	pagoAdelantado=tipoAplazamiento!=null&&tipoAplazamiento.equals("Pago_por_adelantado");
+						}
+						else{//modelo nuevo, es pago por adelantado si la forma de pago es de la clase "PAGO_ADELANTADO"
+							 String tipoPago=dma.getDDM().getClassName(formapago.getValueCls());
+							 pagoAdelantado=tipoPago.equals("PAGO_ADELANTADO")||dma.getDDM().isSpecialized(tipoPago,"PAGO_ADELANTADO");
+						}							 	
+					}
+
+
+function void repartoEnVencimientosPendientes(DataModelAdapter dma,String typevencimiento,String typeasignacion,Domain domCobro,String propiedadSujeto,Value sujeto,Double importe){
+	dma.printRule("\n\n======funcion repartoEnVencimientosPendientes: importe:"+importe+"  typevencimiento:"+typevencimiento+"  sujeto:"+sujeto);
+ 	
+ 	//SE BUSCAN TODOS LOS VENCIMIENTOS DE ESE CLIENTE Y QUE NO ESTÁN PAGADOS ( DEUDA!=0)
+ 	HashMap<String, Value> values = new HashMap<String, Value>();	
+	values.put(propiedadSujeto,sujeto);
+	HashMap<String, Value> excluvalues = new HashMap<String, Value>();
+	excluvalues.put("deuda",new DoubleValue(0.0));
+	dma.printRule("...111 se buscan los vencimientos de cliente "+sujeto+" sin pagar ");
+
+	instance instanceFilter=dma.buildInstanceWith(typevencimiento,values,null,excluvalues,null);
+	ArrayList <ResultQuery>vencimientos=dma.serverGetValuesWhichSatisfaceFilter(instanceFilter,"fecha#deuda#importe");
+	LinkedList<Value> listVenc = new LinkedList<Value>();
+	//crear una lista de fechas y de deudas
+	for(int i = 0 ; i < vencimientos.size();i++ )
+	{
+		listVenc.add(new ObjectValue(vencimientos.get(i).getIdo(),vencimientos.get(i).getIDTO()));
+	}
+		repartoCobroEnVencimientos( dma, typeasignacion, domCobro, importe, listVenc);
+}
+
+
+function void repartoCobroEnVencimientos(DataModelAdapter dma,String typeasignacion,Domain domCobro,Double importe,LinkedList listVenc){
+	dma.printRule("\n\n...funcion repartoCobroEnVencimientos: importe:"+importe+" Cobro:"+domCobro.getIdo()+"\n.............listVenc:"+listVenc);
+	LinkedList<Long> listFechasVenc = new LinkedList<Long>();
+	LinkedList<Double> listDeudas = new LinkedList<Double>();
+	LinkedList<Double> listimportes = new LinkedList<Double>();
+	
+	//crear una lista de fechas y de deudas
+	for(int i = 0 ; i < listVenc.size();i++ )
+	{
+		ObjectValue ovvencimiento=(ObjectValue)listVenc.get(i);
+		Domain domVenc=new Domain(ovvencimiento);
+		TimeValue fechaVencemiento = (TimeValue)dma.getValue(domVenc,"fecha");
+		listFechasVenc.add(i,fechaVencemiento.getRelativeSecondsMin());		
+		DoubleValue deudaVencemiento = (DoubleValue)dma.getValue(domVenc,"deuda");
+		listDeudas.add(i,deudaVencemiento.getValueMax());
+		DoubleValue importeVencemiento = (DoubleValue)dma.getValue(domVenc,"importe");
+		listimportes.add(i,importeVencemiento.getValueMax());
+	}
+	dma.printRule("lista fechas: "+listFechasVenc);
+	dma.printRule("lista importes: "+listDeudas );
+	dma.printRule("lista deudas: "+listimportes);
+	
+	while(listDeudas.size()>0) //Tiene que crear por todos una asignación
+	{
+		int posmin = Auxiliar.getMinPosition(listFechasVenc);
+		dma.printRule("posmin = "+posmin );
+		if(posmin == -1)
+			break;
+		if(listDeudas.get(posmin)==0)
+		{
+			dma.printRule("DEUDA DEL VENC = 0");
+			listFechasVenc.remove(posmin);
+			listDeudas.remove(posmin);
+			listimportes.remove(posmin);
+			listVenc.remove(posmin);
+		}
+		else
+		{
+			Domain asig_venc =  dma.creaIndividualOfClass(typeasignacion);
+			
+			dma.addValue(domCobro,"vencimientos_asignados",new ObjectValue(asig_venc));
+			dma.setValue(asig_venc,"vencimiento",(ObjectValue)listVenc.get(posmin));
+			
+			if(importe!=null){
+				Double deudaActual = listDeudas.get(posmin);
+				Double pago ;
+				//dma.printRule("_______ IMPORTE COBRO :"+importe);
+				//dma.printRule("_______ DEUDA ACTUAL :"+deudaActual);
+				if(importe <  deudaActual)
+				{		
+					pago = importe;
+					importe = new Double(0);
+				}
+				
+				else{
+					importe =importe-deudaActual;
+					pago = deudaActual;
+				}
+				dma.printRule("importe_asignado="+pago);		
+				dma.setValue(asig_venc,"importe_asignado",new DoubleValue(Auxiliar.redondea(pago,2)));
+			}
+			listFechasVenc.remove(posmin);
+			listDeudas.remove(posmin);
+			listimportes.remove(posmin);
+			listVenc.remove(posmin);
+			
+		}
+	}
+	
+	dma.printRule("\n ....FIN funcion repartoCobroEnVencimientos"); 
+}
+
+
+//===============================================================================================
+//======================================TESORERÍA================================================
+//===============================================================================================
+//GROUPNAME
+//
+
+
+
+
+//TODO-CAMBIOFORMAPAGO
+
+
+
+//3-Los días_aplazamiento asignado tienen que cumplir el formato día1, día2, día3, ejemplos:
+//Días_aplazamiento=30
+//Días_aplazamiento=30, 60, 90
+//Si no es así lanzar excepción mostrando el formato a seguir.
+
+//Expresión regular
+
+//4. Las fechas asignadas tienen que ser fechas reales, esto es: cada instancia de DÍA_PAGO tiene que tener como valor en día un número entre 1 y 31 y la propiedad mes con valor
+//entre 1-12, si no es así lanzar excepción.
+rule "COMPROBACIÓN DÍA PAGO CORRECTO"
+ salience 100
+ agenda-group "rules" when 
+  	
+	Lock(CLASSNAME=="DÍA_PAGO"||=="FECHA_PAGO",STATE==Constants.INDIVIDUAL_STATE_LOCK,idDiaPago:ID)  	
+	DatValue(ID==idDiaPago,PROPNAME=="mes",mes:DOUBLEVALUE!=null)
+	DatValue(ID==idDiaPago,PROPNAME=="día",dia:DOUBLEVALUE!=null)
+then
+ 	dma.printRule("\n\n=================>>DISPARO RULE COMPROBACIÓN DÍA PAGO CORRECTO");
+ 	java.util.GregorianCalendar gcDate = new java.util.GregorianCalendar();
+	//gcDate.clear();
+	gcDate.setLenient(false);
+	
+	int diaActualAnual=gcDate.get(Calendar.DAY_OF_YEAR);	
+	gcDate.set(gcDate.get(Calendar.YEAR), mes.intValue()-1, dia.intValue());
+	int diaPropuestoAnual=gcDate.get(Calendar.DAY_OF_YEAR);
+	
+	if(diaPropuestoAnual<diaActualAnual){//entonces se trata de un pago para dentro de un año
+		dma.printRule("PAGO AÑO QUE VIENE");
+		gcDate.set(gcDate.get(Calendar.YEAR)+1, mes.intValue()-1, dia.intValue());
+	}
+		
+	//Intentamos validar la fecha para que sea una fecha correcta,
+	//Para ello creamos una fecha con un año no bisisesto, y vemos si se lanza una excepcion 
+	//que nos avise si es una fecha incorrecta
+		try {
+			gcDate.get(Calendar.DATE);
+		} catch (Exception e) {
+			throw new OperationNotPermitedException("Hay que formar una fecha correcta");
+			//La fecha no es correcta
+		}
+ end
+
+rule "NO SE PUEDEN COBRAR VENCIMIENTOS SIN DEUDA"  
+agenda-group "rules" when
+    
+    ObjValue(claseTask:CLASSNAME=="Cobrar_Vencimientos"||=="Pagar_Vencimientos"||=="Cobrar_Documentos"||=="Pagar_Facturas", idoUTask:IDO ,idtoUTask:IDTO,PROPNAME=="estadoRealizacion",idoEstado:IDOVALUE)
+    DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_PREVALIDANDO)
+    
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",typevencimiento:RANGENAME,idoVenc:IDOVALUE!=null,idtoVenc:VALUECLS)
+    
+    forall( ObjValue(CLASSNAME=="Cobrar_Documentos", IDO==idoUTask) 
+    		FactHierarchy(CLASSSUP=="FACTURA",IDTO==idtoVenc))
+    
+    DatValue(IDO==idoVenc,PROPNAME=="deuda",DOUBLEVALUE==0)
+then 
+	dma.printRule("\n ======== NO SE PUEDEN COBRAR VENCIMIENTOS SIN DEUDA"); 
+	throw new OperationNotPermitedException("No se puede cobrar el vencimiento :"+dma.getValue(idoVenc,idtoVenc,Constants.IdPROP_RDN).getValue_s()+" porque no tiene deuda");
+end
+
+
+rule "GENERAR DEVOLUCION"  
+agenda-group "rules" when
+    
+    ObjValue(claseTask:CLASSNAME=="Generar_devolucion", idoUTask:IDO ,idtoUTask:IDTO,PROPNAME=="estadoRealizacion",idoEstado:IDOVALUE)
+    DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    
+    source:ArrayList() from collect(ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",RANGENAME=="COBRO_VENCIMIENTO"))       	
+	
+	not(ObjValue(IDO==idoUTask, PROPNAME=="targetClass",IDOVALUE!=null))
+then 
+	dma.printRule("======== GENERAR DEVOLUCION"); 
+	for(ObjValue src:((ArrayList<ObjValue>)source)){
+		
+		Domain target=dma.cloneIndividual(src.getIDOVALUE(),src.getVALUECLS(),src.getVALUECLS(),"fecha_creación#fecha#asiento");
+		LinkedList asignaciones=dma.getValues(target,"vencimientos_asignados");
+		for(ObjectValue asig:((LinkedList<ObjectValue>)asignaciones)){
+			Double importe=dma.getDoubleValue(asig,"importe_asignado",false);
+			dma.setValue(asig.getValue(),asig.getValueCls(),"importe_asignado",new DoubleValue(-importe));
+		}
+		dma.addValue( idoUTask ,idtoUTask,"targetClass",new ObjectValue(target));
+	}
+end
+
+
+rule "REPARTO AUTOMÁTICO DE PAGO/COBRO EN VENCIMIENTOS PENDIENTES DE PAGO"
+ agenda-group "rules" 
+ when 
+  	
+	//NO DEBE ACTUAR EN COBRO_ANTICIPO, SINO QUE ES EN LOS COBRO_VENCIMIENTO
+	FactHierarchy(CLASSSUP=="COBRO_VENCIMIENTO"||=="PAGO",namecls:CLASS)
+  	Lock(CLASSNAME==namecls,idCobro:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+  	ObjValue(VALOR==idCobro,PROPNAME=="targetClass", nameTask:CLASSNAME)
+	fsujeto:ObjValue(ID==idCobro,PROPNAME=="cliente"||=="proveedor",sujeto:OBJECTVALUE!=null) 
+	DatValue(ID==idCobro,idoCobro:IDO,idtoCobro:IDTO,PROPNAME=="importe",importeCobro:QMIN!=null,LEVEL==Constants.LEVEL_PROTOTYPE)// CUANDO SE ESTEN CREANDO COBROS(LEVEL PROTOTYPE)
+	//IMPORTANTE QUE NO SE DISPARE CD YA HAY VENCIMIENTOS ASIGNADOS, PARA QUE SOLO HAGA LA PROPUESTA DE PAGOS UNA UNICA VEZ AL PRINCIPIO Y CD LUEGO EL USUARIO CAMBIE LAS ASIGNACIONEs(q tb hace q cambie el importe total) no interfiera.
+	not(ObjValue(ID==idCobro,PROPNAME=="vencimientos_asignados",VALOR!=null))
+	
+then
+	dma.printRule("\n\n========= REPARTO AUTOMÁTICO DE PAGO/COBRO EN VENCIMIENTOS PENDIENTES DE PAGO: sujeto:"+sujeto+" importeCobro:"+importeCobro);
+	String typevencimiento=null;
+	String typeasignacion=null;
+	Double importeAasignar=null;
+	if(fsujeto.getCLASSNAME().equals("COBRO_VENCIMIENTO")){
+		typevencimiento="VENCIMIENTO_DE_COBRO";
+		typeasignacion="ASIGNACIÓN_VENCIMIENTO_COBRO";
+	}
+	else if(fsujeto.getCLASSNAME().equals("PAGO")){
+		typevencimiento="VENCIMIENTO_DE_PAGO";
+		typeasignacion="ASIGNACIÓN_VENCIMIENTO_PAGO";
+	}
+	if(nameTask.equals("Cobrar_pendientes")||nameTask.equals("Pagar_pendientes")){
+		importeAasignar=importeCobro;//solo en estas acciones se pasa la cantidad a proponer las asignaciones vencimientos, caso contrario se pasa nulo para que no proponga ese valor
+	
+	}
+	String propiedadSujeto=fsujeto.getPROPNAME();
+	Domain domCobro=new Domain(idoCobro,idtoCobro);
+	//se eliminan los que pudiera haber previamente
+	dma.delValues(domCobro,"vencimientos_asignados");
+	//se reparten los cobros en los vencimientos pendientes
+	repartoEnVencimientosPendientes(dma,typevencimiento,typeasignacion,domCobro,propiedadSujeto,sujeto, importeCobro);
+end 
+
+
+rule "CALCULO DEUDA DE VENCIMIENTOS"
+salience 100
+ agenda-group "rules" 
+ when 
+ 	FactHierarchy(CLASSSUP=="VENCIMIENTO",namecls:CLASS)
+ 	DatValue(CLASSNAME==namecls,idven:ID!=null,idoVenc:IDO,idtoVenc:IDTO,PROPNAME=="importe",importe:DOUBLEVALUE!=null)
+    			
+	sumaPagos:Double() 
+            	from accumulate(
+            				 (and 
+								ObjValue(ID==idven,PROPNAME=="pago_asignado",idoPagoasig:IDOVALUE!=null,idtoAsig:VALUECLS)
+								eval(dma.preload(idoPagoasig,idtoAsig))
+             					DatValue(IDO==idoPagoasig,PROPNAME=="importe_asignado",importePago:DOUBLEVALUE!=null)
+             					not((and 	ObjValue(idoFlujo:IDO,PROPNAME=="vencimientos_asignados", IDOVALUE==idoPagoasig)
+           									DatValue(IDO==idoFlujo,PROPNAME=="rdn", VALOR=="#TEMPORAL")))
+             				  ),
+                              init(Double res=new Double(0);),
+                              action(res+=importePago;),
+                              result(res)
+                              )
+then
+	dma.printRule("\n\n============================= DISPARO REGLA CALCULO DEUDA DE VENCIMIENTOS idven="+idven+" type="+namecls+"  importeVencimiento="+importe+" "+sumaPagos); 
+	
+	if(importe!=null&&sumaPagos!=null){
+		Double deudavenc=importe-sumaPagos;
+		dma.setValue(idoVenc,idtoVenc,"deuda",new DoubleValue(Auxiliar.redondea(deudavenc,2)));
+	}else{
+		dma.printRule("error importes deuda venc nulo");
+	}
+end
+
+rule "COBRO ELIMINADO ES ASIGNADO IMPORTE CERO"
+salience 100
+ no-loop true
+ agenda-group "rules" 
+ when 
+ 	FactHierarchy(idtoCobro:IDTO,CLASSSUP=="COBRO")
+	Individual(idoCobro:IDO,IDTO==idtoCobro,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+	ObjValue(IDO==idoCobro,PROPNAME=="vencimientos_asignados",idoAsig:IDOVALUE!=null,idtoAsig:VALUECLS,ovAsig:OBJECTVALUE)
+then
+	dma.printRule("============================= COBRO ELIMINADO ES ASIGNADO IMPORTE CERO"); 	
+	dma.setValue(idoAsig,idtoAsig,"importe_asignado",new DoubleValue(0.0));
+	dma.delValue(idoCobro,idtoCobro,"vencimientos_asignados",ovAsig);
+	dma.deleteObject(idoAsig,idtoAsig);
+end
+
+rule "PRECARGA VENCIMIENTOS"
+salience 100
+ no-loop true
+ agenda-group "rules" 
+ when 
+ 	FactHierarchy(claseVenc:CLASS,CLASSSUP=="VENCIMIENTO")
+	Individual(CLASSNAME==claseVenc,idoV:IDO>0,idtoV:IDTO,idven:ID!=null,state:STATE==Constants.INDIVIDUAL_STATE_DELETED)
+ 	//DatValue(ID==idven,PROPNAME=="importe",importe:DOUBLEVALUE!=null)
+	/*pagos:HashSet(size>0) 
+            	from accumulate(
+            				 (and 
+								ObjValue(ID==idven,PROPNAME=="pago_asignado",idpagoasig:VALOR!=null,pagoasig:OBJECTVALUE)
+             					not(Individual(ID==idpagoasig))
+             				  ),
+                             init(
+                             	HashSet<IDIndividual> pagos2=new HashSet<IDIndividual>();
+                             ),
+                             action(
+                             	pagos2.add(pagoasig);
+                             )
+                             ,result(pagos2))*/
+                             
+then
+	dma.printRule("\n\n=============================PRECARGA VENCIMIENTOS: pagos=");
+	//dma.ruleGetFromServer(pagos,1,false);
+	dma.ruleGetFromServer(idoV,idtoV,2,false);
+end
+
+
+//23-3 Vamos a propagar la deuda de los vencimientos a las deudas de factura y de cliente, eliminando el fact del antecedente, manteniendo el individuo y usando 
+rule "CALCULO DEUDA DE UNA FACTURA"
+ salience -100//menos prioridad calculo vencimientos 
+ agenda-group "rules" 
+ when 
+ 	
+ 	FactHierarchy(classfactura:CLASS,CLASSSUP=="FACTURA")
+ 	//No puedo situar la regla en lock porqu no daria tiempo despues a actuar regla calcula campo pagado en end_lock. 
+	Individual(CLASSNAME==classfactura,factura:ID!=null,STATE==Constants.INDIVIDUAL_STATE_READY,idoFac:IDO,idtoFac:IDTO)
+	deuda:Double() 
+            	from accumulate(
+            				 (and 
+            				 	 ObjValue(ID==factura,PROPNAME=="vencimientos",idven:VALOR!=null)
+             					 DatValue(ID==idven,PROPNAME=="deuda",deudaven:DOUBLEVALUE!=null)
+             				  ),
+             				  //no se puede usar sum en acumulaciones de elementos que cambian por no funcionar bien el reverse interno. Es necesario
+             				  //si la regla de calculo vencimientos estuvies en lock y no en end lock
+                              init(Double res=new Double(0);),
+                              action(res+=deudaven;),
+                              result(res)
+                              )
+    //si no tiene el siguiente not, podria fallar si la regla de obligatoriedad de forma de pago resetea la deuda por error y no se da cuenta esta regla
+	not(DatValue(ID==factura,PROPNAME=="deuda",DOUBLEVALUE==deuda))
+
+then
+	dma.printRule("\n\n ==================== RULE CALCULO DEUDA DE UNA FACTURA. idFactura ="+factura+" "+deuda);
+	dma.setValue(idoFac,idtoFac,"deuda",new DoubleValue(Auxiliar.redondea(deuda,2)));	
+end
+
+rule "IMPORTE NO ANTICIPADO EN NO FACTURA"
+ agenda-group "rules" 
+ when  	
+ 	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="ALBARÁN_COMERCIAL"||=="PEDIDO_COMERCIAL")
+ 	Model(IDTO==idtoDoc,PROPNAME=="importe_no_anticipado",OP=="AND")
+	Individual(IDTO==idtoDoc,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	anticipoThis:Double() from accumulate((and 	ObjValue(IDO==idoDoc,PROPNAME=="cobro_anticipo",idoCobroAny:IDOVALUE)
+	 											DatValue(IDO==idoCobroAny,PROPNAME=="rdn", VALOR!="#TEMPORAL")
+    											DatValue(IDO==idoCobroAny,PROPNAME=="importe",i:DOUBLEVALUE!=null)),
+                      				  	init(Double res=new Double(0);),action(res+=i;),result(res))                		  	 
+    DatValue(IDO==idoDoc,PROPNAME=="importe",i:DOUBLEVALUE!=null)
+then
+	dma.printRule("==================== IMPORTE NO ANTICIPADO EN NO FACTURA =");
+	dma.setValue(idoDoc,idtoDoc,"importe_no_anticipado",new DoubleValue(Auxiliar.redondea(i-anticipoThis,2)));	
+end
+
+rule "DEUDA SUJETO ES LA SUMA DE LA DEUDA DE SUS VENCIMIENTOS"
+salience 100
+ agenda-group "rules" 
+ when 
+ 	FactHierarchy(claseSujeto:CLASS,CLASSSUP=="CLIENTE"||=="PROVEEDOR")
+	Individual(CLASSNAME==claseSujeto,idsujeto:ID,idosujeto:IDO,idtosujeto:IDTO)
+	Model(CLASSNAME==claseSujeto,PROPNAME=="deuda",OP=="AND",idpropdeuda:PROP)
+ 	contribucionAdeudaVencimientosINIT: Double() 
+	    from accumulate(
+	    				(and		 
+	    				        FactHierarchy(classVENC:CLASS,CLASSSUP=="VENCIMIENTO")
+   	    						ObjValue(CLASSNAME==classVENC, idVen:ID,PROPNAME=="cliente"||=="proveedor", INITIALVALOR==idsujeto)
+								DatValue(ID==idVen,PROPNAME=="deuda",deuda:INITIALDOUBLE!=null)								
+						),
+                     	init(Double res=new Double(0);),action(res+=deuda;),result(res))
+ 	contribucionAdeudaVencimientosCURRENT: Double() 
+    from accumulate(
+    				 (and	
+	    				 FactHierarchy(classVENC:CLASS,CLASSSUP=="VENCIMIENTO")
+    					 Individual(CLASSNAME==classVENC,idVen:ID,STATE==Constants.INDIVIDUAL_STATE_READY)//Si se elimina no contribuye
+    					 DatValue(ID==idVen,PROPNAME=="deuda",deudaCurrent:DOUBLEVALUE!=null)
+    					 ObjValue(ID==idVen,PROPNAME=="cliente"||PROPNAME=="proveedor",VALOR==idsujeto)    					    					 
+    				 ),     				  
+                     init(Double res=new Double(0);),action(res+=deudaCurrent;),result(res))
+
+ 	anticiposINIT: Double() 
+	    from accumulate((and		 //Anticipos del ciente no asignados a un doc, reducen la deuda (el signo menos se pone abajo) 
+	    				    FactHierarchy(CLASSSUP=="COBRO_ANTICIPO",idtoAnticipo:IDTO!=null)        				
+	    				    ObjValue(IDTO==idtoAnticipo,idoAnticipo:IDO,PROPNAME=="cliente",INITIALVALOR==idsujeto)		    			
+    						not(exists(ObjValue(IDO==idoAnticipo,PROPNAME=="documento_anticipo", INITIALVALOR!=null)))   							
+							DatValue(IDO==idoAnticipo,PROPNAME=="importe_pendiente_asignar",importe:INITIALDOUBLE!=null)									
+						),
+                      init(Double res=new Double(0);),action(res+=importe;),result(res))
+ 	anticiposCURR: Double() 
+	    from accumulate((and		//Anticipos del ciente no asignados a un doc, reducen la deuda (el signo menos se pone abajo) 
+	    				    FactHierarchy(CLASSSUP=="COBRO_ANTICIPO",idtoAnticipo:IDTO!=null)        			
+	    				    Individual(IDTO==idtoAnticipo,idoAnticipo:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	    				    ObjValue(IDO==idoAnticipo,PROPNAME=="cliente",VALOR==idsujeto)			    						
+    						not(exists(ObjValue(IDO==idoAnticipo,PROPNAME=="documento_anticipo", IDOVALUE!=null)))   							
+							DatValue(IDO==idoAnticipo,PROPNAME=="importe_pendiente_asignar",importe:DOUBLEVALUE!=null)									
+						),
+                      init(Double res=new Double(0);),action(res+=importe;),result(res))  		            									
+	
+	
+then
+	dma.printRule("n\n==============RULE  DEUDA SUJETO ES LA SUMA DE LA DEUDA DE SUS VENCIMIENTOS sujeto="+idsujeto+"\n.....  contribucionAdeudaVencimientosINIT="+contribucionAdeudaVencimientosINIT+" contribucionAdeudaVencimientosCURRENT="+contribucionAdeudaVencimientosCURRENT );
+	Double incremento= contribucionAdeudaVencimientosCURRENT-contribucionAdeudaVencimientosINIT - (anticiposCURR-anticiposINIT);
+	//dma.printRule(".....  incremento:"+incremento);
+	dma.setIncrementalValue(idosujeto,idtosujeto,idpropdeuda,incremento,2);
+	//dma.printRule("..... DEBUG VALOR DEUDA DESPUES SETINCREMENTALVALUE:"+dma.getValue(idosujeto,idtosujeto,idpropdeuda));
+end
+
+rule "WARNING  DEUDA NO REDONDEADA"
+salience 300
+ agenda-group "rules" 
+ when 
+	dv:DatValue(PROPNAME=="deuda",deuda:DOUBLEVALUE!=null)
+then
+	Double deudaRed=Auxiliar.redondea(deuda,2);
+	if(deuda>deudaRed||deudaRed>deuda){
+		dma.printRule("\n\n ========= WARNING DEUDA NO REDONDEADA : deuda:"+deuda+"\n"+dv);
+	}
+end
+
+rule "AVISAR CUANDO SE SUPERA EL RIESGO MÁXIMO"
+ no-loop true
+ salience -100
+ agenda-group "rules" 
+ when 
+ 	
+	FactHierarchy(classDOC:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	f:ObjValue(CLASSNAME==classDOC,idDoc:ID,prop:PROPNAME=="cliente"||=="proveedor",sujeto:VALOR!=null)
+	
+	DatValue(ID==sujeto,PROPNAME=="máximo_riesgo",riesgoMaximo:DOUBLEVALUE!=null)
+    DatValue(ID==sujeto,PROPNAME=="deuda",deuda:DOUBLEVALUE>riesgoMaximo)
+    DatValue(ID==sujeto,PROPNAME=="rdn",codigo:STRINGVALUE!=null)
+then
+	dma.printRule("=============================>> DISPARO RULE AVISAR CUANDO SE SUPORA EL RIESGO MÁXIMO "+f);
+	
+	dma.showMessage("La deuda ("+deuda+") contraida con el "+prop+" "+codigo+"  ha superado el riesgo máximo ("+riesgoMaximo+") definido");
+end
+
+	
+rule "UN COBRO O PAGO CON ASIGNACIONES DE VENCIMIENTO ASOCIADAS, NO PUEDE CAMBIAR DE SUJETO"
+salience 100
+ agenda-group "rules" when 
+  	
+  	FactHierarchy(CLASSSUP=="COBRO"||=="PAGO",namecls:CLASS)
+	Lock(clase:CLASSNAME==namecls,idCobro:ID!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(ID==idCobro,PROPNAME=="vencimientos_asignados", VALOR!=null)	
+	(or
+		exists(ObjValue(ID==idCobro,PROPNAME=="cliente"||PROPNAME=="proveedor",VALOR==null))//IMPTE QUE NO SE ACTIVE AL FIJAR VALORES A FILTROS EN BUSQUEDAS
+		exists(ObjValue(ID==idCobro,PROPNAME=="cliente"||PROPNAME=="proveedor",PREVALOR!=null&&!=VALOR))
+	)
+then
+	String sujeto=null;
+	if(clase.equals("COBRO_VENCIMIENTO")){
+		  sujeto="cliente";
+	}
+	else{
+	 	sujeto="proveedor";
+	 }
+ 	dma.printRule("\n\n  ================= UN COBRO CON ASIGNACIONES DE VENCIMIENTO ASOCIADAS, NO PUEDE CAMBIAR DE SUJETO");
+ 	throw new OperationNotPermitedException("No se puede cambiar "+sujeto+" si ya se le han asignado vencimientos");
+end
+
+rule "DETECTAR ERROR PQ SUMA DE PORCENTAJES DE FORMAS DE PAGO DISTINTA DE 100"
+ //regla hereditaria
+ agenda-group "rules" when 
+  	
+  	//FactHierarchy(CLASSSUP=="DOCUMENTO_COMERCIAL",idtoDoc:IDTO)
+	Lock(idRoot:ID,clsRoot:CLASSNAME,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+	exists( ObjValue(ID==idRoot,PROPNAME=="forma_pago",IDOVALUE!=null))
+	forall( ObjValue(ID==idRoot,PROPNAME=="forma_pago",idoFp:IDOVALUE!=null)
+			Individual(IDO==idoFp,STATE==Constants.INDIVIDUAL_STATE_READY))
+	sumaporcentajes: Double() 
+    from accumulate(
+    				 (and 
+    				 	ObjValue(ID==idRoot,PROPNAME=="forma_pago",idoFormaPago2:IDOVALUE!=null)
+    				 	DatValue(IDO==idoFormaPago2,PROPNAME=="porcentaje",porcentaje:DOUBLEVALUE!=null)
+     				  ),
+                      init	( Double sumaporcentajes2= new Double(0);),
+                      action( 
+                      			sumaporcentajes2+=porcentaje;),                            
+                      result(sumaporcentajes2)
+   )
+   eval(Math.abs(sumaporcentajes-100)>0.01 )
+then
+	dma.printRule("");
+	dma.printRule("=================>>DISPARO RULE DETECTAR ERROR PQ SUMA DE PORCENTAJES DE FORMAS DE PAGO DISTINTA DE 100:"+sumaporcentajes+"   clsRoot:"+clsRoot);
+	throw new OperationNotPermitedException("Los porcentajes asignados en las formas de pago son incorrectos, suman "+sumaporcentajes+"%.Deben sumar 100% ");
+end
+
+
+/*rule "FORMA DE PAGO: IMPORTE POR DEFECTO"
+
+ //regla hereditaria
+ agenda-group "rules" when 
+  	FactHierarchy(claseDoc:CLASS,CLASSSUP=="DOCUMENTO")
+	ObjValue(CLASSNAME==claseDoc,idoDoc:IDO,id:ID!=null,PROPNAME=="forma_pago",idFormaPago:VALUE!=null)
+	DatValue(ID==id,PROPNAME=="importe",importeDoc:DOUBLEVALUE!=null)
+	//Solo puede ser una ayuda bloqueada por el usuario, de lo contrario va en contra del patron de system value, ya que el antecedente depende de si misma y 
+	//cuando se dispare evolucion volveria a activarse
+	Lock(ID==idFormaPago,LOCKEDBYUSER==true,LEVEL==Constants.LEVEL_PROTOTYPE,idoFormaPago:IDO,idtoFormaPago:IDTO)
+	not(DatValue(ID==idFormaPago,PROPNAME=="importe",DOUBLEVALUE!=0))
+	sumaImportes: Double() 
+    from accumulate(
+    				 (and 
+    				 	ObjValue(ID==id,PROPNAME=="forma_pago",idFormaPago2:VALUE!=idFormaPago)
+    				 	DatValue(ID==idFormaPago2,PROPNAME=="importe",importe:QMIN!=null)
+     				  ),                                         
+                      sum(importe))
+                      
+	anticipo:Double() from accumulate((and 	ObjValue(idoUTask:IDO,PROPNAME=="targetClass", IDOVALUE==idoDoc)
+											ObjValue(IDO==idoUTask,PROPNAME=="sourceClass", docPrevio:IDOVALUE)
+											ObjValue(IDO==docPrevio,PROPNAME=="cobro_anticipo",idoCobroAny:IDOVALUE)
+    				 						DatValue(IDO==idoCobroAny,PROPNAME=="importe",i:DOUBLEVALUE!=null)),
+                      				  sum(i))                      
+   
+then
+	importeDoc-=anticipo;
+	Double restoImporte=Auxiliar.redondea(importeDoc-sumaImportes,);
+	dma.printRule("================FORMA DE PAGO: IMPORTE POR DEFECTO ImportesPrevios="+sumaImportes+"  nuevoImporte="+restoImporte);
+	dma.setValue(idoFormaPago,idtoFormaPago,"importe",new DoubleValue(restoImporte));
+end*/
+
+rule "FORMA DE PAGO: PORCENTAJE POR DEFECTO"
+salience -150 //menos prioridad que la de importe por defecto en forma de pago
+ agenda-group "rules" when   
+ 	FactHierarchy(claseDoc:CLASS,CLASSSUP=="DOCUMENTO"||=="CLIENTE")
+	ObjValue(CLASSNAME==claseDoc,id:ID!=null,PROPNAME=="forma_pago",idFormaPago:VALUE!=null)
+	Lock(ID==idFormaPago,LOCKEDBYUSER==true,LEVEL==Constants.LEVEL_PROTOTYPE,idoFormaPago:IDO,idtoFormaPago:IDTO)
+	//Si tiene importe hay que dejar que la regla de dependencia asigne el porcentaje
+	not(DatValue(ID==idFormaPago,PROPNAME=="porcentaje"||=="importe",DOUBLEVALUE!=null))
+	sumaporcentajes: Double() 
+    from accumulate(
+    				 (and 
+    				 	ObjValue(ID==id,PROPNAME=="forma_pago",idFormaPago2:VALUE!=idFormaPago)
+    				 	DatValue(ID==idFormaPago2,PROPNAME=="porcentaje",porcentaje:QMIN!=null)
+     				  ),
+                      init	( Double sumaporcentajes2= new Double(0);),
+                      action( 
+                      			sumaporcentajes2+=porcentaje;),                            
+                      result(sumaporcentajes2)
+   )
+then
+	Double nuevoporc=new Double(100-sumaporcentajes);
+	dma.printRule("================FORMA DE PAGO: PORCENTAJE POR DEFECTO PorcentajesPrevios="+sumaporcentajes+"  nuevoporc="+nuevoporc);
+	dma.setValue(idoFormaPago,idtoFormaPago,"porcentaje",new DoubleValue(nuevoporc));
+end
+
+ ////////AVISAR AL USUARIO DE VENCIMIENTOS CON FECHA DE VENCIMIENTO VENCIDA Y CON DEUDA
+/*rule "AVISAR DE VENCIMIENTOS VENCIDOS Y CON DEUDA"
+agenda-group "rules" when
+    
+    FactHierarchy(typevencimiento:CLASS,CLASSSUP=="VENCIMIENTO")
+    i:Individual(CLASSNAME==typevencimiento,idVencimiento:ID,STATE==Constants.INDIVIDUAL_STATE_READY)
+    DatValue(ID==idVencimiento,PROPNAME=="fecha",fechavencmillis:TIMEMILLIS!=null,fechavenc:DATE!=null)
+    DatValue(ID==idVencimiento,PROPNAME=="deuda",deuda:DOUBLEVALUE>0)
+    ObjValue(ID==idVencimiento,propsujeto:PROP,PROPNAME=="proveedor"||PROPNAME=="cliente",sujeto:VALOR!=null)
+    //eval(System.currentTimeMillis()>(fechavencmillis+86400000))
+    //IMPTE PARA QUE SOLO AVISE CUANDO SE ESTEN CREANDO/EDITANDO DOCUMENTOS DE ESE SUJETO
+    FactHierarchy(typedoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+    ObjValue(idDoc:ID!=null,CLASSNAME==typedoc,PROP==propsujeto,VALOR==sujeto)
+	ObjValue(idtask:ID,nametask:CLASSNAME,PROPNAME=="targetClass"||=="sourceClass", VALOR==idDoc)
+	ObjValue(ID==idtask,PROPNAME=="estadoRealizacion",idestado:VALOR!=null)
+	DatValue(ID==idestado,PROPNAME=="rdn",VALOR=="pendiente")
+then
+	if(System.currentTimeMillis()>(fechavencmillis+86400000))
+	{
+	
+		 dma.printRule("---------------------------- RULE AVISAR DE VENCIMIENTOS VENCIDOS Y CON DEUDA-----------------------");
+		 String usermessage=null;
+		 SimpleDateFormat formateadorFecha = new SimpleDateFormat("dd/MM/yyyy");
+		 String sfechavencimiento=formateadorFecha.format(fechavenc);
+		 if(typevencimiento.equals("VENCIMIENTO_DE_COBRO")){
+		 	usermessage="Existe un vencimiento de cobro no saldado de este cliente con deuda  de fecha "+sfechavencimiento;
+		// usermessage="Existe un vencimiento de cobro no saldado de este cliente con deuda "+deuda+"  de fecha "+sfechavencimiento;
+		
+		 }
+		 else if(typevencimiento.equals("VENCIMIENTO_DE_PAGO")){
+		  	usermessage="Existe un vencimiento de cobro no saldado con este proveedor con deuda   de fecha "+sfechavencimiento;
+		 // usermessage="Existe un vencimiento de cobro no saldado de este cliente con deuda "+deuda+"  de fecha "+sfechavencimiento;
+		
+		  }
+		 else{
+			 dma.printRule(" 	   WARNING RULE no contempla el tipo de vencimiento="+typevencimiento);
+		 }
+		 dma.printRule("========= MENSAJE A MOSTRAR AL USUARIO: "+usermessage);
+		 dma.showMessage(usermessage);
+	}
+end
+*/
+
+
+rule "CobrarPendientes"  
+salience 100
+agenda-group "rules" when
+    
+    f:ObjValue(tipoaccion:CLASSNAME=="Cobrar_pendientes"||CLASSNAME=="Pagar_pendientes", idoUTask:IDO,idtoUtask:IDTO,idtask:ID,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALUE_s==Constants.INDIVIDUAL_INFORMADO)
+	ObjValue(ID==idtask, PROPNAME=="params",idParamsCobrarVencimiento:VALUE!=null,idtoParams:VALUECLS)
+	ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",typesujeto:RANGENAME,sujeto:OBJECTVALUE!=null)
+then
+	dma.printRule("\n\n-================ COBRAR PENDIENTES: sujeto="+sujeto);
+	DataValue vdeudasujeto=null;
+	if(typesujeto.contains("CLIENTE")||typesujeto.contains("PROVEEDOR"))
+		vdeudasujeto=(DataValue)dma.getValue(sujeto.getValue(),sujeto.getValueCls(),"deuda");
+	else if(tipoaccion.equals("Cobrar_pendientes")){
+		ObjectValue condCliente=(ObjectValue)dma.getValue(sujeto.getValue(),sujeto.getValueCls(),"condiciones_cliente");
+		if(condCliente!=null){
+					vdeudasujeto=(DataValue)dma.getValue(condCliente.getValue(),condCliente.getValueCls(),"deuda");
+		}
+	}
+	else if(tipoaccion.equals("Pagar_pendientes")){
+		ObjectValue condProv=(ObjectValue)dma.getValue(sujeto.getValue(),sujeto.getValueCls(),"condiciones_proveedor");
+		if(condProv!=null){
+					vdeudasujeto=(DataValue)dma.getValue(condProv.getValue(),condProv.getValueCls(),"deuda");
+		}
+	}
+	DataValue vimporte=(DataValue)dma.getValue(Integer.parseInt(idParamsCobrarVencimiento), idtoParams,"importe");
+//	System.err.println("....000 la deuda del sujeto es "+sdeudasujeto+" y el importe es "+ simporte);
+	if(vimporte==null){//si se deja el parametro importe a null significa que se quiere cobrar toda la dedua del sujeto
+		vimporte=vdeudasujeto;
+		System.err.println("....no seleccionó importe, se asignara el total de la deuda del cliente"+ vdeudasujeto.getNumericValue());
+		
+	}
+	double deudasujet=-1;
+	if (vdeudasujeto!=null)
+		 deudasujet=vdeudasujeto.getNumericValue();
+	if(vdeudasujeto==null||deudasujet==0){
+		throw new OperationNotPermitedException("No hay nada pendiente de cobro"); 
+	}
+	else{
+		Double importe=vimporte.getNumericValue();
+		Double deudasujeto=vdeudasujeto.getNumericValue();
+		if(deudasujeto<importe){
+			System.err.println("....se lanza excepción pq el importe asignado es mayor que la deuda del sujeto");
+			throw new OperationNotPermitedException("No se puede asignar el importe al cobro ("+importe+") porque es mayor que la suma de la deuda de los vencimientos seleccionados");
+		}
+		String typepago=null;
+		String propsujeto=null;
+		if(typesujeto.contains("CLIENTE")){
+			typepago="COBRO_VENCIMIENTO";
+			propsujeto="cliente";
+		}else
+			{ 
+			if(typesujeto.contains("PROVEEDOR")){
+			typepago="PAGO";
+			propsujeto="proveedor";
+			}else{
+				dma.printRule("WARNING:-----WARNING------WARNING:  typevencimiento"+typepago+"  no contemplado"); 
+				}
+	    }	
+	    Domain domCobro=dma.creaIndividualOfClass(typepago);
+	     dma.setValue(domCobro,propsujeto,sujeto);
+	     //LE ASIGNAMOS EL IMPORTE, OTRA REGLA HARÁ EL REPARTO A VENCIMIENTOS
+	      dma.setValue(domCobro,"importe",new DoubleValue(importe));
+		//POR ULTIMO CADA TIPO DE COBRO/PAGO CREADO HAY QUE ENLAZARLO A LA UTASK
+		dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(domCobro));
+	}
+	
+end  
+
+rule "EL IMPORTE DE UN COBRO/PAGO ES LA SUMA DE ASIGNACIONES A VENCIMIENTOS"
+ agenda-group "rules" when 
+  	
+  	FactHierarchy(CLASSSUP=="COBRO"||=="PAGO",namecls:CLASS)
+  	not(FactHierarchy(CLASS==namecls,CLASSSUP=="COBRO_ANTICIPO"))
+	Lock(CLASSNAME==namecls,id:ID,idto:IDTO,ido:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	sumaasignaciones: Double() 
+    from accumulate(
+    				 (and 
+    				 	ObjValue(ID==id,PROPNAME=="vencimientos_asignados",idvenasig:VALOR!=null)
+    				 	DatValue(ID==idvenasig,PROPNAME=="importe_asignado",importe:DOUBLEVALUE!=null)
+     				  ),
+                      init	( Double sumaasignaciones2= new Double(0);),
+                      action( 
+                      			sumaasignaciones2+=importe;),                            
+                      result(sumaasignaciones2)
+   )
+then
+	dma.printRule("\n================= EL IMPORTE DE UN COBRO/PAGO ES LA SUMA DE ASIGNACIONES A VENCIMIENTO. idcobro_pago="+id+"  sumaasignaciones="+sumaasignaciones);
+	dma.setValue(ido,idto,"importe",new DoubleValue(Auxiliar.redondea(sumaasignaciones,2)));
+end
+
+rule "CLIENTE CAMBIA EN FACTURA CON COBROS"
+ salience -100
+ agenda-group "rules" when 
+  	
+	FactHierarchy(nameFactura:CLASS,CLASSSUP=="FACTURA")
+	Lock(CLASSNAME==nameFactura,LEVEL==Constants.LEVEL_INDIVIDUAL,idFactura:ID,idoFact:IDO,idtoFact:IDTO,state:STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+	
+	ObjValue(ID==idFactura,PROPNAME=="vencimientos",idVencimiento:VALOR!=null,vencimiento:OBJECTVALUE)
+	ObjValue(ID==idVencimiento,PROPNAME=="pago_asignado",pago:VALOR!=null)
+	
+	IndividualValue(ID==idFactura,PROPNAME=="cliente",hasCHANGED==true)
+	DatValue(IDO==idoFact,PROPNAME=="rdn",rdnFactura:VALOR!=null)
+	DatValue(ID==idVencimiento,PROPNAME=="rdn",rdnvenc:VALOR!=null)
+then
+ 	dma.printRule("\n ================== CLIENTE CAMBIA EN FACTURA CON COBROS ") ;
+ 	//Notar que si desde que se hizo la factura, el cliente cambia de regimen de iva, al cobrar pretende actualizar los importes de la factura pero no su vencimiento";
+ 	String usermess="La factura "+rdnFactura+" tiene cobro asociado, no es posible cambiar el cliente. El vencimiento '"+rdnvenc+"' tiene cobros";
+ 	throw new OperationNotPermitedException(usermess);
+end
+
+rule "NO SE PUEDE BORRAR UNA FACTURA CON COBROS"
+ salience -100
+ agenda-group "rules" when 
+  	
+	FactHierarchy(nameFactura:CLASS,CLASSSUP=="FACTURA")
+	Individual(CLASSNAME==nameFactura,idFactura:ID,idoFact:IDO,idtoFact:IDTO,state:STATE==Constants.INDIVIDUAL_STATE_DELETED)
+	//eval(dma.preload(idoFact,idtoFact))
+	ObjValue(ID==idFactura,PROPNAME=="vencimientos",idVencimiento:VALOR!=null,vencimiento:OBJECTVALUE)
+	//eval(dma.preload(vencimiento.getValue(),vencimiento.getValueCls()))
+	ObjValue(ID==idVencimiento,PROPNAME=="pago_asignado",pago:VALOR!=null)
+	//eval(dma.preload(vencimiento.getValue(),vencimiento.getValueCls()))
+then
+ 	dma.printRule("\n ================== NO SE PUEDE BORRAR UNA FACTURA CON COBROS. idoFact:"+idoFact+" nameFactura:"+nameFactura+"  pagoAsignado:"+pago);
+ 	String rdnvenc=dma.getValue(vencimiento.getValue(),vencimiento.getValueCls(),Constants.IdPROP_RDN).getValue_s();
+ 	
+ 	String usermess = "Esta factura no se puede borrar ya que el vencimiento: '"+rdnvenc+"' tiene cobros.\n"+
+ 					"Por favor, elimine el cobro/pago asociado a ese vencimiento primero\n"+
+ 					"para poder borrar la factura";
+ 	throw new OperationNotPermitedException(usermess);
+end
+
+
+ 
+ rule "COBRO/PAGO: MEDIO_DE_PAGO EL DE SU VENCIMIENTO"
+ agenda-group "rules" when
+ 	
+ 	FactHierarchy(CLASSSUP=="COBRO"||=="PAGO",namecls:CLASS)
+ 	Lock(CLASSNAME==namecls, idcobro:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+ 	not(ObjValue(ID==idcobro,PROPNAME=="medio_de_pago",VALOR!=null))
+ 	ObjValue(ID==idcobro,idoCobro:IDO,idtoCobro:IDTO,PROPNAME=="vencimientos_asignados",aisgnvenc:VALOR!=null)
+ 	ObjValue(ID==aisgnvenc,PROPNAME=="vencimiento",venc:VALOR!=null)
+ 	ObjValue(ID==venc,PROPNAME=="medio_de_pago",medio:OBJECTVALUE!=null)
+ then
+ 	dma.printRule("\n\n================ > COBRO/PAGO: MEDIO_DE_PAGO EL DE SU VENCIMIENTO. vencimiento="+venc+" medioPago="+medio);
+ 	dma.setValue(idoCobro,idtoCobro,"medio_de_pago",medio);
+ end
+ 	
+//@ esta regla puede ser eliminada en un futuro: ahora vencimientos es estructural y ruleengine tiene logica borrado estructural
+//se mantiene la regla por si se pone en instalaciones "antiguas" (con modelos anteriores 23_02_10)
+/*rule "ELIMINACIÓN DE VENCIMIENTOS DE FACTURA CUANDO SE ELIMINA LA FACTURA: CASO 1 VENCIMIENTOS EN MOTOR"
+ salience 99
+ agenda-group "rules" when 
+  	
+  	FactHierarchy(classfactura:CLASS,CLASSSUP=="FACTURA")
+	Individual(CLASSNAME==classfactura,idfactura:ID,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+
+	vencimientos: ArrayList(size>0)
+	from accumulate(
+		 (and 
+			ObjValue(ID==idfactura,PROPNAME=="vencimientos",vencimiento:OBJECTVALUE!=null)			
+			
+		  ) ,
+          init	( ArrayList<ObjectValue> vencimientos2=new  ArrayList<ObjectValue>() ;
+          		),
+                  action( 
+                  		vencimientos2.add(vencimiento);
+                 ),                            
+		        result( vencimientos2)
+	)
+then
+	dma.printRule("\n\n---------------  RULE ELIMINACIÓN DE VENCIMIENTOS DE FACTURA CUANDO SE ELIMINA LA FACTURA: CASO 1 VENCIMIENTOS EN MOTOR");
+	for(int i=0;i<vencimientos.size();i++){
+		 	dma.printRule(".....se eliminará el vencimiento "+vencimientos.get(i));
+		 	ObjectValue ov=(ObjectValue)vencimientos.get(i);
+		 	dma.deleteObject(ov.getValue(),ov.getValueCls());
+	 	}
+end
+*/
+//@ esta regla puede ser eliminada en un futuro: ahora vencimientos es estructural y ruleengine tiene logica borrado estructural
+//se mantiene la regla por si se pone en instalaciones "antiguas" (con modelos anteriores 23_02_10)
+/*rule "ELIMINACIÓN DE VENCIMIENTOS DE FACTURA CUANDO SE ELIMINA LA FACTURA: CASO 2 VENCIMIENTOS NO ESTAN EN MOTOR"
+ salience 99
+ agenda-group "rules" when 
+  	
+  	FactHierarchy(classfactura:CLASS,CLASSSUP=="FACTURA")
+	Individual(CLASSNAME==classfactura,idofactura:IDO,idtofactura:IDTO,STATE==Constants.INDIVIDUAL_STATE_DELETED,LEVEL==Constants.LEVEL_INDIVIDUAL)
+	not(exists(ObjValue(IDO==idofactura, PROPNAME=="vencimientos",VALOR!=null)))
+then
+	dma.printRule("\n\n---------------  RULE ELIMINACIÓN DE VENCIMIENTOS DE FACTURA CUANDO SE ELIMINA LA FACTURA: CASO 2 VENCIMIENTOS NO ESTAN EN MOTOR");
+ 	LinkedList<Value>  vencimientos=null;
+ 	int propVencimientos=dma.getIdProperty("vencimientos");
+ 	if(dma.getDDM().existInMotor(idofactura)){
+ 		vencimientos=dma.getValues(idofactura,idtofactura,propVencimientos);
+ 	}
+ 	else{
+ 		vencimientos=dma.serverGetValues(idofactura,idtofactura,propVencimientos);
+ 	}
+
+ 	int idtovenc=dma.getDDM().getRangeOfObjectProperty(classfactura,"vencimientos");
+	for(int i=0;i<vencimientos.size();i++){
+	 	dma.printRule(".....se eliminará el vencimiento "+vencimientos.get(i));
+		ObjectValue ov=(ObjectValue)vencimientos.get(i);
+		dma.deleteObject(ov.getValue(),ov.getValueCls());
+ 	}
+end*/
+
+//@ esta regla puede ser eliminada en un futuro: ahora vencimientos es estructural y ruleengine tiene logica borrado estructural
+//se mantiene la regla por si se pone en instalaciones "antiguas" (con modelos anteriores 23_02_10)
+rule "ELIMINACIÓN DE VENCIMIENTOS DE FACTURA CUANDO SE DESVINCULA DE LA FACTURA"
+ salience 100
+ agenda-group "rules" when 
+  	
+  	FactHierarchy(classfactura:CLASS,CLASSSUP=="FACTURA")
+	Individual(CLASSNAME==classfactura,idfactura:ID)
+	f:ObjValue(ID==idfactura,PROPNAME=="vencimientos",VALOR==null,previo:PREVALOR,tipovencimiento:VALUECLS)
+	not(ObjValue(VALOR==previo))
+	not(Individual(ID==previo,STATE==Constants.INDIVIDUAL_STATE_DELETED))
+	
+then
+	dma.printRule("\n\n---------------  RULE ELIMINACIÓN DE VENCIMIENTOS DE FACTURA CUANDO SE DESVINCULA DE LA FACTURA"+f);
+	dma.deleteObject(Integer.parseInt(previo),tipovencimiento);
+end
+
+rule "Generar_Remesa"  
+agenda-group "rules" when
+    
+    f:ObjValue(CLASSNAME=="Generar_Remesa", idoUTask:IDO, idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    vencimientosSeleccionados: ArrayList(size>0) from collect (ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",VALOR!=null))
+then
+	dma.printRule("\n\n.......... RULE GENERAR REMESA");
+	Domain domRemesa=dma.creaIndividualOfClass("REMESA");
+	for(int i=0;i<vencimientosSeleccionados.size();i++){
+		ObjValue ov=(ObjValue)vencimientosSeleccionados.get(i);
+	    dma.addValue(domRemesa,"recibos",new ObjectValue(Integer.parseInt(ov.getVALOR()),ov.getVALUECLS()));
+	}
+	dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(domRemesa));
+end  
+
+rule "NO SE PUEDE Generar_Remesa SI TIENE ALGÚN RECIBO SIN DEUDA"  
+agenda-group "rules" when
+    
+    f:ObjValue(CLASSNAME=="Generar_Remesa", idoUTask:IDO ,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_PREVALIDANDO)
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idVencimiento:VALOR!=null)
+    DatValue(ID==idVencimiento,PROPNAME=="deuda",DOUBLEVALUE==0)
+    DatValue(ID==idVencimiento,PROPNAME=="rdn",rdnvenc:VALOR!=null)
+then
+	dma.printRule("\n\n ====================   RULE NO SE PUEDE Generar_Remesa SI TIENE ALGÚN RECIBO SIN DEUDA");
+	String usermessage="No es posible generar la remesa porque ha seleccionado vencimiento sin deuda. El vencimiento '"+rdnvenc+"'  ya está cobrado";
+	dma.printRule(usermessage);
+	throw new OperationNotPermitedException(usermessage);
+end
+
+rule "NO SE PUEDE Confirmar_Cobro_Remesa SI TIENE ALGÚN RECIBO SIN DEUDA"  
+agenda-group "rules" when
+    
+    f:ObjValue(CLASSNAME=="Confirmar_Cobro_Remesa", idoUTask:IDO ,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_PREVALIDANDO)
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idremesa:VALOR!=null)
+	ObjValue(ID==idremesa, PROPNAME=="recibos",typevencimiento:RANGENAME,idVencimiento:VALOR!=null)
+    DatValue(ID==idVencimiento,PROPNAME=="deuda",DOUBLEVALUE==0)
+    DatValue(ID==idVencimiento,PROPNAME=="rdn",rdnvenc:VALOR!=null)
+then
+	dma.printRule("\n\n ====================   RULE NO SE PUEDE Confirmar_Cobro_Remesa SI TIENE ALGÚN RECIBO SIN DEUDA");
+	String usermessage="No es posible hacer un cobro de vencimiento sin deuda. El vencimiento '"+rdnvenc+"'  ya está cobrado";
+	dma.printRule(usermessage);
+	throw new OperationNotPermitedException(usermessage);
+end
+
+rule "Confirmar_Cobro_Remesa"  
+//@depende de rule "Precarga Recibos de Remesa en Accion Confirmar_Cobro_Remesa"  
+agenda-group "rules" when
+    
+    f:ObjValue(CLASSNAME=="Confirmar_Cobro_Remesa", idoUTask:IDO ,idtoUTask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+ 	ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idremesa:VALOR!=null)
+	ObjValue(ID==idremesa, PROPNAME=="recibos",typevencimiento:RANGENAME,idVencimiento:VALOR!=null,vencimiento:OBJECTVALUE)
+	ObjValue(ID==idremesa, PROPNAME=="caja",caja:OBJECTVALUE)
+	DatValue(ID==idremesa, PROPNAME=="fecha_cobro",fecha:QMIN!=null)
+	
+    ObjValue(ID==idVencimiento,idoVencimiento:IDO,idtoVencimiento:IDTO,PROPNAME=="cliente"||PROPNAME=="proveedor", sujeto:OBJECTVALUE!=null,idoSujeto:IDOVALUE)
+    	
+	DatValue(ID==idVencimiento,PROPNAME=="deuda",deuda:DOUBLEVALUE!=0)
+              
+    not((and	ObjValue(IDO==idoUTask, PROPNAME=="targetClass",idoFlujo:IDOVALUE!=null) 
+    			ObjValue(IDO==idoFlujo, PROPNAME=="vencimientos_asignados",idoAsig:IDOVALUE)
+    			ObjValue(IDO==idoAsig, PROPNAME=="vencimiento",IDOVALUE==idoVencimiento)))
+    
+	domCobro:Domain() from accumulate((and 	ObjValue(IDO==idoUTask, PROPNAME=="targetClass",idoFlujo:IDOVALUE!=null)
+											ObjValue(IDO==idoFlujo,idtoFlujo:IDTO,PROPNAME=="cliente"||PROPNAME=="proveedor", IDOVALUE==idoSujeto)),										
+									init( Domain resId= new Domain(0,0)),
+									action( resId= new Domain(idoFlujo,idtoFlujo);),
+									result(resId))		    
+then
+	String usermessage=null;
+	dma.printRule("\n\n ====================   RULE Confirmar_Cobro_Remesa   sujetoXvencimientos=");
+	Double importeTotalCobrado=0.0;
+	int numeroCobros=0;
+	String typeasignacion=null;
+	String typepago=null;
+	String propsujeto=null;
+	String propCaja=null;
+	if(typevencimiento.equals("VENCIMIENTO_DE_COBRO")||typevencimiento.equals("DEBE_CLIENTE_MANUAL")){
+		typepago="COBRO_VENCIMIENTO";
+	   	typeasignacion="ASIGNACIÓN_VENCIMIENTO_COBRO";
+	   	propsujeto="cliente";
+	   	propCaja="caja_entrada";
+    }else if(typevencimiento.equals("VENCIMIENTO_DE_PAGO")){
+	 	typepago="PAGO";
+		typeasignacion="ASIGNACIÓN_VENCIMIENTO_PAGO";
+		propsujeto="proveedor";
+		propCaja="caja_salida";
+	}else{
+		dma.printRule("WARNING:-----WARNING------WARNING:  typevencimiento"+typepago+"  no contemplado"); 
+	}	
+					
+	if(domCobro.getIdo()==0){	
+		domCobro=dma.creaIndividualOfClass(typepago);
+		numeroCobros++;
+		dma.setValue(domCobro,propsujeto,sujeto);
+		dma.setValue(domCobro,propCaja,caja);
+		
+		dma.setValue(domCobro,"fecha",new TimeValue(fecha.longValue()));
+		dma.addValue(idoUTask,idtoUTask,"targetClass",new ObjectValue(domCobro));
+	}
+	String mideuda=null;
+			
+	Domain domAsignacionVencimiento=dma.creaIndividualOfClass(typeasignacion);
+			
+    dma.setValue(domAsignacionVencimiento,"vencimiento",new ObjectValue(idoVencimiento,idtoVencimiento));        
+    
+    dma.setValue(domAsignacionVencimiento,"importe_asignado",new DoubleValue(Auxiliar.redondea(deuda,2)));
+    importeTotalCobrado+=deuda;
+    dma.addValue(domCobro,"vencimientos_asignados",new ObjectValue(domAsignacionVencimiento));
+	
+	//mensaje informativo al usuario con el numero de cobros total generado (coincide con el numero de sujetos) y el montante total de todos los cobros
+	//String usermess="Se han generado "+numeroCobros+" cobros por un importe total de "+Auxiliar.redondea(importeTotalCobrado,2);
+	//dma.showMessage(usermess);
+	//dma.printRule("...."+usermess);
+end  	
+			
+rule "IMPORTE REMESA CONFIRMADA"  
+//@depende de rule "Precarga Recibos de Remesa en Accion Confirmar_Cobro_Remesa"  
+agenda-group "rules" when
+        
+    ObjValue(CLASSNAME=="Confirmar_Cobro_Remesa", idoUTask:IDO,PROPNAME=="sourceClass",idremesa:VALOR!=null)
+	exists(ObjValue(IDO==idoUTask, PROPNAME=="targetClass",IDOVALUE!=null))
+	
+	forall( ObjValue(ID==idremesa, PROPNAME=="recibos",idoVencimiento:IDOVALUE!=null)
+			ObjValue(IDO==idoUTask, PROPNAME=="targetClass",idoFlujo:IDOVALUE!=null) 
+			ObjValue(IDO==idoFlujo, PROPNAME=="vencimientos_asignados",idoAsig:IDOVALUE!=null)
+    		ObjValue(IDO==idoAsig, PROPNAME=="vencimiento",IDOVALUE==idoVencimiento))
+    
+	total:Double() from accumulate((and 	ObjValue(IDO==idoUTask, PROPNAME=="targetClass",idoFlujo:IDOVALUE!=null)
+											DatValue(IDO==idoFlujo,idtoFlujo:IDTO,PROPNAME=="importe", importe:QMIN)),										
+									sum(importe))		    
+then
+	dma.printRule("=====================IMPORTE REMESA CONFIRMADA");
+	//mensaje informativo al usuario con el numero de cobros total generado (coincide con el numero de sujetos) y el montante total de todos los cobros
+	String usermess="Se ha cobrado por un importe total de "+Auxiliar.redondea(total,2);
+	dma.showMessage(usermess);
+	//dma.printRule("...."+usermess);
+end 
+
+rule "IMPORTE REMESA GENERADA"  
+salience -100
+agenda-group "rules" when            
+    FactHierarchy(idtoRemesa:IDTO,CLASSSUP=="REMESA")
+    Lock(IDTO==idtoRemesa,idoRemesa:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+    
+	total:Double() from accumulate((and ObjValue(IDO==idoRemesa,PROPNAME=="recibos", idoV:IDOVALUE)	
+										DatValue(IDO==idoV,PROPNAME=="deuda", importe:QMIN)),																			
+									sum(importe))		    
+									    							
+then
+	dma.printRule("=====================IMPORTE REMESA GENERADA");
+	double totalCentimo=Auxiliar.redondea(total,2);
+	if(total.doubleValue()>0.0 && dma.getValue(idoRemesa,idtoRemesa,"importe")==null){
+		//mensaje informativo al usuario con el numero de cobros total generado (coincide con el numero de sujetos) y el montante total de todos los cobros
+		String usermess="Se va a generar una remesa por un importe total de "+totalCentimo;
+		dma.showMessage(usermess);
+	}
+	dma.setValue(idoRemesa,idtoRemesa,"importe",new DoubleValue(totalCentimo));	
+end 
+	
+//@modelo forma pago v1.0
+rule "NOMBRE DESCRIPTIVO RDN FORMA_PAGO modelo v1.0"
+salience 100
+agenda-group "rules" when 
+	
+	FactHierarchy(typefpago:CLASS,CLASSSUP=="FORMA_PAGO")
+	Lock(CLASSNAME==typefpago,idfpago:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	Model(CLASSNAME==typefpago, PROPNAME=="tipo_aplazamiento",OP==Constants.OP_INTERSECTION)//para asegurar que es modelo v1.0
+	
+	not(DatValue(ID==idfpago,PROPNAME=="rdn",VALOR!=null))
+	ObjValue(ID==idfpago,PROPNAME=="medio_de_pago",idtipo:VALOR!=null,idoFpago:IDO,idtoFpago:IDTO)
+	DatValue(ID==idtipo,PROPNAME=="rdn",codigotipo:VALOR!=null)
+then
+	dma.printRule("\n===========RULE NOMBRE DESCRIPTIVO RDN FORMA_PAGO modelo v1.");
+	String desc=typefpago+" "+codigotipo;
+	dma.setValue(idoFpago,idtoFpago,Constants.IdPROP_RDN,new StringValue(desc));
+end
+			
+rule "ELIMINACIÓN DE VENCIMIENTOS ASIGNADOS A CERO SI NO ASIGNAN IMPORTE"
+agenda-group "rules" when
+	
+	FactHierarchy(claseRoot:CLASS,CLASSSUP=="FLUJO_CAJA")
+	Lock( idRoot:ID!=null,CLASSNAME==claseRoot,STATE==Constants.INDIVIDUAL_STATE_END_LOCK,idoRoot:IDO,idtoRoot:IDTO)
+    lineasABorrar:ArrayList(size>0)
+    from accumulate(
+    				 (and 
+    				 		ObjValue(ID==idRoot,PROPNAME=="vencimientos_asignados",idvenAsign:VALOR!=null,venAsign:OBJECTVALUE)
+						    not(DatValue(ID==idvenAsign,PROPNAME=="importe_asignado",DOUBLEVALUE!=null))
+     				  ),
+              init( 
+					ArrayList<ObjectValue> lineasABorrar2=new ArrayList<ObjectValue> ();
+			  ),
+              action(
+	              lineasABorrar2.add(venAsign);
+                
+              ),
+              result(lineasABorrar2)
+              )
+then
+	dma.printRule("\n\n ===================  ELIMINACIÓN DE VENCIMIENTOS ASIGNADOS A CERO SI NO ASIGNAN IMPORTE: lineasABorrar="+lineasABorrar);
+	for(int i=0;i<lineasABorrar.size();i++){
+		ObjectValue asigVen=(ObjectValue)lineasABorrar.get(i);
+		dma.delValue(idoRoot,idtoRoot,"vencimientos_asignados",asigVen);
+		dma.deleteObject(asigVen.getValue(),asigVen.getValueCls());
+	}
+end
+
+rule "CALCULO AUTOMÁTICO DE VENCIMIENTOS DE UNA FACTURA POR SU FORMA DE PAGO"
+//Forma de pago indica importe pendiente de comprometer (es decir de vencimientos no tienen pago)
+//se recalculan vencimientos incremntal segun lo no comprometido
+//salience 100 menos priridad que calculo deuda vencimiento
+ agenda-group "rules" when   	
+    
+	FactHierarchy(nameFactura:CLASS,CLASSSUP=="FACTURA")
+	DatValue(CLASSNAME==nameFactura,idFactura:ID,idoDoc:IDO,idtoDoc:IDTO,PROPNAME=="importe",importefactura:DOUBLEVALUE!=null, cambioImporte:initialValuesChanged)
+		
+	//debo mirar cualquier end lock de esta factura o de documentos previos, pero tiene mejor rendimiento mirar cualquier endlock de un documento cualquiera
+	//de lo contrario la accion cobrar docuemnto sobre un albaran no actualiza la factura
+	//lo ideal seria utilizar un estado final de utask, pero entonces no se asegura la venta haya sido modificada
+	exists((and FactHierarchy(idtoDocAny:IDTO,CLASSSUP=="DOCUMENTO")
+				Lock(IDTO==idtoDocAny,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)))
+				
+	not(DatValue(IDO==idoDoc,ID==idFactura,PROPNAME=="emitido",VALOR=="true"))
+	
+	DatValue(ID==idFactura,PROPNAME=="fecha",fechaFactura:DATE!=null, fechaBD:INITIALDOUBLE,fecha:VALOR!=null,chFD:initialValuesChanged)
+	not(ObjValue(ID==idFactura,PROPNAME=="rectificada",VALOR=="true"))
+	fsujeto:ObjValue(ID==idFactura,PROPNAME=="proveedor" || PROPNAME=="cliente",sujeto:OBJECTVALUE!=null)
+
+ 	ObjValue(ID==idFactura, PROPNAME=="forma_pago",idoFormaPago:IDOVALUE!=null,formaPago:OBJECTVALUE,chFP:initialValuesChanged)
+ 	not Lock(IDO==idoFormaPago,LOCKEDBYUSER==true)
+ 	DatValue(IDO==idoFormaPago,PROPNAME=="rdn",rdnFormaPago:VALOR!=null)
+	DatValue(IDO==idoFormaPago,PROPNAME=="importe",importeFormapago:DOUBLEVALUE!=null)
+	ObjValue(IDO==idoFormaPago,PROPNAME=="medio_de_pago",mpFormapago:OBJECTVALUE!=null)                            	    
+	
+	//Descomentar si se pone esta regla en lock y no en end lock, para que sea sensible a cambio de fechas en formas de pago añado el siguiente collect, no seria necesario si situamos la regla en end lock de factura                      
+    //listaPropFP:ArrayList() from collect(IndividualValue(IDO==idoFormaPago,VALOR!=null))
+       
+	retrocesoDiaPago:Double() from accumulate((and DatValue(CLASSNAME=="PARAMETRO_NUMERICO",idoParam:IDO,PROPNAME=="rdn",VALOR=="maximo_dias_retroceso_en_dia_de_pago")
+												DatValue(IDO==idoParam,PROPNAME=="valor_numerico",periodo:QMIN>0)),max(periodo))	
+												
+	anticipoPrevio:Double() from accumulate((and 	FactHierarchy(CLASSSUP=="COBRO_ANTICIPO", idtoAnt:IDTO)
+													DatValue(IDTO==idtoAnt, idoCobroAny:IDO,PROPNAME=="importe",i:DOUBLEVALUE!=null)
+													DatValue(IDO==idoCobroAny,PROPNAME=="rdn", VALOR!="#TEMPORAL")
+													exists((and ObjValue(IDO==idoDoc,PROPNAME=="línea", idoLinea:IDOVALUE)
+																ObjValue(IDO==idoLinea,PROPNAME=="documento", idoPrevio:IDOVALUE!=idoDoc)
+																ObjValue(IDO==idoPrevio,PROPNAME=="cobro_anticipo",IDOVALUE==idoCobroAny)))
+    				 						),
+                      				   		init(Double res=new Double(0);),action(res+=i;),result(res))                      				                    				  
+                      				  	
+	 anticipoThis:Double() from accumulate((and ObjValue(IDO==idoDoc,PROPNAME=="cobro_anticipo",idoCobroAny:IDOVALUE)
+	 											DatValue(IDO==idoCobroAny,PROPNAME=="rdn", VALOR!="#TEMPORAL")
+    											DatValue(IDO==idoCobroAny,PROPNAME=="importe",i:DOUBLEVALUE!=null)),
+                      				  	init(Double res=new Double(0);),action(res+=i;),result(res))	                        				  	   
+																													
+then
+	dma.printRule("========  CALCULO DE VENCIMIENTOS DE UNA FACTURA: factura:"+idFactura+" importe FP:"+importeFormapago+" ant prev:"+anticipoPrevio+" this antic:"+anticipoThis);
+	double anticipado=Auxiliar.redondea(anticipoPrevio.doubleValue()+anticipoThis.doubleValue(),2);
+	double pendientePago=importefactura-anticipado;	
+	double porcientoPendiente=importefactura==0? 0:pendientePago/importefactura;
+	
+	Domain domFactura=new Domain(idoDoc,idtoDoc);
+	LinkedList listaV=dma.getValues(domFactura,"vencimientos");	
+	Date fechaVencBD=null;
+	double importeLibre=importeFormapago*porcientoPendiente;	
+	Domain domVenc=null;
+	double pagadoTodasFPVencim=0.0;
+	if(listaV!=null&&listaV.size()>0){		
+		if(fechaBD!=null){
+			fechaVencBD=calculaFechaVencimientos(dma,new Date(fechaBD.longValue()*Constants.TIMEMILLIS),formaPago,retrocesoDiaPago);
+		}			
+
+		for(ObjectValue v:(LinkedList<ObjectValue>)listaV){
+			if(v==null||v.getValue()==null) continue;
+			Long fechaV=dma.getTimeInSeconds(v,"fecha",true);
+			String rdnV=dma.getStringValue(v,"rdn");
+			ObjectValue medioPagoV=(ObjectValue)dma.getValue(v,"medio_de_pago");
+			LinkedList listaP=dma.getValues(v.getValue(),v.getValueCls(),"pago_asignado");	
+			double importeV=dma.getDoubleValue(v,"importe",true);
+			double deudaV=dma.getDoubleValue(v,"deuda",true);
+			pagadoTodasFPVencim+=importeV-deudaV; 
+						 		
+			dma.printRule(" encontrado vencimiento rdn:"+rdnV+" mismo fp:"+(medioPagoV!=null&&mpFormapago.equals(medioPagoV))+" fecha fact:" +fechaBD+" fecha ant "+(fechaVencBD==null?"":fechaVencBD.getTime()/Constants.TIMEMILLIS+" encont:"+fechaV.longValue()));
+			if(	rdnV.startsWith(rdnFormaPago)||
+			 	medioPagoV!=null&&mpFormapago.equals(medioPagoV)&&fechaVencBD!=null&&(Math.abs(fechaV.longValue()-fechaVencBD.getTime()/Constants.TIMEMILLIS)<86400)){	
+		 		dma.printRule(" encontrado vencimiento anterior");		
+		 		
+		 			
+		 		if(listaP.size()==0){		 					 			
+		 			dma.printRule(" no tiene pagos, elimino");		 			
+		 			dma.delValue(idoDoc,idtoDoc,"vencimientos",v);		 	
+		 			pagadoTodasFPVencim-=importeV-deudaV; //deshago la suma			
+		 			//si no elimino primero todos los vencimientos no comprometidos con pagos, puede pasar que aleatoriamente primero procese uno de ellos y lo deje pasar, sin saber que existe otro completamente pagado
+		 			//que anula el importe libre para esta forma de pago por lo que el anterior deberia haberse eliminado. Mejor sumar todo y limpiar antes de crear al final con el resultado
+		 			//
+		 		}else{
+		 			dma.printRule(" si tiene pagos");
+					
+
+		 			if(deudaV!=0.0){		 					 	
+		 				dma.printRule(" tiene deuda, ajusto ");		 				 			
+		 				dma.setValue(v.getValue(),v.getValueCls(),dma.getIdProperty("deuda"),new DoubleValue(0.0));		 			
+		 				dma.setValue(v.getValue(),v.getValueCls(),dma.getIdProperty("importe"),new DoubleValue(importeV-deudaV));	
+		 							
+		 			} 				 		
+		 			importeLibre-=importeV-deudaV;
+		 		}
+			}			
+		}
+	}
+	//si está pagado actualizo solo medio de pago
+	//el vencimiento existente lo busco en base a la fecha anterior y a la actual, me quedo con todos puesto que puede haber varios si han sido pagados, o se ha eliminado los cobros
+	// si el importe total supera el del vencimeinto y esta pagado, creo uno nuevo por la diferencia, si no esta pagado actualizo importe incluso fecha 
+	if(importefactura>0.0&&(importefactura.doubleValue()-pagadoTodasFPVencim-anticipado<importeLibre)){		
+		importeLibre=Math.max(0.0,importefactura.doubleValue()-pagadoTodasFPVencim-anticipado);
+	}
+	if(importefactura<0&&(importefactura.doubleValue()-pagadoTodasFPVencim-anticipado>importeLibre)){	
+		importeLibre=Math.min(0.0,importefactura.doubleValue()-pagadoTodasFPVencim-anticipado);
+	}
+	dma.printRule("porcientoPendiente "+porcientoPendiente+" importe libre "+importeLibre);
+	if(importeLibre!=0.0)
+		calculaVencimientosporformadepago(dma, fsujeto.getPROPNAME(), sujeto, domFactura, rdnFormaPago,formaPago,domVenc,importeLibre, fechaFactura,retrocesoDiaPago);	
+end
+
+rule "CALCULO AUTOMÁTICO DE VENCIMIENTOS DE UNA FACTURA POR SU FORMA DE PAGO: LIMPIEZA"
+//Forma de pago indica importe pendiente de comprometer (es decir de vencimientos no tienen pago)
+//se recalculan vencimientos incremntal segun lo no comprometido
+salience -100
+ agenda-group "rules" when   	
+    
+	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="FACTURA")	
+	//el momento de bloqueo debe coincidir con la regla de instalacion. TODO ampliar regla de instalacion con limpieza
+	Lock(IDTO==idtoDoc,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+
+	ObjValue(IDO==idoDoc, PROPNAME=="vencimientos",idoV:IDOVALUE!=null,v:OBJECTVALUE)
+	DatValue(IDO==idoV,PROPNAME=="rdn",rdnV:VALOR!=null)   
+	not ObjValue(IDO==idoV, PROPNAME=="pago_asignado",idoFormaPago:IDOVALUE!=null)
+	
+	//para saber esta cargado	
+	exists((and ObjValue(IDO==idoDoc, PROPNAME=="forma_pago",idoFPAny:IDOVALUE!=null)
+				Individual(IDO==idoFPAny)))
+				
+ 	not((and 	ObjValue(IDO==idoDoc, PROPNAME=="forma_pago",idoFormaPago:IDOVALUE!=null)
+ 				DatValue(IDO==idoFormaPago,PROPNAME=="rdn",rdnFormaPago:VALOR!=null)
+ 				eval(rdnV.startsWith(rdnFormaPago))))         	                      	
+then
+	dma.printRule("========  CALCULO DE VENCIMIENTOS DE UNA FACTURA:LIMPIEZA "+rdnV);	
+	dma.delValue(idoDoc,idtoDoc,"vencimientos",v);	 		 			
+end
+
+rule "CALCULO AUTOMÁTICO DE VENCIMIENTOS DE UNA FACTURA POR SU FORMA DE PAGO: RESTRICCION MODIFICACIONES"
+//Si se elimina una forma de pago, habiendo un cobro asociado a un vencimiento, es posible que se creen nuevas formas de pago con otras fechas por lo que
+//quedaria un vencimiento con cobros (que no puede ser eliminado) y con referencia a un rdn de forma de pago que ya no existe, y tampoco sin relación de fechas 
+ agenda-group "rules" when   	
+    
+	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="FACTURA")	
+	Lock(IDTO==idtoDoc,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+
+	exists((and ObjValue(IDO==idoDoc, PROPNAME=="vencimientos",idoV:IDOVALUE!=null,v:OBJECTVALUE)	   
+				ObjValue(IDO==idoV, PROPNAME=="pago_asignado",idoPago:IDOVALUE!=null)))
+	
+	ObjValue(IDO==idoDoc, PROPNAME=="forma_pago",idoFPAnyPrevio:IDOPREVALOR!=null)
+	Individual(IDO==idoFPAnyPrevio,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+				 	
+then
+	dma.printRule("========  CALCULO DE VENCIMIENTOS DE UNA FACTURA:RESTRICCION MODIFICACIONES ");	
+	throw new OperationNotPermitedException("Esta modificación no es posible habiendo cobros existentes. Debe eliminar los cobros previamente."); 			
+end
+
+rule "NOMBRE DESCRIPTIVO RDN APLAZAMIENTO"
+salience 100
+agenda-group "rules" when 
+	
+	Individual(CLASSNAME=="APLAZAMIENTO",idfpago:ID,idoFpago:IDO,idtoFpago:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	DatValue(ID==idfpago,PROPNAME=="número_días",dias:INTVALUE!=null)
+	DatValue(ID==idfpago,PROPNAME=="número_meses",meses:INTVALUE!=null)
+then
+	dma.printRule("\n\n===========NOMBRE DESCRIPTIVO RDN APLAZAMIENTO");
+	dma.setValue(idoFpago,idtoFpago,"descripción", new StringValue(dias+" dias "+(meses.doubleValue()>0.0?" y "+meses+" meses":"")));
+end
+
+rule "NOMBRE DESCRIPTIVO RDN FORMAPAGO A_LA_ENTREGA"
+salience 100
+agenda-group "rules" when 
+	
+	Individual(CLASSNAME=="A_LA_ENTREGA",idfpago:ID,idoFpago:IDO,idtoFpago:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+then
+	dma.printRule("\n\n===========NOMBRE DESCRIPTIVO RDN FORMAPAGO A_LA_ENTREGA");
+	dma.setValue(idoFpago,idtoFpago,"descripción",new StringValue("A la entrega"));
+end
+
+rule "NOMBRE DESCRIPTIVO RDN DÍA_PAGO"
+salience 100
+agenda-group "rules" when 
+	
+	Individual(CLASSNAME=="DÍA_PAGO",idfpago:ID,idoFpago:IDO,idtoFpago:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	DatValue(ID==idfpago,PROPNAME=="día",dia:INTVALUE!=null)
+	DatValue(ID==idfpago,PROPNAME=="meses_relativos_factura",meses:INTVALUE!=null)
+then
+	dma.printRule("\n\n===========NOMBRE DESCRIPTIVO RDN DÍA_PAGO");
+	dma.setValue(idoFpago,idtoFpago,"descripción",new StringValue("Dia "+dia+(meses.doubleValue()>0.0?" meses relativo "+meses:"")));
+end
+
+rule "NOMBRE DESCRIPTIVO RDN FECHA_PAGO"
+salience 100
+agenda-group "rules" when 
+	
+	Individual(CLASSNAME=="FECHA_PAGO",idfpago:ID,idoFpago:IDO,idtoFpago:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	DatValue(ID==idfpago,PROPNAME=="día",dia:INTVALUE!=null)
+	DatValue(ID==idfpago,PROPNAME=="mes",mes:INTVALUE!=null)
+then
+	dma.printRule("\n\n===========NOMBRE DESCRIPTIVO RDN FECHA_PAGO");
+	dma.setValue(idoFpago,idtoFpago,"descripción",new StringValue("Dia "+dia+" mes "+mes));
+end
+
+rule "NOMBRE DESCRIPTIVO RDN PAGO ADELANTADO"
+salience 100
+agenda-group "rules" when 
+	
+	Individual(clase:CLASSNAME=="PAGO_ADELANTADO",idfpago:ID,idoFpago:IDO,idtoFpago:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+then
+	dma.printRule("\n\n===========NOMBRE DESCRIPTIVO RDN PAGO ADELANTADO");
+	dma.setValue(idoFpago,idtoFpago,"descripción",new StringValue("pago adelantado"));
+end
+
+
+ 
+rule "COBRO: IMPORTES FUNCION METÁLICO"
+salience -100
+agenda-group "rules" when 
+	
+
+	FactHierarchy(cls:CLASSSUP=="COBRO"||=="PARÁMETROS_COBRO",namecls:CLASS)	
+	DatValue(CLASSNAME==namecls,idoDoc:IDO!=null,idtoDoc:IDTO, PROPNAME=="entregado_metálico",entregadoMetalico:DOUBLEVALUE!=null,hasCHANGED==true)
+	
+	ObjValue(IDO==idoDoc, PROPNAME=="medio_de_pago",idoMedioPago:IDOVALUE!=null)	
+	DatValue(IDO==idoMedioPago, PROPNAME=="rdn",VALOR=="Metálico")
+
+	DatValue(IDO==idoDoc, PROPNAME=="importe",importe:DOUBLEVALUE!=null)	
+then
+	dma.printRule("=================COBRO: IMPORTES FUNCION METÁLICO "+cls+" doc:"+idoDoc+" "+importe+" "+entregadoMetalico);
+	double devuelto= entregadoMetalico-importe;
+	if(importe.doubleValue()>=0.0 && entregadoMetalico.doubleValue()<=importe.doubleValue()) devuelto=0.0;
+	dma.setValue(idoDoc,idtoDoc,"devuelto_metálico",new DoubleValue(Auxiliar.redondea(devuelto,2)));
+end
+
+ /*rule "COBRO: IMPORTES FUNCION METÁLICO"
+salience -100
+agenda-group "rules" when 
+	
+
+	FactHierarchy(CLASSSUP=="TICKET_VENTA"||=="COBRO"||=="PARÁMETROS_COBRO",namecls:CLASS)	
+	DatValue(CLASSNAME==namecls,idoDoc:IDO!=null,idtoDoc:IDTO, PROPNAME=="entregado_metálico",entregadoMetalico:DOUBLEVALUE!=null,hasCHANGED==true)
+	//ObjValue(IDO==idoDoc, PROPNAME=="medio_de_pago",idoMedioPago:IDOVALUE!=null)
+	//DatValue(IDO==idoMedioPago, PROPNAME=="rdn",VALOR=="Metálico")
+	importe:Double() from accumulate(DatValue(IDO==idoDoc, PROPNAME=="importe",importe:DOUBLEVALUE!=null),sum(importe))
+then
+	dma.printRule("=================COBRO: IMPORTES FUNCION METÁLICO");
+	double devuelto= entregadoMetalico-importe;
+	if(importe.doubleValue()>=0.0 && entregadoMetalico.doubleValue()==0.0) devuelto=0.0;
+	if(entregadoMetalico.doubleValue()>0 && importe.doubleValue()==0.0 )
+		dma.setValue(idoDoc,idtoDoc,"devuelto_metálico",new DoubleValue(Auxiliar.redondea(devuelto,2)));
+	dma.setValue(idoDoc,idtoDoc,"devuelto_metálico",new DoubleValue(Auxiliar.redondea(devuelto,2)));
+end*/
+ 
+rule "DESVINCULAR FORMA DE PAGO CON PORCENTAJE 0"//forma pago con porcentaje 0 no aporta nada
+ salience -100
+ agenda-group "rules" when 
+   	
+   	FactHierarchy(clsFormaPago:CLASS,CLASSSUP=="FORMA_PAGO")
+   	DatValue(CLASSNAME==clsFormaPago,PROPNAME=="porcentaje",DOUBLEVALUE==0.0,idoFormaPago:IDO!=null)
+   	Individual(IDO==idoFormaPago,STATE==Constants.INDIVIDUAL_STATE_READY)
+   	forall(
+   		Model(CLASSNAME==clsFormaPago,OP==Constants.OP_CARDINALITY,QMIN>=1,propOblig:PROPNAME)
+   		IndividualValue(IDO==idoFormaPago,PROPNAME==propOblig,VALOR!=null)
+   	)
+   	ObjValue(IDOVALUE==idoFormaPago,PROPNAME=="forma_pago",idoRoot:IDO!=null,idtoRoot:IDTO,clsRoot:CLASSNAME,fpago:OBJECTVALUE)
+then
+	dma.printRule("\n\n================  DESVINCULAR FORMA DE PAGO CON PORCENTAJE 0:  clsRoot="+clsRoot+" idoFPago:"+idoFormaPago);
+	dma.delValue(idoRoot,idtoRoot,"forma_pago",fpago);
+end
+
+rule "CAJA.SALDO: ACTUALIZACION"
+salience 150
+ agenda-group "rules" when 
+  	
+  	Individual(CLASSNAME=="CAJA",micaja:ID!=null,idomicaja:IDO,idtocaja:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	contributionInitEntradaCaja: Double() 
+    	from accumulate((and	
+					    	FactHierarchy(CLASSSUP=="ENTRADA_CAJA", namecls:CLASS)
+    						DatValue(CLASSNAME==namecls, idflujo:ID!=null,propiedad:PROPNAME=="importe",cantidadInitial:INITIALDOUBLE!=null)
+    						not(DatValue(ID==idflujo,PROPNAME=="rdn", INITIALVALOR=="#TEMPORAL"))																			    				 		
+							ObjValue(ID==idflujo,PROPNAME=="caja_entrada",INITIALVALOR==micaja)
+    					),
+                      init(Double res=new Double(0);),action(res+=cantidadInitial;),result(res))
+                      
+	contributionCurrEntradaCaja: Double() 
+    	from accumulate(
+    		(and	
+    						FactHierarchy(CLASSSUP=="ENTRADA_CAJA", namecls:CLASS)
+    						Individual(CLASSNAME==namecls, idoFlujo:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)//IMPORTANTE, PARA QUE AL BORRAR ELIMINA SU CONTRIBUCION
+    						DatValue(IDO==idoFlujo,propiedad:PROPNAME=="importe",cantidadCurrent:DOUBLEVALUE!=null)
+    						//No contabilizar cobros de sólo efecto contable (son eliminados) debido a lógicas a medida
+    						not(DatValue(IDO==idoFlujo,PROPNAME=="rdn", VALOR=="#TEMPORAL")) 						
+							ObjValue(IDO==idoFlujo,PROPNAME=="caja_entrada",VALOR==micaja)    						
+							
+			),                         		
+          init(Double res=new Double(0);),action(res+=cantidadCurrent;),result(res)) 
+          
+          
+    contributionInitSalidaCaja: Double() 
+    	from accumulate((and	
+					    	FactHierarchy(CLASSSUP=="SALIDA_CAJA", namecls:CLASS)
+    						DatValue(CLASSNAME==namecls, idflujo:ID!=null,propiedad:PROPNAME=="importe",cantidadInitial:INITIALDOUBLE!=null)
+							ObjValue(ID==idflujo,PROPNAME=="caja_salida",INITIALVALOR==micaja)
+    					),                      		            		
+                      init(Double res=new Double(0);),action(res+=cantidadInitial;),result(res))
+                      
+	contributionCurrSalidaCaja: Double() 
+    	from accumulate(
+    		(and	
+    						FactHierarchy(CLASSSUP=="SALIDA_CAJA", namecls:CLASS)
+    						Individual(CLASSNAME==namecls, idflujo:ID,STATE==Constants.INDIVIDUAL_STATE_READY)//IMPORTANTE, PARA QUE AL BORRAR ELIMINA SU CONTRIBUCION
+    						DatValue(ID==idflujo,propiedad:PROPNAME=="importe",cantidadCurrent:DOUBLEVALUE!=null)
+							ObjValue(ID==idflujo,PROPNAME=="caja_salida",VALOR==micaja)    						
+							
+			),             		
+          init(Double res=new Double(0);),action(res+=cantidadCurrent;),result(res))      
+          
+then
+		dma.printRule("\n============ CAJA.SALDO: ACTUALIZACION:  =======================");
+//	 	dma.printRule("..contribuciones de EntradaCaja:  contributionInitEntregadoMet="+contributionInitEntradaCaja+"  contributionCurrEntradaCaja="+contributionCurrEntradaCaja);
+//		dma.printRule("..contribuciones de SalidaCaja::  contributionInitSalidaCaja="+contributionInitSalidaCaja+"  contributionCurrSalidaCaja="+contributionCurrSalidaCaja);
+	 	
+	 	Double contValueEnd= contributionCurrEntradaCaja-contributionCurrSalidaCaja-( contributionInitEntradaCaja-contributionInitSalidaCaja);
+					
+	 	dma.setIncrementalValue(idomicaja,idtocaja,dma.getIdProperty("saldo"),contValueEnd,2);	
+end
+
+rule "CIERRE DE CAJA"  
+agenda-group "rules" when
+    
+   	ObjValue(typetask:CLASSNAME=="Cierre_de_caja", idUTask:ID ,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    ObjValue(ID==idUTask, PROPNAME=="sourceClass",caja:VALOR!=null,ovcaja:OBJECTVALUE,idoCaja:IDOVALUE!=null,idtoCaja:VALUECLS)
+    ObjValue(ID==idUTask, PROPNAME=="params",idparams:VALUE!=null,idoUtask:IDO,idtoUtask:IDTO)
+	DatValue(ID==idparams, idoparams:IDO,idtoparams:IDTO,PROPNAME=="declaración_saldo",saldoDeclarado:DOUBLEVALUE!=null)
+	miEmpresas: ArrayList() from collect(DatValue(CLASSNAME=="MI_EMPRESA", IDO!=null,PROPNAME=="rdn"))	
+then
+   dma.printRule("\n\n ===========CIERRE DE CAJA: idcaja="+caja+" saldoDeclarado="+saldoDeclarado); 
+   Double saldoTeoricoCajaAlCierre=((DoubleValue)dma.getValue(idoCaja,idtoCaja,"saldo")).getNumericValue();
+   Domain cierreCaja=dma.creaIndividualOfClass("CIERRE_CAJA");
+   Double descuadre=Auxiliar.redondea(saldoDeclarado-saldoTeoricoCajaAlCierre,2);
+
+    TimeValue fechaActual=new TimeValue(Auxiliar.getFechaActual());
+    dma.setValue(cierreCaja,"fecha_cierre",fechaActual);
+	dma.setValue(cierreCaja,"declaración_saldo",new DoubleValue(saldoDeclarado));
+	
+	//se indica la caja que se ha cerrado
+	 dma.setValue(cierreCaja,"caja",ovcaja);
+	//observaciones, es campo opcional
+	Value observaciones=dma.getValue(idoparams,idtoparams,"observaciones");
+	if(observaciones!=null){
+		dma.setValue(cierreCaja,"observaciones",observaciones);
+	}
+	
+	//se indica el descuadre
+	dma.setValue(cierreCaja,"descuadre_total",new DoubleValue(descuadre));
+	if(descuadre!=0){	//si hay descuadre hay que crear el objeto contable para contabilidad y para que la tesorería del saldo de la caja lo actualice.
+	
+		descuadre= Auxiliar.redondea(descuadre/miEmpresas.size(),2);
+		for(int i=0;i<miEmpresas.size();i++){
+			Domain domDescuadreCaja=dma.creaIndividualOfClass("DESCUADRE_CAJA");	
+			dma.setValue(domDescuadreCaja,"importe",new DoubleValue(descuadre));
+			dma.setValue(domDescuadreCaja,"fecha",fechaActual);
+			dma.setValue(domDescuadreCaja,"caja_entrada",ovcaja);	
+			dma.addValue(cierreCaja,"descuadre_caja",new ObjectValue(domDescuadreCaja));
+			
+			DatValue dvmiEmpresa=(DatValue)miEmpresas.get(i);
+			dma.setValue(domDescuadreCaja,"mi_empresa",new ObjectValue(dvmiEmpresa.getIDO(),dvmiEmpresa.getIDTO()));
+		
+		
+			//if(miEmpresas.size()==1){
+				//si solo hay una miEmpresa podemos proponerla
+			//	DatValue dvmiEmpresa=(DatValue)miEmpresas.get(0);
+			//	dma.setValue(domDescuadreCaja,"mi_empresa",new ObjectValue(dvmiEmpresa.getIDO(),dvmiEmpresa.getIDTO()));
+			//}
+		}
+	}
+
+	//finalizacion accion muestra el cierre_caja creado
+	dma.setValue(idoUtask,idtoUtask,"targetClass",new ObjectValue(cierreCaja));
+	
+end
+
+rule "CIERRE DE CAJA: UN UNICO DESCUADRE DEBE AJUSTARSE AL DESCUADRE TOTAL"  
+salience 100 //mas que la que da el error si descuadra
+agenda-group "rules" when
+    FactHierarchy(CLASSSUP=="CIERRE_CAJA",idtoCierre:IDTO)
+    DatValue(idoCierre:IDO, IDTO==idtoCierre,PROPNAME=="declaración_saldo",saldoDeclarado:DOUBLEVALUE!=null)
+	DatValue(IDO==idoCierre,PROPNAME=="descuadre_total",descuadreTotal:DOUBLEVALUE!=null)	
+	ObjValue(IDO==idoCierre,PROPNAME=="descuadre_caja",idoDescuadreCaja:IDOVALUE!=null,idtoDescuadre:VALUECLS)
+	not(ObjValue(IDO==idoCierre,PROPNAME=="descuadre_caja",IDOVALUE!=idoDescuadreCaja,VALOR!=null))						
+then
+   dma.printRule("==========CIERRE DE CAJA: UN UNICO DESCUADRE DEBE AJUSTARSE AL DESCUADRE TOTAL");
+   dma.setValue(idoDescuadreCaja,idtoDescuadre,"importe", new DoubleValue(descuadreTotal));
+end 
+
+rule "CIERRE DE CAJA COMPROBAR DESCUADRE TOTAL COINCIDE CON EL REPARTO DE DESCUADRE INDICADO"  
+agenda-group "rules" when
+    
+   	Lock(CLASSNAME=="CIERRE_CAJA", idoCierre:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+    DatValue(IDO==idoCierre, idtoCiere:IDTO,PROPNAME=="declaración_saldo",saldoDeclarado:DOUBLEVALUE!=null)
+	DatValue(IDO==idoCierre,PROPNAME=="descuadre_total",descuadreTotal:DOUBLEVALUE!=null)	
+	descuadreAsignado:Double() from accumulate(
+		(and
+			ObjValue(IDO==idoCierre,PROPNAME=="descuadre_caja",idoDescuadreCaja:IDOVALUE!=null)
+			DatValue(IDO==idoDescuadreCaja,PROPNAME=="importe",importei:DOUBLEVALUE!=null)
+		),
+		sum(importei))
+	eval(!descuadreAsignado.equals(descuadreTotal))
+		
+then
+   dma.printRule("\n\n ==========CIERRE DE CAJA COMPROBAR DESCUADRE TOTAL COINCIDE CON EL REPARTO DE DESCUADRE INDICADO:  descuadreTotal="+descuadreTotal+" descuadreAsignado:"+descuadreAsignado );
+    throw new OperationNotPermitedException("\n Los descuadres indicados "+descuadreAsignado+" no coinciden con el descuadre total del cierre de caja "+ descuadreTotal);
+end 
+
+
+rule "NO SE PUEDEN INTRODUCIR CUENTAS BANCARIAS ERRÓNEAS"
+	agenda-group "rules"
+	when
+		
+		Lock(idCuenta:ID!=null, CLASSNAME=="CUENTA_BANCARIA", STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+		DatValue(ID==idCuenta, PROPNAME=="entidad", entidad:VALOR!=null)
+		DatValue(ID==idCuenta, PROPNAME=="oficina", oficina:VALOR!=null)
+		DatValue(ID==idCuenta, PROPNAME=="dígito_de_control", digitoControl:VALOR!=null)
+		DatValue(ID==idCuenta, PROPNAME=="número_cuenta", numeroCuenta:VALOR!=null)
+
+	then
+		int[] pesos = {4, 8, 5, 10, 9, 7, 3, 6};
+		int[] pesosCuenta = {1, 2, 4, 8, 5, 10, 9, 7, 3, 6};
+		int total = 0;
+		Character caracter;
+		
+		if(entidad.length()==4 && oficina.length()==4 && digitoControl.length()==2 && numeroCuenta.length()==10){
+			for(int i=0 ; i<8 ; i++){
+				if(i<4){
+					caracter = entidad.charAt(i);
+					total += (Integer.parseInt(caracter.toString())) * pesos[i];
+				}else{
+					caracter = oficina.charAt(i%4);				
+					total += (Integer.parseInt(caracter.toString())) * pesos[i];
+				}
+			}
+			
+			Integer dc1 = 11-(total%11);
+			if(dc1 == 11){
+				dc1 = 0;
+			}else if(dc1 == 10){
+				dc1 = 1;
+			}
+	
+			total = 0;
+			for(int i=0 ; i<10 ; i++){
+				caracter =numeroCuenta.charAt(i);
+				total += (Integer.parseInt(caracter.toString())) * pesosCuenta[i];
+			}
+			
+			Integer dc2 = 11-(total%11);
+			if(dc2 == 11){
+				dc2 = 0;
+			}else if(dc2 == 10){
+				dc2 = 1;
+			}
+	
+			String digitoCalculado = dc1.toString() + dc2.toString();
+			if(!digitoControl.equals(digitoCalculado)){
+				throw new OperationNotPermitedException("Ese número de cuenta no es correcto (valor correcto: " + digitoCalculado + "). Revíselo por favor.");	
+			}
+		}else{
+			throw new OperationNotPermitedException("Algunos de los campos de la cuenta bancaria, no tienen la longitud correcta. Revíselo por favor.");	
+		}
+end
+
+rule "FORMA DE PAGO: DEPENDENCIA IMPORTE>PORCENTAJE"
+salience -200 //Para esperar se calcule bien el IVA
+agenda-group "rules" when
+    
+    FactHierarchy(CLASSSUP=="DOCUMENTO_COMERCIAL",idtoDoc:IDTO)
+    ObjValue(IDTO==idtoDoc,PROPNAME=="forma_pago",idoFPago:IDOVALUE!=null,idoDoc:IDO!=null,idtoFPago:VALUECLS)
+    DatValue(IDO==idoDoc,PROPNAME=="importe",importeDoc:DOUBLEVALUE!=null)		
+	DatValue(IDO==idoFPago,PROPNAME=="importe",importe:DOUBLEVALUE!=null&&<=importeDoc)		
+	                				  	
+then
+	 dma.printRule("================ FORMA DE PAGO: DEPENDENCIA IMPORTE>PORCENTAJE "+ importe +" "+importeDoc);
+	 //importeDoc-=Auxiliar.redondea(anticipoPrevio+anticipoThis+pagadoVenc,2);
+	 DataValue dvPorcentaje=(DataValue)dma.getValue(idoFPago,idtoFPago,"porcentaje");
+	 double porcentaje=0;
+	 double importeBack=0;
+	 
+	 if(dvPorcentaje!=null){
+	 	porcentaje=dvPorcentaje.getNumericValue();	 	 	 	
+	 	importeBack= Auxiliar.redondea(porcentaje/100*importeDoc,2);
+	 }
+	 
+	 if(dvPorcentaje==null || importeBack!=importe){
+	 	//El importe se puede redondear a dos digitos, pero el porcentaje no porque al comprobar el retorno añade un error mayor a un digito
+	 	double res= Auxiliar.redondea(importe/importeDoc*100,5);
+	 	dma.printRule("PORCENTAJE "+res+" importeDoc reducido:"+importeDoc);
+	 	dma.setValue(idoFPago,idtoFPago,"porcentaje",new DoubleValue(res));
+	 }	 
+end 
+
+rule "FORMA DE PAGO: DEPENDENCIA PORCENTAJE>IMPORTE"
+salience -100 //Para esperar se calcule bien el IVA, pero antes que la del importe, pues quizas se sabe el porcentaje a priori antes de haber lienas, pero no el importe
+agenda-group "rules" when
+    
+    FactHierarchy(CLASSSUP=="DOCUMENTO_COMERCIAL",idtoDoc:IDTO)
+    ObjValue(cls:CLASSNAME,IDTO==idtoDoc,PROPNAME=="forma_pago",idoFPago:IDOVALUE!=null,idoDoc:IDO!=null,idtoFPago:VALUECLS)
+    DatValue(IDO==idoDoc,PROPNAME=="importe",importeDoc:DOUBLEVALUE!=null)		
+	DatValue(IDO==idoFPago,PROPNAME=="porcentaje",porcentaje:DOUBLEVALUE!=null)
+
+	restoFormasPago:Double() from accumulate((and 	ObjValue(IDO==idoDoc,PROPNAME=="forma_pago",idoFPAny:IDOVALUE!=idoFPago)													
+													DatValue(IDO==idoFPAny,PROPNAME=="importe",q:QMIN!=null)
+												),
+                      				  	init(Double res=new Double(0);),action(res+=q;),result(res))   	
+                    				  	                       				  	                    				  
+then
+	 dma.printRule("================ FORMA DE PAGO: DEPENDENCIA PORCENTAJE>IMPORTE "+cls+" "+importeDoc);
+	 //double pendientePago=importeDoc-Auxiliar.redondea(anticipoPrevio.doubleValue()+anticipoThis.doubleValue()+pagadoVenc.doubleValue(),2);
+
+	 dma.printRule(" post "+importeDoc);
+	 DataValue dvImporte=(DataValue)dma.getValue(idoFPago,idtoFPago,"importe");
+	 double importe=0;
+	 double porcentajeBack=0;
+	 
+	 if(dvImporte!=null){
+	 	importe=dvImporte.getNumericValue();	 	 	 	
+	 	porcentajeBack= Auxiliar.redondea(importe/importeDoc*100,5);
+	 }
+	 dma.printRule(" dbg porback "+porcentajeBack+" "+porcentaje+ " "+importe);
+	 if(dvImporte==null || porcentajeBack!=porcentaje.doubleValue()){
+	 	double nuevoImporteFP=Auxiliar.redondea(porcentaje/100*importeDoc,2);
+	 	
+	 	double pendienteNoComprometidoOtrasFormasPago=importeDoc-restoFormasPago.doubleValue();
+	
+		if(nuevoImporteFP>0 && pendienteNoComprometidoOtrasFormasPago<nuevoImporteFP){
+			nuevoImporteFP=pendienteNoComprometidoOtrasFormasPago;
+		}
+
+	 	dma.printRule(" asignando importe "+importeDoc+" "+porcentaje+" "+nuevoImporteFP);
+	 	dma.setValue(idoFPago,idtoFPago,"importe",new DoubleValue(nuevoImporteFP));
+	 }	 
+end
+
+
+rule "FORMA DE PAGO: OBLIGATORIEDAD"
+
+salience -200
+no-loop true
+ agenda-group "rules" when   	 
+	 FactHierarchy(idtoClsRoot:IDTO,CLASSSUP=="FACTURA")	 
+	 Individual(IDTO==idtoClsRoot,idoRoot:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	 
+	 //si no esta bloqueada por usuario puede saltar en documentos incompletos que vienen de replica, como un ticket de otra empresa siendo abonado. Ademas ticket deben quedar pagados en general
+	 forall(	FactHierarchy(IDTO==idtoClsRoot,CLASSSUP=="TICKET")
+	 			Lock(IDO==idoRoot,LOCKEDBYUSER==true))	
+	 
+	 DatValue(IDTO==idtoClsRoot,IDO==idoRoot,PROPNAME=="importe",importe:DOUBLEVALUE!=null)		 
+	 
+	 anticipoPrevio:Double() from accumulate((and FactHierarchy(CLASSSUP=="COBRO_ANTICIPO", idtoAnt:IDTO)
+													DatValue(IDTO==idtoAnt, idoCobroAny:IDO,PROPNAME=="importe",i:DOUBLEVALUE!=null)
+													exists((and ObjValue(IDO==idoRoot,PROPNAME=="línea", idoLinea:IDOVALUE)
+																ObjValue(IDO==idoLinea,PROPNAME=="documento", idoPrevio:IDOVALUE!=idoRoot)
+																ObjValue(IDO==idoPrevio,PROPNAME=="cobro_anticipo",IDOVALUE==idoCobroAny)))
+											),
+                      				  	init(Double res=new Double(0);),action(res+=i;),result(res))	 
+                      				  	
+	 anticipoThis:Double() from accumulate((and ObjValue(IDO==idoRoot,PROPNAME=="cobro_anticipo",idoCobroAny:IDOVALUE)
+    											DatValue(IDO==idoCobroAny,PROPNAME=="importe",i:DOUBLEVALUE!=null)),
+                      				  	init(Double res=new Double(0);),action(res+=i;),result(res))	
+                      				  	                      				  	
+	 cobroVenc:Double() from accumulate((and 	FactHierarchy(CLASSSUP=="COBRO_VENCIMIENTO", idtoC:IDTO)
+	 											ObjValue(IDTO==idtoC,idoCobro:IDO,PROPNAME=="vencimientos_asignados",idoAsig:IDOVALUE!=null)
+	 											ObjValue(IDO==idoAsig,PROPNAME=="vencimiento",idoV:IDOVALUE)
+	 											ObjValue(IDO==idoV,PROPNAME=="factura",IDOVALUE==idoRoot) 
+	 											DatValue(IDO==idoAsig,PROPNAME=="importe_asignado",i:DOUBLEVALUE!=null)   	
+	 									),	 											    										
+                      				  	init(Double res=new Double(0);),action(res+=i;),result(res))	
+                      				  	                      				  	
+        				  						
+	 facts:ArrayList() from collect(IndividualCardinality(IDO==idoRoot,PROPNAME=="forma_pago"))	
+	 jb:JBossEngine()                      				  							 	
+then 	
+ 	
+ 	Double totalEntregado=Auxiliar.redondea(anticipoPrevio+anticipoThis+cobroVenc,2);
+ 	dma.printRule("============FORMA DE PAGO: OBLIGATORIEDAD "+importe+" previo "+anticipoPrevio+" this "+anticipoThis+" "+totalEntregado+" facts:"+facts.size());
+ 	
+ 
+ 	if( importe.doubleValue()!=0.0 && !totalEntregado.equals(importe) && facts.size()==0 ){
+ 		dma.printRule("dentro obligatoriedad");
+ 		 
+ 		dma.setCardinality(idoRoot,idtoClsRoot,"forma_pago",1,null);
+ 		//Si le corresponde forma de pago y no tiene, los vencimientos no estan actualizados y por tanto la deuda tampoco. Si no la reseteo, y antes estaba pagago por anticipo, 
+ 		//permanece con deuda cero y no se actualiza a pagado false: No puede hacer que se dispare de nuevo la regla de deuda factura porque depende de usuario asigne forma de pago
+ 		dma.delValues(idoRoot,idtoClsRoot,"deuda");
+ 	}
+ 		
+ 	if( (importe.doubleValue()==0.0 || totalEntregado.equals(importe)) && facts.size()>0 ){
+ 		dma.printRule(" RETRACT FORMA PAGO"); 
+ 		jb.retractFact((IndividualCardinality)facts.get(0));
+ 	}	
+ 	
+end
+
+/*
+Parece ser ilegal imprimir cuenta del cliente
+En cualquier caso la remesa captura la cuenta bancaria del cliente. Habria que hacer que excepcionalmente se pueda tomar del vencimiento indicandolo en la forma de pago de la factura
+rule "CUENTA BANCARIA POR DEFECTO DE FORMPA PAGO MEDIO PAGO DOMICILIACIÓN EN DOC VENTA ES LA CUENTA BANCARIA DEL CLIENTE"
+agenda-group "rules" when
+    
+    FactHierarchy(CLASSSUP=="DOCUMENTO_VENTA_NOMINATIVO",idtoDoc:IDTO)
+    ObjValue(IDTO==idtoDoc,PROPNAME=="forma_pago",idoFPago:IDOVALUE!=null,idoDoc:IDO!=null,idtoFPago:VALUECLS)
+    not(ObjValue(IDO==idoFPago,PROPNAME=="cuenta_bancaria",idoMedioPago:IDOVALUE!=null))
+    ObjValue(IDO==idoFPago,PROPNAME=="medio_de_pago",idoMedioPago:IDOVALUE!=null)
+    DatValue(IDO==idoMedioPago,PROPNAME=="rdn",VALOR=="Domiciliación")
+	ObjValue(IDO==idoDoc,PROPNAME=="cliente",idoCliente:IDOVALUE!=null)  
+	ObjValue(IDO==idoCliente,PROPNAME=="cuenta_bancaria",idoCuentaBancaria:IDOVALUE,idtoCuentaBancaria:VALUECLS)
+
+then
+	 dma.printRule("\n\n  ================ CUENTA BANCARIA POR DEFECTO DE FORMPA PAGO MEDIO PAGO DOMICILIACIÓN EN DOC VENTA ES LA CUENTA BANCARIA DEL CLIENTE");
+	 Domain domCuentaClonada=dma.cloneIndividual(idoCuentaBancaria,idtoCuentaBancaria,idtoCuentaBancaria,null);
+	 dma.delValues(idoFPago,idtoFPago,"cuenta_bancaria");
+	 dma.setValue(idoFPago,idtoFPago,"cuenta_bancaria",new ObjectValue(domCuentaClonada));
+end*/ 
+
+rule "CUENTA BANCARIA POR DEFECTO DE FORMA PAGO MEDIO PAGO TRANSFERENCIA EN DOC VENTA ES LA CUENTA BANCARIA DE MI EMPRESA DEL DOCUMENTO"
+agenda-group "rules" when
+    
+    FactHierarchy(CLASSSUP=="DOCUMENTO_VENTA_NOMINATIVO",idtoDoc:IDTO)
+    ObjValue(IDTO==idtoDoc,PROPNAME=="forma_pago",idoFPago:IDOVALUE!=null,idoDoc:IDO!=null,idtoFPago:VALUECLS)
+    not(ObjValue(IDO==idoFPago,PROPNAME=="cuenta_bancaria",idoMedioPago:IDOVALUE!=null))
+    ObjValue(IDO==idoFPago,PROPNAME=="medio_de_pago",idoMedioPago:IDOVALUE!=null)
+    DatValue(IDO==idoMedioPago,PROPNAME=="rdn",VALOR=="Transferencia"||=="Transferencia_SWIFT")
+	ObjValue(IDO==idoDoc,PROPNAME=="mi_empresa",idoMiEmp:IDOVALUE!=null)  
+	ObjValue(IDO==idoMiEmp,PROPNAME=="cuenta_bancaria",idoCuentaBancaria:IDOVALUE,idtoCuentaBancaria:VALUECLS)
+
+then
+	 dma.printRule("\n\n  ================ CUENTA BANCARIA POR DEFECTO DE FORMPA PAGO MEDIO PAGO TRANSFERENCIA EN DOC VENTA ES LA CUENTA BANCARIA DE MI EMPRESA DEL DOCUMENTO");
+	 Domain domCuentaClonada=dma.cloneIndividual(idoCuentaBancaria,idtoCuentaBancaria,idtoCuentaBancaria,null);
+	 dma.delValues(idoFPago,idtoFPago,"cuenta_bancaria");
+	 dma.setValue(idoFPago,idtoFPago,"cuenta_bancaria",new ObjectValue(domCuentaClonada));
+end 
+ 
+rule "PRECARGA COBROS ANTICIPO CLIENTES"
+salience -400
+ no-loop true
+ agenda-group "rules"
+ when
+ 	
+	clientes: HashSet(size>0) 
+            	from accumulate(
+            				 (and 
+            				 		FactHierarchy(idtoFactura:IDTO,CLASSSUP=="FACTURA_A_CLIENTE")
+            				 		ObjValue(IDTO==idtoFactura,idoFactura:IDO,PROPNAME=="cliente",idoCliente:IDOVALUE!=null,RANGENAME!="CLIENTE_VARIOS")
+		 							not(ObjValue(IDO==idoFactura,PROPNAME=="vencimientos",IDOVALUE!=null)) 								
+            				  ),
+                              init	(HashSet<Integer> clientes2 = new HashSet<Integer>();
+          		              ),
+                              action( 
+                              		clientes2.add(idoCliente);
+                           ),                            
+                             result(clientes2))	
+	
+then
+	dma.printRule("\n\n=========    PRECARGA COBROS ANTICIPO CLIENTES ="+clientes);
+
+	
+	Iterator it=clientes.iterator();
+	while(it.hasNext()){
+		Integer idoCliente=(Integer)it.next();
+		ArrayList parametroCliente=new ArrayList();
+		parametroCliente.add(idoCliente);
+		
+		///TODO MODIFICAR QUERY PARA QUE RECIBA VARIOS CLIENTE Y ASI AHORRAR HACER VARIAS QUEYRS!!!
+		HashSet<IDIndividual> anticipos=Query.loadIndividualsWithSatisficedQuery( dma.getDDM(),Query.getSQLOfQuery(Query.cobroAnticipo,parametroCliente),1);
+		dma.printRule("...anticipos cargados en motor:"+anticipos);
+	
+	}
+	
+end
+
+
+rule "PRECARGA COBROS ANTICIPO DOCUMENTOS"
+agenda-group "rules"
+ when
+ 	
+	cobros: HashSet(size>0) 
+            	from accumulate(
+            				 (and  								
+								ObjValue(PROPNAME=="cobro_anticipo",idoCobro:IDOVALUE!=null,cobro:OBJECTVALUE)
+								  not(Individual(IDO==idoCobro))
+             				  ),
+                              init	( HashSet<IDIndividual> cobros2 = new HashSet<IDIndividual> ();),
+                              action( cobros2.add(cobro);),                            
+                              result(cobros2))
+then
+	dma.printRule("=========== PRECARGA COBROS ANTICIPO DOCUMENTOS");
+	dma.ruleGetFromServer(cobros,1,false);
+end
+
+rule "COBRO_ANTICIPO: ASIGNACIÓN A VENCIMIENTO_COBRO"
+salience -400//muy baja, todas reglas de deuda deben dispararse antes que esta
+agenda-group "rules" when
+
+    
+//DatValue(CLASSNAME=="COBRO_ANTICIPO", PROPNAME=="importe_anticipado",importeAnticipado:DOUBLEVALUE!=null&&>0,idoCobroAntic:IDO!=null,idtoCobroAntic:IDTO)
+	DatValue(CLASSNAME=="COBRO_ANTICIPO", PROPNAME=="importe",importeAnticipado:DOUBLEVALUE!=null&&>0,idoCobroAntic:IDO!=null,idtoCobroAntic:IDTO)		
+	Individual(IDO==idoCobroAntic,STATE==Constants.INDIVIDUAL_STATE_READY)//para que no asigne filtros
+	DatValue(IDO==idoCobroAntic,PROPNAME=="importe_pendiente_asignar",totalAsignar:DOUBLEVALUE>0)
+	ObjValue(IDO==idoCobroAntic, PROPNAME=="mi_empresa",miEmpresa:IDOVALUE!=null)
+	
+	//No contabilizar cobros de sólo efecto contable (son eliminados) debido a lógicas a medida
+    not(DatValue(IDO==idoCobroAntic,PROPNAME=="rdn", VALOR=="#TEMPORAL"))
+	/////////
+
+	ObjValue(IDO==idoCobroAntic,PROPNAME=="medio_de_pago",idoMedioPagoAnticipo:IDOVALUE!=null)	
+		
+	ObjValue(IDO==idoCobroAntic, PROPNAME=="cliente",cliente:VALOR!=null)
+    ObjValue(CLASSNAME=="VENCIMIENTO_DE_COBRO",idoVenc:IDO!=null,PROPNAME=="cliente",VALOR==cliente)
+    Individual(IDO==idoVenc,STATE==Constants.INDIVIDUAL_STATE_READY)
+    ObjValue(IDO==idoVenc,PROPNAME=="medio_de_pago",idoMedioPagoVenc:IDOVALUE!=null)    
+    ObjValue(IDO==idoVenc, PROPNAME=="mi_empresa",IDOVALUE==miEmpresa)
+    ObjValue(IDO==idoVenc,PROPNAME=="factura",idFactura:VALOR!=null)
+    Individual(ID==idFactura,STATE==Constants.INDIVIDUAL_STATE_READY)	
+    
+	//O el anticipo no esta asociado a documento, o esta asociado a esta factura
+	//not(ObjValue(IDO==idoCobroAntic,PROPNAME=="documento_anticipo",VALOR!=idFactura))
+	
+	DatValue(IDO==idoVenc,idtoVenc:IDTO, PROPNAME=="deuda",deuda:DOUBLEVALUE>0)
+	DatValue(IDO==idoVenc, PROPNAME=="fecha",fecha1:QMIN!=null, fechaDate:DATE)
+	DatValue(IDO==idoVenc, PROPNAME=="importe",importeVenc:DOUBLEVALUE!=null)
+	not(ObjValue(CLASSNAME=="ASIGNACIÓN_VENCIMIENTO_COBRO",IDO!=null,PROPNAME=="vencimiento",IDOVALUE==idoVenc))//para que no cree nuevas asignaciones vencimiento si ya existen sobre el mismo vencimiento				
+	
+	not((and//no hay otro vencimientos de cobro suceptible de usar el cobro anticipo y con fecha vencimiento más antigua
+			eval(!idoMedioPagoVenc.equals(idoMedioPagoAnticipo))
+			
+			ObjValue(CLASSNAME=="VENCIMIENTO_DE_COBRO",idoVenc2:IDO!=null,PROPNAME=="cliente",VALOR==cliente)
+			not(ObjValue(CLASSNAME=="ASIGNACIÓN_VENCIMIENTO_COBRO",IDO!=null,PROPNAME=="vencimiento",IDOVALUE==idoVenc2))//para que no cree nuevas asignaciones vencimiento si ya existen sobre el mismo vencimiento			
+            Individual(IDO==idoVenc2,STATE==Constants.INDIVIDUAL_STATE_READY)
+			DatValue(IDO==idoVenc2,PROPNAME=="deuda",DOUBLEVALUE>0)						
+			DatValue(IDO==idoVenc2, PROPNAME=="fecha",fecha2:QMIN!=null)
+			ObjValue(IDO==idoVenc2,PROPNAME=="medio_de_pago",idoMedio2:IDOVALUE)
+			eval(fecha2<fecha1 || idoMedio2.equals(idoMedioPagoAnticipo))									
+	 ))
+then
+	 dma.printRule("\n\n  ===========   COBRO_ANTICIPO: ASIGNACIÓN A VENCIMIENTO_COBRO. cobroAnticipo:"+fechaDate+" "+idoCobroAntic+" importeAnticipado:"+importeAnticipado+"  fechaVenc:"+fecha1+"  deudaVenc:"+deuda);		 	
+	 String msg="Existe un anticipo que permitiría saldar " + totalAsignar + " sobre el vencimiento "+fechaDate+" de importe "+importeVenc+" ¿desea asignar el pago automáticamente?";
+	 boolean cobroNoAsignado=dma.getValue(idoCobroAntic,idtoCobroAntic,"documento_anticipo")==null;	 	 
+	 
+	 if(cobroNoAsignado || dma.showQuestion(msg)){	 
+	 	Domain dom=dma.creaIndividualOfClass("ASIGNACIÓN_VENCIMIENTO_COBRO");
+	 	double importeAasignar=Auxiliar.redondea(Math.min(totalAsignar,deuda),2);
+	 	if(cobroNoAsignado){
+	 		dma.showMessage("Se salda la deuda de "+importeAasignar+" con una provisión de fondos que ya existía");
+	 	}
+	 	
+	 	dma.setValue(dom,"importe_asignado",new DoubleValue(importeAasignar));
+	 	//dma.printRule("\n.... debug importe_asignado:"+importeAasignar);
+	 	dma.setValue(dom,"vencimiento",new ObjectValue(idoVenc,idtoVenc));
+	 	//dma.printRule("\n.... debug valor vencimiento en asignacion cobro tras asignar: "+dma.getValue(dom,"vencimiento"));
+	 	dma.addValue(idoCobroAntic,idtoCobroAntic,"vencimientos_asignados",new ObjectValue(dom));
+	 }	  	 
+end 
+
+rule "CLIENTE DE COBRO ANTICIPO DE UN DOCUMENTO VENTA ES EL CLIENTE DEL DOCUMENTO"
+agenda-group "rules" when
+    
+    FactHierarchy(CLASSSUP=="DOCUMENTO_VENTA",claseDoc:CLASS!=null)
+    //si no exigimos que el cobro sea nuevo, habria que exigir que este su individual cargado
+    ObjValue(CLASSNAME==claseDoc,idoDoc:IDO!=null,PROPNAME=="cobro_anticipo", idoCobroAnticipo:IDOVALUE<0,idtoCobroAnticipo:VALUECLS)
+  	not(ObjValue(IDO==idoCobroAnticipo,PROPNAME=="cliente", VALOR!=null))
+	ObjValue(IDO==idoDoc,PROPNAME=="cliente", idoCliente:IDOVALUE!=null,obcliente:OBJECTVALUE!=null)      	
+then
+	 dma.printRule("\n\n  ================     CLIENTE DE COBRO ANTICIPO DE UN DOCUMENTO VENTA ES EL CLIENTE DEL DOCUMENTO "+claseDoc+" "+idoCobroAnticipo);
+	 dma.setValue(idoCobroAnticipo,idtoCobroAnticipo,"cliente",obcliente);
+end 
+
+rule "DOCUMENTO VENTA PAGADO SI TIENE DEUDA CERO O SI COBRO ANTICIPADO ES DEL MISMO IMPORTE QUE EL DEL DOCUMENTO"
+salience -100
+ agenda-group "rules" when 
+   	
+   	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_VENTA_NOMINATIVO")
+	Lock(CLASSNAME==nameDoc,idoDoc:IDO!=null,idtoDoc:IDTO,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)	
+	DatValue(IDO==idoDoc,PROPNAME=="importe",importeDoc:DOUBLEVALUE!=null)
+	
+	anticipado:Double() from accumulate((and 	FactHierarchy(CLASSSUP=="COBRO_ANTICIPO", idtoAnt:IDTO)
+												DatValue(IDTO==idtoAnt, idoCobroAny:IDO,PROPNAME=="importe",i:DOUBLEVALUE!=null)
+												DatValue(IDO==idoCobroAny,PROPNAME=="rdn", VALOR!="#TEMPORAL")
+												exists((and ObjValue(IDO==idoDoc,PROPNAME=="línea", idoLinea:IDOVALUE)
+															ObjValue(IDO==idoLinea,PROPNAME=="documento", idoPrevio:IDOVALUE)
+															ObjValue(IDO==idoPrevio,PROPNAME=="cobro_anticipo",IDOVALUE==idoCobroAny)))
+    				 						),
+                      				  init(Double res=new Double(0);),action(res+=i;),result(res)) 
+	
+	(or
+		exists(DatValue(IDO==idoDoc,PROPNAME=="importe",DOUBLEVALUE==0))
+		
+		exists(DatValue(IDO==idoDoc,PROPNAME=="deuda",DOUBLEVALUE==0))
+		
+		eval(Math.abs(importeDoc)<=Math.abs(anticipado)&&importeDoc*anticipado>0)
+	)
+then
+	dma.printRule("\n\n================= DOCUMENTO VENTA COBRADO SI TIENE DEUDA CERO O SI COBRO ANTICIPADO ES DEL MISMO IMPORTE QUE EL DEL DOCUMENTO idoDoc"+idoDoc);
+	dma.setValue(idoDoc,idtoDoc,"pagado", new BooleanValue(true));
+end
+
+rule "DOCUMENTO VENTA PAGADO FALSE SI NO TIENE DEUDA CERO Y NO TIENE COBRO ANTICIPADO DEL MISMO IMPORTE QUE EL DEL DOCUMENTO"
+salience -100
+ agenda-group "rules" when 
+   	
+   	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_VENTA_NOMINATIVO")
+	Individual(CLASSNAME==nameDoc,idoDoc:IDO!=null,idtoDoc:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)	
+	
+	DatValue(IDO==idoDoc,PROPNAME=="importe",importeDoc:DOUBLEVALUE!=null)
+	
+	//si tiene cobros anticipo, que esten cargados
+	forall(	ObjValue(IDO==idoDoc,PROPNAME=="cobro_anticipo",idoCobroAnticipo:IDOVALUE!=null)
+			DatValue(IDO==idoCobroAnticipo,PROPNAME=="rdn"))
+			
+	DatValue(IDO==idoDoc,PROPNAME=="importe",DOUBLEVALUE!=0)
+	
+	not(DatValue(IDO==idoDoc,PROPNAME=="deuda",DOUBLEVALUE==0))		
+	
+	anticipado:Double() from accumulate((and 	FactHierarchy(CLASSSUP=="COBRO_ANTICIPO", idtoAnt:IDTO)
+												DatValue(IDTO==idtoAnt, idoCobroAny:IDO,PROPNAME=="importe",i:DOUBLEVALUE!=null)
+												DatValue(IDO==idoCobroAny,PROPNAME=="rdn", VALOR!="#TEMPORAL")
+												exists((and ObjValue(IDO==idoDoc,PROPNAME=="línea", idoLinea:IDOVALUE)
+															ObjValue(IDO==idoLinea,PROPNAME=="documento", idoPrevio:IDOVALUE)
+															ObjValue(IDO==idoPrevio,PROPNAME=="cobro_anticipo",IDOVALUE==idoCobroAny)))
+    				 						),
+                      				  init(Double res=new Double(0);),action(res+=i;),result(res))
+							
+	eval(!(Math.abs(importeDoc)<=Math.abs(anticipado)&&importeDoc*anticipado>0))
+then
+	dma.printRule("\n\n================= DOCUMENTO VENTA PAGADO FALSE SI NO TIENE DEUDA CERO Y NO TIENE COBRO ANTICIPADO DEL MISMO IMPORTE QUE EL DEL DOCUMENTO idoDoc"+idoDoc);
+	dma.setValue(idoDoc,idtoDoc,"pagado", new BooleanValue(false));
+end
+
+rule "VENCIMIENTO PAGADO FALSE SI DEUDA!=0"
+salience -100
+ agenda-group "rules" when 
+   	
+   	FactHierarchy(nameDoc:CLASS,CLASSSUP=="VENCIMIENTO")
+	Lock(CLASSNAME==nameDoc,STATE==Constants.INDIVIDUAL_STATE_LOCK,idoDoc:IDO!=null,idtoDoc:IDTO)
+	DatValue(IDO==idoDoc,PROPNAME=="deuda",deuda:DOUBLEVALUE>=0.01||<=-0.01)			
+then
+	dma.printRule("\n\n================= VENCIMIENTO PAGADO FALSE SI DEUDA!=0 idoDoc"+idoDoc+" "+deuda);
+	dma.setValue(idoDoc,idtoDoc,"pagado", new BooleanValue(false));
+end
+
+rule "VENCIMIENTO PAGADO TRUE SI DEUDA=0"
+salience -100
+ agenda-group "rules" when 
+   	
+   	FactHierarchy(nameDoc:CLASS,CLASSSUP=="VENCIMIENTO")
+	Lock(CLASSNAME==nameDoc,STATE==Constants.INDIVIDUAL_STATE_LOCK,idoDoc:IDO!=null,idtoDoc:IDTO)
+	DatValue(IDO==idoDoc,PROPNAME=="deuda",deuda:DOUBLEVALUE<0.01&&>-0.01)			
+then
+	dma.printRule("\n\n================= VENCIMIENTO PAGADO TRUE SI DEUDA=0 idoDoc"+idoDoc+" "+deuda);
+	dma.setValue(idoDoc,idtoDoc,"pagado", new BooleanValue(true));
+end
+
+rule "NO PERMITIR COMBINACIONES CLIENTE COBRO ANTICIPO-CLIENTE DOCUMENTO INCOMPATIBLES" 
+salience 100
+agenda-group "rules" when           
+       
+       ObjValue(PROPNAME=="cobro_anticipo",idoCobroAnticipo:IDOVALUE!=null,idoDoc:IDO!=null)
+	   ObjValue(IDO==idoCobroAnticipo,PROPNAME=="cliente",idoCliente:IDOVALUE!=null)       
+	   ObjValue(IDO==idoDoc,PROPNAME=="cliente",idoCliente2:IDOVALUE!=idoCliente)	   
+then
+        dma.printRule("\n\n ================= NO PERMITIR COMBINACIONES CLIENTE COBRO ANTICIPO-CLIENTE DOCUMENTO INCOMPATIBLES: doc:"+idoDoc+" cobroAnt:"+idoCobroAnticipo+"  cliente1:"+idoCliente+"  cliente2:"+idoCliente2);
+        throw new OperationNotPermitedException("No se puede tener un cobro anticipo de un cliente distinto"); 
+end
+
+
+rule "COBRO_ANTICIPO: IMPORTE PENDIENTE ASIGNAR"
+salience -200 //menos prioridad que ABONOS: DEVUELTO (regla que crea cobro en abonos)
+ agenda-group "rules" when 
+  	FactHierarchy(CLASSSUP=="COBRO_ANTICIPO",namecls:CLASS)
+  	Individual(CLASSNAME==namecls,idCobro:ID,idto:IDTO,ido:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+  	
+    DatValue(ID==idCobro,PROPNAME=="importe",importeCobro:DOUBLEVALUE!=null)
+	sumaasignaciones: Double() 
+    from accumulate(
+    				 (and 
+    				 	ObjValue(ID==idCobro,PROPNAME=="vencimientos_asignados",idvenasig:VALOR!=null)
+    				 	DatValue(ID==idvenasig,PROPNAME=="importe_asignado",importe:DOUBLEVALUE!=null)
+     				  ),
+                      init	( Double sumaasignaciones2= new Double(0);),
+                      action( 
+                      			sumaasignaciones2+=importe;),                            
+                      result(sumaasignaciones2)
+   ) 	
+                      							
+   	anticipoDoc:Double() from accumulate((and 	ObjValue(ID==idCobro,PROPNAME=="documento_anticipo",idoDoc:IDOVALUE)
+   												DatValue(IDO==idoDoc,PROPNAME=="importe",i:DOUBLEVALUE!=null)
+   												
+    				 						),
+                      							init(Double res=new Double(0);),action(res+=i;),result(res))                       							
+then
+	double pendiente=importeCobro;
+	if(importeCobro>0){
+		pendiente=Math.min(importeCobro.doubleValue(),importeCobro.doubleValue()-sumaasignaciones.doubleValue()-anticipoDoc.doubleValue());//minimo por si hay asignaciones negativas	
+		pendiente=Math.max(pendiente,0);	
+	}else{
+		pendiente=Math.max(importeCobro.doubleValue(),importeCobro.doubleValue()-sumaasignaciones.doubleValue()-anticipoDoc.doubleValue());
+		pendiente=Math.min(pendiente,0);
+	}
+	dma.printRule("\n================= COBRO_ANTICIPO: IMPORTE PENDIENTE ASIGNAR. idcobro="+idCobro+"  sumaasignaciones="+sumaasignaciones+" importeCobro:"+importeCobro+" pendiente:"+pendiente);
+	
+	if(anticipoDoc.doubleValue()!=0.0 && (importeCobro>0 && pendiente>0.0 || importeCobro<0.0 && pendiente<0.0))
+		throw new OperationNotPermitedException("No se puede cobrar más que el importe del documento "+anticipoDoc);
+	dma.setValue(ido,idto,"importe_pendiente_asignar",new DoubleValue(Auxiliar.redondea(pendiente,2)));
+end
+
+rule "COBRO ANTICIPO ASISTENCIA CREACION AUTOMATICA"
+salience -200
+ agenda-group "rules" when 
+ 	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_VENTA")
+ 	not(FactHierarchy(CLASS==nameDoc,CLASSSUP=="PRESUPUESTO"))
+ 	Individual(CLASSNAME==nameDoc,idoDoc:IDO>0,idtoDoc:IDTO,idDoc:ID,STATE==Constants.INDIVIDUAL_STATE_READY)
+	ObjValue(ID==idDoc,PROPNAME=="forma_pago",fpago:VALOR!=null,idoFPago:IDOVALUE!=null,RANGENAME=="PAGO_ADELANTADO")
+	//no estar en la acción facturarTickets donde siempre se genera el cobro autom.
+	not(ObjValue(CLASSNAME=="Facturar_Tickets"||=="Facturar_Documentos_Venta",PROPNAME=="targetClass",IDOVALUE==idoDoc))
+
+	DatValue(ID==fpago,PROPNAME=="importe",importe:DOUBLEVALUE!=null&&!=0)//SI TENE IMPORTE 0 NO HAY NADA QUE COBRAR
+	ObjValue(idtask:ID,PROPNAME=="targetClass", VALOR==idDoc, objDoc:OBJECTVALUE)
+	ObjValue(ID==idtask,PROPNAME=="estadoRealizacion",idestado:VALOR!=null)
+	DatValue(ID==idestado,PROPNAME=="rdn",VALOR=="realizado")
+	
+	//QUE ESTE U OTRO DOCUMENTO PREVIO A ÉL NO TENGA YA UN ANTICIPO CREADO
+	
+	ObjValue(ID==idDoc,PROPNAME=="cliente",idoCliente:IDOVALUE!=null,objcliente:OBJECTVALUE)
+				
+	not(DatValue(ID==idDoc,PROPNAME=="deuda", DOUBLEVALUE==0 ))
+	
+	not(ObjValue(ID==idDoc,PROPNAME=="cobro_anticipo", VALOR!=null))
+	ObjValue(IDO==idoFPago,PROPNAME=="medio_de_pago",medio_pago:OBJECTVALUE!=null)		
+
+then
+	dma.printRule("============= COBRO ANTICIPO ASISTENCIA CREACION AUTOMATICA ============");
+	//SI ES UNA FACTURA 
+	Domain cobro=null;
+	Boolean crearCobro=dma.showQuestion("Forma pago por adelantado. ¿Desea que se cree automaticamente el cobro?");
+	if(crearCobro==null){
+		dma.printRule("\n\n  WARNING: METODO SHOWQUESTION NO DEVUELVE VALOR!!!!!");
+	}
+	else if(crearCobro&&nameDoc.contains("FACTURA")){
+			dma.printRule("........ se va a crear cobro_factura");
+			cobro=dma.creaIndividualOfClass("COBRO_VENCIMIENTO");
+			dma.setValue(cobro,"cliente", objcliente);
+			LinkedList listVenc=dma.getValues(idoDoc,idtoDoc,"vencimientos");
+		 	repartoCobroEnVencimientos(dma,"ASIGNACIÓN_VENCIMIENTO_COBRO", cobro, importe,listVenc);
+	}
+	else if(crearCobro){
+		dma.printRule("........ se va a crear cobro_anticipo");
+		cobro=dma.creaIndividualOfClass("COBRO_ANTICIPO");
+		dma.setValue(cobro,"documento_anticipo", objDoc);
+		dma.setValue(cobro,"cliente", objcliente);	
+		dma.setValue(cobro,"importe", new DoubleValue(importe));
+		dma.setValue(idoDoc,idtoDoc,"cobro_anticipo",new ObjectValue(cobro));	
+	}	
+	if(cobro!=null){
+		dma.setValue(cobro,"medio_de_pago", medio_pago);
+	}
+	dma.printRule("..fin rule");
+end	
+
+
+rule "CARGA SUJETO CAMBIO DEUDA"
+//REGLA MUY  IMPORTANTE  PARA QUE FUNCINA CALCULO DEUDA SUJETO EN ELIMINACIONES REGULARIZACIONES DEUDA
+salience 100
+ agenda-group "rules" when 
+  	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="REGULARIZACIÓN_DEUDA")
+	Individual(id:ID,ido:IDO,CLASSNAME==name)
+	ObjValue(ID==id,PROPNAME=="sujeto",sujeto:VALOR!=null,idtosujeto:VALUECLS)
+	not(Individual(ID==sujeto))
+	then
+	dma.printRule("\n\n$$$$$$$$$$$$$ PRECARGA_RULE: CARGA SUJETO CAMBIO DEUDA sujeto="+sujeto);
+ 	dma.ruleGetFromServer(Integer.parseInt(sujeto),idtosujeto,1,false);
+end
+
+rule "PARTIR VENCIMIENTO DEBE MANUAL" 
+no-loop true 
+  agenda-group "rules" when 	
+	FactHierarchy(idtoCobro:IDTO,CLASSSUP=="COBRO")
+	FactHierarchy(idtoDebe:IDTO,CLASSSUP=="DEBE_CLIENTE_MANUAL")
+	Individual(idoCobro:IDO, IDTO==idtoCobro,STATE==Constants.INDIVIDUAL_STATE_READY)
+	ObjValue(IDO==idoCobro,PROPNAME=="vencimientos_asignados",idoAsignacion:IDOVALUE, idtoAsignacion:VALUECLS)	
+	ObjValue(IDO==idoAsignacion, PROPNAME=="vencimiento",idoDebe:IDOVALUE, VALUECLS==idtoDebe,ovDebe:OBJECTVALUE)  
+	DatValue(IDO==idoDebe,PROPNAME=="importe",importeDebeInit:QMIN!=null)
+	DatValue(IDO==idoDebe,PROPNAME=="fecha_creación",fechaCreaInit:QMIN!=null)
+	
+	Individual(IDO==idoAsignacion,STATE==Constants.INDIVIDUAL_STATE_READY)
+		
+	DatValue(IDO==idoAsignacion,PROPNAME=="importe_asignado",importeAsignado:QMIN<importeDebeInit)
+	                                  	
+then
+	dma.printRule("============ PARTIR VENCIMIENTO DEBE MANUAL");
+	
+	double resto=importeDebeInit-importeAsignado;
+	
+	Domain debeResto=dma.cloneIndividual(idoDebe,idtoDebe, idtoDebe, "importe#pago_asignado");		
+	dma.setValue(debeResto,"importe",new DoubleValue(importeDebeInit-importeAsignado));
+	dma.setValue(debeResto,"fecha_creación",new TimeValue(fechaCreaInit.longValue()));
+	
+	dma.setValue(new Domain(ovDebe),"importe",new DoubleValue(importeAsignado));
+			
+end
+
+rule "DBG:COBRO ANTICIPO: EMPRESA DE DOCUMENTO"
+salience 400
+agenda-group "rules" when 
+	ObjValue(idoDoc:IDO,cls:CLASSNAME=="TICKET_VENTA",PROPNAME=="mi_empresa",idoEmp:IDOVALUE!=null)
+	DatValue(IDO==idoEmp,PROPNAME=="rdn",rdn:VALOR)
+	then
+	dma.printRule("============ DBG:COBRO ANTICIPO: EMPRESA DE DOCUMENTO "+idoDoc+" "+rdn);
+end
+
+rule "COBRO ANTICIPO: EMPRESA DE DOCUMENTO"
+agenda-group "rules" when 
+	ObjValue(idoDoc:IDO,PROPNAME=="cobro_anticipo",idoAnticipo:IDOVALUE!=null,idtoAnticipo:VALUECLS)
+	ObjValue(IDO==idoDoc,PROPNAME=="mi_empresa",ovEmpresa:OBJECTVALUE!=null)
+	then
+	dma.printRule("============ COBRO ANTICIPO: EMPRESA DE DOCUMENTO "+idoAnticipo+" "+ovEmpresa);
+	dma.setValue(new Domain(idoAnticipo,idtoAnticipo),"mi_empresa",ovEmpresa);
+end
+	
+rule "PARTIR COBRO" //Cuando asignamos mas dinero a un vencimiento que su importe 
+no-loop true 
+  agenda-group "rules" when 	
+	FactHierarchy(idtoCobro:IDTO,CLASSSUP=="COBRO_ANTICIPO")
+	FactHierarchy(idtoDebe:IDTO,CLASSSUP=="VENCIMIENTO_COBRO")
+	Individual(idoCobro:IDO, IDTO==idtoCobro,STATE==Constants.INDIVIDUAL_STATE_READY)
+	ObjValue(IDO==idoCobro,PROPNAME=="vencimientos_asignados",idoAsignacion:IDOVALUE, idtoAsignacion:VALUECLS)	
+	ObjValue(IDO==idoAsignacion, PROPNAME=="vencimiento",idoDebe:IDOVALUE, VALUECLS==idtoDebe,ovDebe:OBJECTVALUE)  
+	DatValue(IDO==idoDebe,PROPNAME=="importe",importeDebeInit:QMIN!=null)
+	
+	DatValue(IDO==idoCobro,PROPNAME=="fecha_creación",fechaCreaInit:QMIN!=null)
+	
+	Individual(IDO==idoAsignacion,STATE==Constants.INDIVIDUAL_STATE_READY)
+		
+	DatValue(IDO==idoAsignacion,PROPNAME=="importe_asignado",importeAsignado:QMIN>importeDebeInit)
+	                                  	
+then
+	dma.printRule("============ PARTIR COBRO");
+	
+	double resto=importeDebeInit-importeAsignado;
+	
+	Domain cobroResto=dma.cloneIndividual(idoCobro,idtoCobro, idtoCobro, "importe#vencimientos_asignados");		
+	dma.setValue(cobroResto,"importe",new DoubleValue(importeAsignado-importeDebeInit));
+	dma.setValue(cobroResto,"fecha_creación",new TimeValue(fechaCreaInit.longValue()));
+	
+	dma.setValue(idoCobro,idtoCobro,"importe",new DoubleValue(importeAsignado));
+			
+end
+
+rule "COBRO ANTICIPO: MAXIMO A COBRAR ES EL IMPORTE DEL DOC"
+salience -200
+ agenda-group "rules" when  	
+ 	FactHierarchy(idtoCobro:IDTO,CLASSSUP=="COBRO_ANTICIPO")
+ 	Individual(IDTO==idtoCobro,idoCobro:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+ 	ObjValue(IDO==idoCobro,PROPNAME=="documento_anticipo", idoDoc:IDOVALUE)
+ 	DatValue(IDO==idoDoc,PROPNAME=="importe", importeDoc:DOUBLEVALUE!=null)
+ 	
+ 	DatValue(IDO==idoCobro,PROPNAME=="importe", importeCobro:DOUBLEVALUE!=null,hasCHANGED==true)
+ 	
+	pagadoOtrosCobros:Double() from accumulate((and 	ObjValue(IDO==idoDoc,PROPNAME=="cobro_anticipo",idoCobroAny:IDOVALUE!=idoCobro)
+														//Individual(IDO==idoCobroAny,STATE==Constants.INDIVIDUAL_STATE_READY)
+    				 									DatValue(IDO==idoCobroAny,PROPNAME=="importe",i:DOUBLEVALUE!=null)),
+                      									init(Double res=new Double(0);),action(res+=i;),result(res))
+    eval(importeCobro*importeDoc<0 || (importeDoc>0 && importeCobro-(importeDoc-pagadoOtrosCobros)>0.009) || (importeDoc<0 && -importeCobro-(-importeDoc+pagadoOtrosCobros)>0.009)) 	
+then
+	dma.printRule("============= COBRO ANTICIPO: MAXIMO A COBRAR ES EL IMPORTE DEL DOC "+importeCobro+" "+pagadoOtrosCobros+" "+importeDoc+" "+idoCobro);
+	dma.printRule("COND 1 "+(importeCobro-(importeDoc-pagadoOtrosCobros)));
+	dma.printRule("COND 2 "+(-importeCobro-(-importeDoc+pagadoOtrosCobros)));
+	if( pagadoOtrosCobros>0 )	throw new OperationNotPermitedException("Ya existe otros anticipos, el importe máximo a cobrar debe ser "+(importeDoc-pagadoOtrosCobros));
+	else throw new OperationNotPermitedException("El máximo a cobrar es el importe del documento "+importeDoc);
+	
+	//version da problemas actualizacion grafica
+		//if( pagadoOtrosCobros>0 )	dma.showMessage("Ya existe otros anticipos, el importe máximo a cobrar debe ser "+(importeDoc-pagadoOtrosCobros));
+		//else dma.showMessage("El máximo a cobrar es el importe del documento "+importeDoc);
+	
+		//dma.setValue(idoCobro,idtoCobro,"importe",new DoubleValue(Auxiliar.redondea(importeDoc-pagadoOtrosCobros,2)));
+	
+end
+rule "Cobrar_Vencimientos/Facturas"  
+salience -200
+agenda-group "rules" when
+    
+    f:ObjValue(CLASSNAME=="Cobrar_Vencimientos"||=="Pagar_Vencimientos"||=="Cobrar_Documentos"||=="Pagar_Facturas", idoUTask:IDO ,idtoUTask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    
+    sujetoXvencimientos: HashMap(size>0) 	
+   	from accumulate(
+             	(and 
+					 FactHierarchy(CLASSSUP=="VENCIMIENTO",idtoVenc:IDTO)
+             		 ObjValue(IDTO==idtoVenc,idoVencimiento:IDO!=null,PROPNAME=="cliente"||PROPNAME=="proveedor",OP==null, VALOR!=null,sujeto:OBJECTVALUE)
+             		 forall(
+             		 	ObjValue(IDO==idoUTask ,CLASSNAME=="Cobrar_Documentos"||=="Pagar_Facturas", PROPNAME=="estadoRealizacion", VALOR!=null)
+             		 	FactHierarchy(idtoFactura:IDTO,CLASSSUP=="FACTURA")
+	             		ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoFactura:IDOVALUE!=null,VALUECLS==idtoFactura)
+	             		ObjValue(IDO==idoFactura, PROPNAME=="vencimientos",IDOVALUE==idoVencimiento)
+	             		//Lock(IDO==idoFactura,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+             		)
+             		forall(
+             		 	ObjValue(IDO==idoUTask ,CLASSNAME=="Cobrar_Vencimientos"||=="Pagar_Vencimientos", PROPNAME=="estadoRealizacion",VALOR!=null)
+	             		ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",IDOVALUE==idoVencimiento)
+             		) 	
+             		DatValue(IDO==idoVencimiento, PROPNAME=="deuda",deudaV:QMIN!=null)
+			    ),
+              init( 
+				 HashMap <ObjectValue,ArrayList<String>> sujetoXvencimientos2=new HashMap<ObjectValue,ArrayList<String>>();
+			  ),
+              action(              		
+              		String vencimiento_deuda=idoVencimiento+"#"+deudaV+"#"+idtoVenc;
+
+            	 if(sujetoXvencimientos2.get(sujeto)==null){
+				 	ArrayList<String> v= new ArrayList <String>();
+				 	v.add(vencimiento_deuda);
+					sujetoXvencimientos2.put(sujeto,v);
+					
+				 }
+				 else{
+				 	sujetoXvencimientos2.get(sujeto).add(vencimiento_deuda);
+				 	
+				 }
+              ),
+              result(sujetoXvencimientos2)
+	 )		
+	 
+	 medioParam: ObjectValue()	from accumulate((and 	ObjValue(IDO==idoUTask, PROPNAME=="params",idoParams:IDOVALUE!=null)
+	 													ObjValue(IDO==idoParams,PROPNAME=="medio_de_pago",ov:OBJECTVALUE!=null)),
+	 										 init(ObjectValue medio= new ObjectValue(0,0);),
+	 										 action(medio=ov;),
+	 										 result(medio))
+	 
+	 importeParam: Double()	from accumulate((and 	ObjValue(IDO==idoUTask, PROPNAME=="params",idoParams:IDOVALUE!=null)
+	 												DatValue(IDO==idoParams,PROPNAME=="importe",q:QMIN!=null)),
+	 										 init(Double res=new Double(0);),action(res+=q;),result(res))				
+	 										 
+												
+	not ObjValue(IDO==idoUTask,PROPNAME=="targetClass",VALOR!=null)								 									 
+then
+	String usermessage=null;
+	dma.printRule("=================================== RULE Cobrar_Vencimientos/Facturas sujetoXvencimientos="+sujetoXvencimientos+" "+importeParam);
+	double importePendiente=importeParam;
+	Iterator<ObjectValue> it=(Iterator<ObjectValue>)sujetoXvencimientos.keySet().iterator();
+	while(it.hasNext()){
+		ObjectValue sujeto=it.next();
+		ArrayList<String> vencimientos_deuda=(ArrayList<String>)sujetoXvencimientos.get(sujeto);
+		
+		System.err.println("\n\n\n.....El sujeto="+sujeto+"  tiene los vencimientosDeuda="+vencimientos_deuda);
+		
+		int idoprimerven=Integer.parseInt(vencimientos_deuda.get(0).split("#")[0]);
+		int idtoprimerven=Integer.parseInt(vencimientos_deuda.get(0).split("#")[2]);		
+		String typevencimiento=dma.getClassName(idtoprimerven);
+		String typepago=null;
+		String typeasignacion=null;
+		String propsujeto=null;
+		if(typevencimiento.equals("VENCIMIENTO_DE_COBRO")||typevencimiento.equals("DEBE_CLIENTE_MANUAL")){
+	    	typepago="COBRO_VENCIMIENTO";
+	    	typeasignacion="ASIGNACIÓN_VENCIMIENTO_COBRO";
+	    	propsujeto="cliente";
+    	}
+	    else if(typevencimiento.equals("VENCIMIENTO_DE_PAGO")){
+	    	typepago="PAGO";
+			typeasignacion="ASIGNACIÓN_VENCIMIENTO_PAGO";
+			propsujeto="proveedor";
+	    }else{
+	    	dma.printRule("WARNING:-----WARNING------WARNING:  typevencimiento"+typepago+"  no contemplado"); 
+	    }
+	    Domain domCobro=dma.creaIndividualOfClass(typepago);
+	     
+	    dma.setValue(domCobro,propsujeto,sujeto);
+	    
+		if(medioParam.getValue().intValue()!=0){			
+			dma.setValue(domCobro,"medio_de_pago",medioParam);
+		}
+		
+		for (int i=0;i<vencimientos_deuda.size();i++){
+			String vencimiento_deuda=vencimientos_deuda.get(i);
+			String  [] svencimiento_deuda=vencimiento_deuda.split("#");		 	
+			int  idoven=Integer.parseInt(svencimiento_deuda[0]);
+			int  idtoven=Integer.parseInt(svencimiento_deuda[2]);						
+			
+			double deuda=new Double(svencimiento_deuda[1]);
+			
+			double importeAasignar=0;
+			
+			if(importeParam!=0){
+			
+				if( importePendiente>=0 && deuda>=0 ){
+					importeAasignar= Math.min(importePendiente,deuda);
+				}
+			
+				if( importePendiente<=0 && deuda<=0 ){
+					importeAasignar= Math.max(importePendiente,deuda);				
+				}
+			
+				if(importePendiente*deuda<0 ){
+					//No hay criterio para minorar el importe (en terminos de valor absoluto)
+					importeAasignar=deuda;
+				}
+				//Si importe pediente es cero, el importe a asignar se mantiene con el valor inicializado que es cero
+			
+				importePendiente-=importeAasignar;
+			}else
+				importeAasignar=deuda;
+						
+			Domain domAsignacionVencimiento=dma.creaIndividualOfClass(typeasignacion);
+			dma.setValue(domAsignacionVencimiento,"importe_asignado",new DoubleValue(Auxiliar.redondea(importeAasignar,2)));
+			dma.addValue(domCobro,"vencimientos_asignados",new ObjectValue(domAsignacionVencimiento));			
+		    dma.addValue(idoven,idtoven,"pago_asignado",new ObjectValue(domAsignacionVencimiento));		    		    
+		}
+		
+		//POR ULTIMO CADA TIPO DE COBRO/PAGO CREADO HAY QUE ENLAZARLO A LA UTASK
+		dma.addValue(idoUTask,idtoUTask,"targetClass",new ObjectValue(domCobro));
+	}
+end  
+
+rule "COBRAR DOCUMENTOS: CREACION ANTICIPOS PARA NO FACTURAS"
+ agenda-group "rules" when  	
+    //Al no ser facturas, se crea un cobro anticipo por cada documento
+ 	ObjValue(CLASSNAME=="Cobrar_Documentos",idoTask:IDO,idtoTask:IDTO,PROPNAME=="sourceClass", idoDoc:IDOVALUE!=null, idtoDoc:VALUECLS, ovDoc:OBJECTVALUE)
+ 	ObjValue(IDO==idoTask ,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    
+ 	ObjValue(IDO==idoTask, PROPNAME=="params",idoParams:IDOVALUE!=null)
+ 	//las facturas se cobran sobre vencimientos en otra regla
+ 	not(FactHierarchy(IDTO==idtoDoc,CLASSSUP=="FACTURA"))
+ 	ObjValue(IDO==idoDoc,PROPNAME=="cliente", ovCliente:OBJECTVALUE)
+ 	ObjValue(IDO==idoDoc,PROPNAME=="mi_empresa", ovEmpresa:OBJECTVALUE)
+ 	DatValue(IDO==idoDoc,PROPNAME=="importe", importe:DOUBLEVALUE!=null)
+ 	
+	totalPagado:Double() from accumulate((and 	ObjValue(IDO==idoDoc,PROPNAME=="cobro_anticipo",idoCobroAny:IDOVALUE)
+    				 							DatValue(IDO==idoCobroAny,PROPNAME=="importe",i:DOUBLEVALUE!=null)),
+                      							init(Double res=new Double(0);),action(res+=i;),result(res)) 	
+      
+    //Que no haya ya creado un anticipo nuevo para este doc
+    not( ObjValue(IDO==idoDoc,PROPNAME=="cobro_anticipo",IDOVALUE<0 ))
+    //en cualquier caso no crear anticipo si todo esta pagado               							                      							
+    eval(!importe.equals(totalPagado))
+    
+    DatValue(IDO==idoParams,PROPNAME=="importe",importeParam:QMIN!=null)
+    
+    medioParam: ArrayList()	from collect(ObjValue(IDO==idoParams,PROPNAME=="medio_de_pago",VALOR!=null))
+    
+    numeroDocsAcobrar:Long() from accumulate(ObjValue(IDO==idoTask,PROPNAME=="sourceClass", idoAny:IDOVALUE!=null), count(idoAny))
+then
+	dma.printRule("============= COBRAR DOCUMENTOS: CREACION ANTICIPOS PARA NO FACTURAS "+numeroDocsAcobrar);
+	Domain cobro=dma.creaIndividualOfClass("COBRO_ANTICIPO");
+	//No puedo hacer set de documento, se hace auto por la inversa, da problemas si hay mas de un anticipo (seria add)
+	//dma.setValue(cobro,"documento_anticipo", ovDoc);
+	dma.setValue(cobro,"cliente", ovCliente);
+	dma.setValue(cobro,"mi_empresa", ovEmpresa);		
+	//Si se van a cobrar mas de un documento, el importe parametro represetna el total de todos los cobros a generar, y por tanto para cada documento el importe debe ser el del documento
+	double importeAcobrar= numeroDocsAcobrar.intValue()==1 ? importeParam:importe-totalPagado;	
+	dma.setValue(cobro,"importe", new DoubleValue(importeAcobrar));
+	dma.printRule("COBRAR "+importeAcobrar);
+	if(medioParam.size()==1){
+		ObjValue medio=(ObjValue)medioParam.get(0);
+		dma.setValue(cobro,"medio_de_pago",medio.getOBJECTVALUE());
+	}
+	
+	dma.addValue(idoDoc,idtoDoc,"cobro_anticipo",new ObjectValue(cobro));
+	dma.addValue(idoTask,idtoTask,"targetClass", new ObjectValue(cobro));
+end
+
+rule "COBRAR DOCUMENTOS: PARAMETROS POR DEFECTO"
+salience 0
+//Solo actua con el primer albaran que pilla con forma de pago, despues para por el not
+agenda-group "rules" when
+    FactHierarchy(CLASSSUP=="Cobrar_Documentos",clsAccion:CLASS)
+    ObjValue(CLASSNAME==clsAccion, idoUTask:IDO,idtoUtask:IDTO,claseAccion:CLASSNAME!=null,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_PENDIENTE)
+ 
+	ObjValue(IDO==idoUTask, PROPNAME=="params",idoParams:IDOVALUE!=null,idtoParams:VALUECLS)
+	not( DatValue(IDO==idoParams,PROPNAME=="importe") )
+	
+	totalAnticipadoNoFacturas:Double()	from accumulate((and 	ObjValue(IDO==idoUTask,PROPNAME=="sourceClass", idoDoc:IDOVALUE!=null, idtoDoc:VALUECLS, ovDoc:OBJECTVALUE)
+																not(FactHierarchy(IDTO==idtoDoc,CLASSSUP=="FACTURA"))
+																ObjValue(IDO==idoDoc,PROPNAME=="cobro_anticipo",idoCobroAny:IDOVALUE)
+    				 											DatValue(IDO==idoCobroAny,PROPNAME=="importe",i:DOUBLEVALUE!=null)),
+                      											init(Double res=new Double(0);),action(res+=i;),result(res))	 	
+                      							
+    totalImporteNoFactura:Double() 		from accumulate((and 	ObjValue(IDO==idoUTask,PROPNAME=="sourceClass", idoDoc:IDOVALUE!=null, idtoDoc:VALUECLS)
+    															not(FactHierarchy(IDTO==idtoDoc,CLASSSUP=="FACTURA"))
+																DatValue(IDO==idoDoc,PROPNAME=="importe",i:DOUBLEVALUE!=null)),
+                      											init(Double res=new Double(0);),action(res+=i;),result(res))
+                      							
+    totalDeuda:Double() 				from accumulate((and   	FactHierarchy(idtoFactura:IDTO,CLASSSUP=="FACTURA")
+	             												ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoFactura:IDOVALUE!=null,VALUECLS==idtoFactura)
+	             												ObjValue(IDO==idoFactura, PROPNAME=="vencimientos",idoVencimiento:IDOVALUE)
+	             												DatValue(IDO==idoVencimiento,PROPNAME=="deuda",i:DOUBLEVALUE!=null)),
+	             												init(Double res=new Double(0);),action(res+=i;),result(res))
+	             												
+	medioPagoUnico:HashSet()         	from accumulate((and	ObjValue(IDO==idoUTask,PROPNAME=="sourceClass", idoDoc:IDOVALUE!=null)
+																ObjValue(IDO==idoDoc,PROPNAME=="forma_pago",idoFPago:IDOVALUE!=null)    														
+    															ObjValue(IDO==idoFPago,PROPNAME=="medio_de_pago",medioPago:OBJECTVALUE!=null)),
+    															init(HashSet tiposFP=new HashSet();),
+    															action(tiposFP.add(medioPago);),
+    															result(tiposFP)) 
+         		
+then
+ 	dma.printRule("======== COBRAR DOCUMENTOS: PARAMETROS POR DEFECTO "+totalImporteNoFactura+" "+totalDeuda+" "+totalAnticipadoNoFacturas);
+ 	double aPagar=Auxiliar.redondea(totalDeuda+(totalImporteNoFactura-totalAnticipadoNoFacturas),2);
+ 	dma.setValue(idoParams,idtoParams,"importe",new DoubleValue(aPagar));
+ 	
+ 	if( medioPagoUnico.size()==1 ){
+ 		Iterator itr=medioPagoUnico.iterator();
+ 		dma.setValue(idoParams,idtoParams,"medio_de_pago",(ObjectValue)itr.next());
+ 	}
+end
+
+/*
+rule "RDN VENCIMIENTO"
+
+ agenda-group "rules" when    	   	   	   	
+	FactHierarchy(idtoFact:IDTO, CLASSSUP=="FACTURA_A_CLIENTE")
+	DatValue(IDTO==idtoFact,idoFactura:IDO,PROPNAME=="rdn",rdnFactura:VALOR!=null, fch:hasCHANGED)
+	ObjValue(IDO==idoFactura,PROPNAME=="vencimientos",idoVenc:IDOVALUE!=null,idtoVenc:VALUECLS,vch:hasCHANGED)
+	eval(fch||vch)			
+then		
+	dma.printRule("=========== RDN VENCIMIENTO");			
+	dma.setValue(idoVenc,idtoVenc,"rdn",new StringValue(rdnFactura+'#'+(idoVenc>0 ? ""+idoVenc:"&id"+idoVenc+"&")));	
+end*/
+
+rule "FACTURA DE ASIGNACION DE VENCIMIENTO"
+ agenda-group "rules" 
+ when 
+ 	FactHierarchy(idtoCobro:IDTO,CLASSSUP=="COBRO")
+	ObjValue(IDTO==idtoCobro,PROPNAME=="vencimientos_asignados",idoAsign:IDOVALUE)
+	ObjValue(IDO==idoAsign,idtoAsign:IDTO,PROPNAME=="vencimiento",idoVenc:IDOVALUE)
+	Model(IDTO==idtoAsign, PROPNAME=="factura",OP==Constants.OP_INTERSECTION)
+	ObjValue(IDO==idoVenc,PROPNAME=="factura",factura:OBJECTVALUE!=null,hasCHANGED==true) 	                         
+then
+	dma.printRule("============================FACTURA DE ASIGNACION DE VENCIMIENTO");	
+	dma.setValue(idoAsign,idtoAsign,"factura",factura);
+end
+
+
+
+rule "NO SE PUEDE ASIGNAR UN PAGO A UN VENCIMIENTO MAYOR QUE SU DEUDA"
+ agenda-group "rules" when 
+  	
+  	FactHierarchy(namepago:CLASS,CLASSSUP=="DATOS_BASE_PAGO"||=="MOVIMIENTO_DE_CAJA")
+  	Lock(CLASSNAME==namepago,idPago:ID!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(ID==idPago,PROPNAME=="vencimientos_asignados",venAs:VALOR!=null)
+	Lock(ID==venAs,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	DatValue(ID==venAs,PROPNAME=="importe_asignado",importeAsignado:DOUBLEVALUE!=null)
+	ObjValue(ID==venAs,PROPNAME=="vencimiento",vencimiento:VALOR!=null)
+	DatValue(ID==vencimiento,PROPNAME=="deuda",deuda:DOUBLEVALUE!=null&&!=0)	//OJO EL IMPORTE ASIGNADO CAMBIA DINAMICAM. LA DEUDA, POR ESO LA COMPROBACIÓN ES QUE LA DEUDA NO SEA<0
+	DatValue(ID==vencimiento,PROPNAME=="importe",importe:DOUBLEVALUE!=null&&!=0)
+	eval(deuda*importe<0)//soporta abonos negativos
+then
+ 	dma.printRule("\n\n=================NO SE PUEDE ASIGNAR UN PAGO A UN VENCIMIENTO MAYOR QUE SU DEUDA");
+ 	throw new OperationNotPermitedException(" NO SE PUEDE ASIGNAR UN PAGO A UN VENCIMIENTO MAYOR QUE SU DEUDA: importe asignado="+importeAsignado+"  deuda="+deuda);
+ end
+ 
+ 
+ /*rule "CARGA SUJETO EN REGULARIZACIÓN DE DEUDA"
+ agenda-group "rules" 
+ when 
+		
+	ObjValue(CLASSNAME=="Regularizar_deuda",  idUTask:ID,PROPNAME=="sourceClass", sujeto:VALOR!=null)
+	ObjValue(ID==idUTask, PROPNAME=="targetClass", reg:VALOR!=null)	
+	not(Individual(ID==sujeto))
+then
+	dma.printRule("\n\n====  CARGA SUJETO EN REGULARIZACIÓN DE DEUDA: suejto="+sujeto);
+	dma.ruleGetFromServer(sujeto,true);
+end*/
+
+/*rule "COBRAR DOCUMENTOS: NO SE PUEDE COBRAR DOCUMENTOS DE DISTINTOS CLIENTES"
+ agenda-group "rules" when  	
+    
+    ObjValue(CLASSNAME=="Cobrar_Documentos",idoTask:IDO ,PROPNAME=="sourceClass", idoDoc:IDOVALUE!=null)
+    ObjValue(IDO==idoDoc,PROPNAME=="cliente", idoCliente:IDOVALUE)
+ 	exists((and ObjValue(IDO==idoTask,PROPNAME=="sourceClass", idoDocAny:IDOVALUE!=null)
+    			ObjValue(IDO==idoDocAny,PROPNAME=="cliente", IDOVALUE!=idoCliente)))
+then
+	dma.printRule("============= COBRAR DOCUMENTOS: NO SE PUEDE COBRAR DOCUMENTOS DE DISTINTOS CLIENTES");
+	throw new OperationNotPermitedException("No es posible cobrar a la vez documentos de distintos clientes");	
+end*/

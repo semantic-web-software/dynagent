@@ -1,0 +1,718 @@
+package dynagent.ruleengine.src.ruler.ERPrules;
+import dynagent.common.basicobjects.*;
+import dynagent.ruleengine.src.ruler.ERPrules.*;
+import dynagent.ruleengine.src.ruler.ERPrules.datarules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+
+global DataModelAdapter dma;
+
+rule "FILTRADO FLUJO CAJA HOY"
+agenda-group "rules" when
+    
+    RangeFilter(taskname:CLASSNAME=="Task_FLUJO_CAJA",idtask:ID!=null, PROPNAME=="targetClass",filtersuben:VALUE!=null,idtoFilterSub:VALUECLS)
+	not(FilterValue(ID==filtersuben,PROPNAME=="fecha",QMIN!=null,QMAX!=null))	
+then
+   	dma.printRule("================ FILTRADO FLUJO CAJA HOY");
+	Calendar now= Calendar.getInstance();
+	Calendar date=Calendar.getInstance();
+	date.set(now.get(Calendar.YEAR),now.get(Calendar.MONTH),now.get(Calendar.DATE),0,0,0);
+	//System.out.println(" date:"+date.getTime());
+	TimeValue tv=new TimeValue();
+	tv.setRelativeSecondsMin(date.getTimeInMillis()/Constants.TIMEMILLIS);
+	date.set(now.get(Calendar.YEAR),now.get(Calendar.MONTH),now.get(Calendar.DATE),23,59,59);
+	System.out.println(" date:"+date.getTime());
+	tv.setRelativeSecondsMax(date.getTimeInMillis()/Constants.TIMEMILLIS);
+	dma.setFilterValue(filtersuben,"fecha",tv);
+end
+
+rule "FILTRADO VENCIMIENTOS PENDIENTES"
+agenda-group "rules" when
+    
+    RangeFilter(taskname:CLASSNAME=="Task_Vencimiento_de_Pago_Pendiente"||=="Task_Vencimiento_de_Cobro_Pendiente",idtask:ID!=null, PROPNAME=="targetClass",filtersuben:VALUE!=null,idtoFilterSub:VALUECLS,OP==Constants.OP_UNION)
+	not(FilterValue(ID==filtersuben,PROPNAME=="pagado",VALOR=="false"))	
+then
+   dma.printRule("\n\n ================> FILTRADO VENCIMIENTOS PENDIENTES");
+   dma.setFilterValue(filtersuben,"pagado",new BooleanValue(false));
+end
+
+rule "FILTRADO UTASK Task_STOCK_LOCAL ALMACÉN_STOCK ES ALMACEN DE MIEMPRESA"
+ agenda-group "rules" when 
+	FactHierarchy(idtoAlmacen:IDTO,CLASSSUP=="ALMACÉN")
+	ObjValue(claseConfig:CLASSNAME=="MI_EMPRESA"||=="APLICACIÓN", PROPNAME=="almacén_por_defecto"||=="centro_trabajo", mialmacen:VALOR!=null,almacen:OBJECTVALUE,VALUECLS==idtoAlmacen)
+  	RangeFilter(CLASSNAME=="Task_STOCK_LOCAL", PROPNAME==Constants.PROP_TARGETCLASS,filtroSolicitud:VALUE!=null,idtofiltroSol:VALUECLS)
+	not(FilterValue(ID==filtroSolicitud, PROPNAME=="almacén_stock",VALOR==mialmacen))
+then	
+	dma.printRule("\n\n ============== RULE FILTRADO UTASK Task_STOCK_LOCAL ALMACÉN_STOCK ES ALMACEN DE MIEMPRESA: mialmacen="+mialmacen);
+	dma.setFilterValue(filtroSolicitud,"almacén_stock",almacen);
+end
+
+/*rule "FILTRADO ABONO EXTERNO" Ya no hace falta filtrar porque hay un limite a 1000 registros
+ agenda-group "rules" when 	
+	ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="delegación", idDelegacion:VALOR,delegacion:OBJECTVALUE)
+  	RangeFilter(CLASSNAME=="Task_TICKET_EXTERNO", PROPNAME==Constants.PROP_TARGETCLASS,filtroSolicitud:VALUE!=null,idtofiltroSol:VALUECLS)
+  	filtroCodigo:ArrayList() from collect(FilterValue(ID==filtroSolicitud,PROPNAME=="rdn",VALOR!=null))
+	filtroDelegacion:ArrayList() from collect(FilterValue(ID==filtroSolicitud, PROPNAME=="delegación",VALOR!=null))
+	filtroFecha:ArrayList() from collect(FilterValue(ID==filtroSolicitud,PROPNAME=="fecha",VALOR!=null))
+then	
+	dma.printRule("============= FILTRADO ABONO EXTERNO");
+	if(filtroCodigo.size()==0&&filtroDelegacion.size()==0&&filtroFecha.size()==0){
+		dma.printRule("FILTRO DEFECTO");	
+		//dma.setFilterValue(filtroSolicitud,"delegación",delegacion);
+		Calendar now= Calendar.getInstance();
+		Calendar date=Calendar.getInstance();
+		date.set(now.get(Calendar.YEAR),now.get(Calendar.MONTH),now.get(Calendar.DATE),0,0,0);
+		//System.out.println(" date:"+date.getTime());
+		TimeValue tv=new TimeValue();
+		tv.setRelativeSecondsMin(date.getTimeInMillis()/Constants.TIMEMILLIS);
+		date.set(now.get(Calendar.YEAR),now.get(Calendar.MONTH),now.get(Calendar.DATE),23,59,59);
+		System.out.println(" date:"+date.getTime());
+		tv.setRelativeSecondsMax(date.getTimeInMillis()/Constants.TIMEMILLIS);
+		dma.setFilterValue(filtroSolicitud,"fecha",tv);	
+	}
+	if(filtroCodigo.size()>0){
+		dma.printRule("FILTRO POR CODIGO");
+		dma.delValues(new Integer(filtroSolicitud),idtofiltroSol,"delegación");
+		dma.delValues(new Integer(filtroSolicitud),idtofiltroSol,"fecha");
+	}
+end*/
+
+rule "FILTRADO UTASK Task_STOCK_EXTERNO ALMACÉN_STOCK NO ES ALMACEN DE MIEMPRESA"
+ agenda-group "rules" when 
+  	 
+  	jb:JBossEngine() 
+	FactHierarchy(idtoAlmacen:IDTO,CLASSSUP=="ALMACÉN")  	
+	ObjValue(claseConfig:CLASSNAME=="MI_EMPRESA"||=="APLICACIÓN", PROPNAME=="almacén_por_defecto"||=="centro_trabajo", mialmacen:VALOR!=null,VALUECLS==idtoAlmacen)
+  	RangeFilter(CLASSNAME=="Task_STOCK_EXTERNO", PROPNAME==Constants.PROP_TARGETCLASS,filtroSolicitud:VALUE!=null)
+	not(FilterNotValue(ID==filtroSolicitud, PROPNAME=="almacén_stock",NOTVALUE==mialmacen))
+then	
+	dma.printRule("\n\n ============== RULE FILTRADO UTASK Task_STOCK_EXTERNO ALMACÉN_STOCK NO ES ALMACEN DE MIEMPRESA: mialmacen="+mialmacen);
+	int idoFiltro=Integer.parseInt(filtroSolicitud);
+	FactInstance f=new FactInstance(dma.getClassOf(idoFiltro),idoFiltro,dma.getIdProperty("almacén_stock"),mialmacen,idtoAlmacen,null,0.0,1.0,"NOT",null);
+	jb.insertFact(f);
+end
+
+rule "FILTRADO UTASK Task_STOCK_EXTERNO ALMACÉN_STOCK NO ES MI CENTRO"
+ agenda-group "rules" when 
+  	 
+  	jb:JBossEngine() 
+	FactHierarchy(idtoCentro:IDTO,CLASSSUP=="CENTRO_TRABAJO") 	
+	ObjValue(claseConfig:CLASSNAME=="MI_EMPRESA"||=="APLICACIÓN", PROPNAME=="almacén_por_defecto"||=="centro_trabajo", miCentro:VALOR!=null,VALUECLS==idtoCentro)
+  	RangeFilter(CLASSNAME=="Task_STOCK_EXTERNO", PROPNAME==Constants.PROP_TARGETCLASS,filtroSolicitud:VALUE)
+  	RangeFilter(ID==filtroSolicitud, PROPNAME=="almacén_stock",filtroAlmacen:VALUE)
+	not(FilterNotValue(ID==filtroAlmacen, PROPNAME=="centro_trabajo",NOTVALUE==miCentro))
+then	
+	dma.printRule("\n\n ============== RULE FILTRADO UTASK Task_STOCK_EXTERNO ALMACÉN_STOCK NO ES MI CENTRO: miCentro="+miCentro);
+	int ido=Integer.parseInt(filtroAlmacen);
+	FactInstance f=new FactInstance(dma.getClassOf(ido),ido,dma.getIdProperty("centro_trabajo"),miCentro,idtoCentro,null,0.0,1.0,"NOT",null);
+	jb.insertFact(f);
+end
+
+rule "FILTRADO DE ALMACÉN ORIGEN DE LÍNEA: CUANDO ALBARÁN CLIENTE TIENE CENTRO TRABAJO LOS ALMACENES DE SUS LINEAS DEBEN SER DE ESE CENTRO"
+ agenda-group "rules" when 
+  	
+  	FactHierarchy(idtoAlbaran:IDTO, CLASSSUP=="ALBARÁN_CLIENTE")
+  	Lock(IDTO==idtoAlbaran, idoAlbaran:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+  	ObjValue(IDO==idoAlbaran,PROPNAME=="origen",idCentro:VALOR!=null,idtoCentroTrabajo:VALUECLS)
+  	FactHierarchy(IDTO==idtoCentroTrabajo, CLASSSUP=="CENTRO_TRABAJO")  	
+  	ObjValue(IDO==idoAlbaran,PROPNAME=="línea",idoLinea:IDOVALUE!=null,idtoLinea:VALUECLS)
+	RangeFilter(IDO==idoLinea,PROPNAME=="almacén_origen",idFiltroAlmacenOrigen:VALUE!=null)
+	RangeFilter(ID==idFiltroAlmacenOrigen,PROPNAME=="centro_trabajo",idFiltroCentro:VALUE)
+  	not(exists(Individual(ID==idFiltroCentro)))
+  	not(exists(FilterValue(ID==idFiltroCentro,PROPNAME=="centro_trabajo",VALOR==idCentro)))
+then
+	dma.printRule("------------------- FILTRADO DE ALMACÉN ORIGEN DE LÍNEA: CUANDO ALBARÁN CLIENTE TIENE CENTRO TRABAJO LOS ALMACENES DE SUS LINEAS DEBEN SER DE ESE CENTRO: idoLinea="+idoLinea+"  idFiltroCentro="+idFiltroCentro+"  idCentro:"+idCentro);
+	dma.setFilterValue(idFiltroAlmacenOrigen,"centro_trabajo",new ObjectValue(Integer.parseInt(idCentro),idtoCentroTrabajo));
+end
+
+rule "CREACION FILTRO DE PRODUCTO SI NO EXISTE EN DOCUMENTO COMPRA Y VENTA Y FILTRADO DEL CATALOGO"
+salience 10
+agenda-group "rules" when
+	
+    FactHierarchy(nameclass:CLASS,tipoDocumento:CLASSSUP=="DOCUMENTO")
+  	Lock(idDoc:ID,CLASSNAME==nameclass, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	RangeFilter(ID==idDoc,PROPNAME=="línea",filtrolinea:VALUE!=null,idtoLinea:VALUECLS,classlinea:RANGENAME)
+	not(RangeFilter(ID==filtrolinea,PROPNAME=="producto",VALUE!=null))
+	Model(CLASSNAME==classlinea,PROPNAME=="producto",OP==Constants.OP_INTERSECTION,idtoArticulo:VALUECLS!=null,propProducto:PROP)
+	Model(IDTO==idtoArticulo,PROPNAME=="catálogo",OP==Constants.OP_INTERSECTION)
+	DatValue(CLASSNAME=="CATÁLOGO", VALOR=="Catálogo_Ventas", PROPNAME==Constants.PROP_RDN, idocatalVentas:IDO!=null,idtocatal:IDTO)
+	DatValue(CLASSNAME=="CATÁLOGO", VALOR=="Catálogo_Compras", PROPNAME==Constants.PROP_RDN, idocatalCompras:IDO!=null)	
+	
+then
+    dma.printRule("\n\n  =============== CREACION FILTRO DE PRODUCTO SI NO EXISTE EN DOCUMENTO COMPRA Y VENTA Y FILTRADO DEL CATALOGO");
+	Integer filtroProducto=dma.getDDM().SystemSetRange(new Integer(filtrolinea),idtoLinea,propProducto,idtoArticulo,2/*No necesitamos ningun filtro por debajo de producto*/);
+	if(tipoDocumento.equals("DOCUMENTO_VENTA")){
+		dma.setFilterValue(filtroProducto,"catálogo",	new ObjectValue(idocatalVentas,idtocatal));
+	}
+	else if(tipoDocumento.equals("DOCUMENTO_COMPRA")){
+	dma.setFilterValue(filtroProducto,"catálogo",	new ObjectValue(idocatalCompras,idtocatal));
+	}
+end
+
+rule "FILTRADO DE CATALOGO EN DOCUMENTO COMPRA O VENTA"
+salience 10
+agenda-group "rules" when
+	
+    FactHierarchy(nameclass:CLASS, tipoDocumento:CLASSSUP=="DOCUMENTO_VENTA"||=="DOCUMENTO_COMPRA")
+  	Lock(idDoc:ID, CLASSNAME==nameclass, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	RangeFilter(ID==idDoc, PROPNAME=="línea", filtrolinea:VALUE!=null, classlinea:RANGENAME)
+	RangeFilter(ID==filtrolinea, PROPNAME=="producto", filtroProducto:VALUE!=null,claseArticulo:RANGENAME!=null)
+	not( Individual(ID==filtroProducto))
+	not( FilterValue(ID==filtroProducto, PROPNAME=="catálogo", VALOR!=null))
+	
+	Model(CLASSNAME==claseArticulo, PROPNAME=="catálogo",OP==Constants.OP_INTERSECTION)
+	DatValue(CLASSNAME=="CATÁLOGO", VALOR=="Catálogo_Ventas", PROPNAME==Constants.PROP_RDN, idocatalVentas:IDO!=null,idtocatal:IDTO)
+	DatValue(CLASSNAME=="CATÁLOGO", VALOR=="Catálogo_Compras", PROPNAME==Constants.PROP_RDN, idocatalCompras:IDO!=null)
+then
+    dma.printRule("\n\n  =============== FILTRADO DE CATALOGO EN DOCUMENTO COMPRA O VENTA");
+	int idoCatal=0;
+	if(tipoDocumento.equals("DOCUMENTO_VENTA")){
+		idoCatal=idocatalVentas;
+	}
+	else if(tipoDocumento.equals("DOCUMENTO_COMPRA")){
+		idoCatal=idocatalCompras;
+	}
+	dma.setFilterValue(filtroProducto,"catálogo",new ObjectValue(idoCatal,idtocatal));
+end
+
+
+rule "FILTRADO CATALOGO VENTAS UTASK DE ARTÍCULO"
+agenda-group "rules" when
+    
+	FactHierarchy(nameclass:CLASS,CLASSSUP=="ARTÍCULO")    
+    RangeFilter(RANGENAME==nameclass,PROPNAME=="targetClass", filterarticulo:VALUE!=null,idtask:ID,taskname:CLASSNAME,idtofilterarticulo:VALUECLS)
+	Model(CLASSNAME==nameclass,PROPNAME=="catálogo",OP==Constants.OP_INTERSECTION)
+    ObjValue(ID==idtask, PROPNAME=="myFunctionalArea",idarea:VALOR!=null)
+	DatValue(ID==idarea, PROPNAME=="rdn",area:VALOR=="Ventas")
+	DatValue(CLASSNAME=="CATÁLOGO", VALOR=="Catálogo_Ventas", PROPNAME==Constants.PROP_RDN, idocatalVentas:IDO!=null,idtocatal:IDTO,idcatalVentas:ID)
+	not(Individual(ID==filterarticulo))
+	not(FilterValue(ID==filterarticulo,PROPNAME=="catálogo",VALOR==idcatalVentas))
+then
+   dma.printRule("=================> FILTRADO CATALOGO VENTAS UTASK DE ARTÍCULO="+taskname+" area:"+area);
+	int idofilterarticulo=Integer.parseInt(filterarticulo);
+	Integer idcatal=idocatalVentas;
+	dma.addFilterValue(filterarticulo,"catálogo",new ObjectValue(idocatalVentas,idtocatal));
+end
+
+rule "FILTRADO CATALOGO COMPRAS UTASK DE ARTÍCULO"
+agenda-group "rules" when
+    
+	FactHierarchy(nameclass:CLASS,CLASSSUP=="ARTÍCULO")    
+    RangeFilter(RANGENAME==nameclass,PROPNAME=="targetClass", filterarticulo:VALUE!=null,idtask:ID,taskname:CLASSNAME,idtofilterarticulo:VALUECLS)
+	Model(CLASSNAME==nameclass,PROPNAME=="catálogo",OP==Constants.OP_INTERSECTION)
+    ObjValue(ID==idtask, PROPNAME=="myFunctionalArea",idarea:VALOR!=null)
+	DatValue(ID==idarea, PROPNAME=="rdn",area:VALOR=="Compras")
+	DatValue(CLASSNAME=="CATÁLOGO", VALOR=="Catálogo_Compras", PROPNAME==Constants.PROP_RDN, idocatalCompras:IDO!=null,idcatalCompras:ID,idtocatal:IDTO)
+	not(Individual(ID==filterarticulo))
+	not(FilterValue(ID==filterarticulo,PROPNAME=="catálogo",VALOR==idcatalCompras))
+then
+   dma.printRule("=================> FILTRADO CATALOGO COMPRAS UTASK DE ARTÍCULO="+taskname+" area:"+area);
+	int idofilterarticulo=Integer.parseInt(filterarticulo);
+	Integer idcatal=idocatalCompras;
+	dma.addFilterValue(filterarticulo,"catálogo",new ObjectValue(idocatalCompras,idtocatal));
+end
+
+rule "FILTRADO UTASK Task_SOLICITUD_TRASPASO_EMITIDA, DESTINO ES ALMACEN DE MIEMPRESA"
+ agenda-group "rules" when 
+  	  
+	ObjValue(CLASSNAME=="MI_EMPRESA"||=="APLICACIÓN", PROPNAME=="almacén_por_defecto", mialmacen:VALOR!=null,ovmialmacen:OBJECTVALUE)
+  	RangeFilter(CLASSNAME=="Task_PEDIDO_TRASPASO_EMITIDO", PROPNAME==Constants.PROP_TARGETCLASS,filtroSolicitud:VALUE!=null)
+	not(FilterValue(ID==filtroSolicitud, PROPNAME=="destino",VALOR==mialmacen))
+then	
+	dma.printRule("\n\n ============== RULE FILTRADO UTASK Task_SOLICITUD_TRASPASO_RECIBIDA, DESTINO ES ALMACEN DE MIEMPRESA mialmacen="+mialmacen);
+	dma.setFilterValue(filtroSolicitud,"destino",ovmialmacen);
+end
+
+rule "FILTRADO UTASK Task_SOLICITUD_TRASPASO_RECIBIDA, ORIGEN ES ALMACEN DE MIEMPRESA"
+ agenda-group "rules" when 
+  	  
+	ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="almacén_por_defecto", mialmacen:VALOR!=null,ovmialmacen:OBJECTVALUE)
+  	RangeFilter(CLASSNAME=="Task_PEDIDO_TRASPASO_RECIBIDO", PROPNAME==Constants.PROP_TARGETCLASS,filtroSolicitud:VALUE!=null)
+	not(FilterValue(ID==filtroSolicitud, PROPNAME=="origen",VALOR==mialmacen))
+then	
+	dma.printRule("\n\n ============== RULE FILTRADO UTASK Task_SOLICITUD_TRASPASO_RECIBIDA, ORIGEN ES ALMACEN DE MIEMPRESA: mialmacen="+mialmacen);
+	dma.setFilterValue(filtroSolicitud,"origen",ovmialmacen);
+	dma.setFilterValue(filtroSolicitud,"completo",new BooleanValue(false));
+end
+
+rule "FILTRADO UTASK Task_TRASPASO_RECIBIDA, ORIGEN ES ALMACEN DE MIEMPRESA"
+ agenda-group "rules" when 
+  	  
+	ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="almacén_por_defecto", mialmacen:VALOR!=null,ovmialmacen:OBJECTVALUE)
+  	RangeFilter(CLASSNAME=="Task_TRASPASO_RECIBIDO", PROPNAME==Constants.PROP_TARGETCLASS,filtroSolicitud:VALUE!=null)
+	not(FilterValue(ID==filtroSolicitud, PROPNAME=="destino",VALOR==mialmacen))
+then	
+	dma.printRule("\n\n ============== RULE FILTRADO UTASK Task_TRASPASO_RECIBIDA, ORIGEN ES ALMACEN DE MIEMPRESA: mialmacen="+mialmacen);
+	dma.setFilterValue(filtroSolicitud,"destino",ovmialmacen);
+	dma.setFilterValue(filtroSolicitud,"recibido",new BooleanValue(false));
+end
+
+rule "FILTRADO CATALOGO GASTO EN Task_Artículos_catálogo_gastos"
+agenda-group "rules" when
+    
+    RangeFilter(taskname:CLASSNAME=="Task_Artículos_catálogo_gastos",idtask:ID!=null, PROPNAME=="targetClass",filterarticulo:VALUE!=null,nameclass:RANGENAME)
+	FactHierarchy(CLASS==nameclass,idtoart:IDTO,CLASSSUP=="ARTÍCULO")
+	Model(CLASSNAME==nameclass,PROPNAME=="catálogo",OP==Constants.OP_INTERSECTION)
+	DatValue(CLASSNAME=="CATÁLOGO", VALOR=="Catálogo_Gastos", PROPNAME==Constants.PROP_RDN, idocatalGastos:IDO!=null,idtocatal:IDTO,idcatalGastos:ID)
+	DatValue(CLASSNAME=="CATÁLOGO", VALOR=="Catálogo_Compras", PROPNAME==Constants.PROP_RDN, idocatalCompras:IDO!=null)
+	not(FilterValue(ID==filterarticulo,PROPNAME=="catálogo",VALOR==idcatalGastos))
+	not(Individual(ID==filterarticulo))		
+then
+   dma.printRule("\n\n ================> FILTRADO CATALOGO GASTO EN Task_Artículos_catálogo_gastos");
+	dma.addFilterValue(filterarticulo,"catálogo",new ObjectValue(idocatalGastos,idtocatal));
+end
+
+rule "FILTRADO PLAZO CERCANO JUSTIFICACIÓN SUBVENCION"
+agenda-group "rules" when
+    
+    DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="periodo_justificación_subvención_cercano",ndias:INTVALUE!=null)
+    RangeFilter(taskname:CLASSNAME=="Task_Subvención_justif._cercana",idtask:ID!=null, PROPNAME=="targetClass",filtersuben:VALUE!=null)
+	not(FilterValue(ID==filtersuben,PROPNAME=="fecha_justificación",QMIN!=null,QMAX!=null))	
+then
+   dma.printRule("\n\n ================> FILTRADO PLAZO CERCANO JUSTIFICACIÓN SUBVENCION");
+	dma.setFilterValue(filtersuben,"fecha_justificación",Auxiliar.getTimeValueOfPeriod(Auxiliar.getNowDate(),ndias));
+end
+
+rule "FILTRADO DATOS POR VISIBILIDAD ASIGNADA AL USUARIO LOGADO"
+ agenda-group "rules" when 
+  	DocDataModel(usuario:USER!=null,USERROL!="administrador")
+  	
+	ObjValue(CLASSNAME=="USER", idusuario:ID!=null,PROPNAME=="dato_a_filtrar",typeFiltro:RANGENAME,valorFiltro:VALOR!=null,objetoFiltro:OBJECTVALUE)//usuario logado es un agente comercial (agente)
+  	DatValue(ID==idusuario,PROPNAME==Constants.PROP_RDN,VALOR==usuario)
+  	//Si no limitamos la siguiente claseFiltro a las siguientes 4 clases (que son los posibles rangos de dato a filtrar en la ontologia), podria filtrar por clases incompatibles
+  	// por ejemplo dado el indivuduo agente externo, como es empresa, podria filtra por la propeiedad empresa de cliente, cuando solo es valido llegar a Mi empresa segun modelo
+  	FactHierarchy(CLASS==typeFiltro,claseFiltro:CLASSSUP=="DELEGACIÓN"||=="AGENTE_COMERCIAL"||=="MI_EMPRESA"||=="EMPLEADO")
+	RangeFilter(idFiltroRoot:ID!=null,clsFiltroRoot:CLASSNAME,idoFiltroRoot:IDO,idtoFiltroRoot:IDTO,tipoObjeto:CLASSNAME,idpropFiltro:PROP,propiedadfiltro:PROPNAME,RANGENAME==claseFiltro) //para asegurarse que tiene la propiedad (en lugar de hacerlo en base a la clase
+	not(Individual(ID==idFiltroRoot))//para que no actue con prototipos ni individuos bbdd, ambos tienen RangeFilter
+	
+	not((and Fact(clsAny:CLASSNAME,idtoAncestor:IDTO,idProp:PROP,PROPNAME=="targetClass",VALUE==idFiltroRoot)
+			 eval(clsAny.contains("EXTERNO"))))
+	//TODO poder correlar con ser global la utask, y no con palabra externo		 
+	not((and Fact(clsAny:CLASSNAME,idtoAncestor:IDTO,idProp:PROP,PROPNAME=="targetClass",idAny:VALUE)
+			 Fact(ID==idAny,VALUE==idFiltroRoot)
+			 eval(clsAny.contains("EXTERNO"))))			 
+	//que el padre no este ya filtrado
+	not((and 	RangeFilter(idtoAncestor:IDTO,idProp:PROP,PROPNAME!="targetClass",VALUE==idFiltroRoot)
+				Model(IDTO==idtoAncestor,PROP==idpropFiltro)))
+	//NO filtramos si el dominio que apunta al dato al filtrar, es en si mismo opcional de otra nivel root por encima
+	forall(	RangeFilter(idtoAncestor:IDTO,idProp:PROP,PROPNAME!="targetClass",VALUE==idFiltroRoot)	
+			Model(IDTO==idtoAncestor,PROP==idProp,OP==Constants.OP_CARDINALITY,QMIN==1))							
+	
+	forall(//POR EL PROBLEMA DE HABER IMPLEMENTADO ABSTRACTAS CON PROPIEDADES SUMA DE LOS HIJOS AUNQUE NO LAS TENGAN LA PADRE
+		FactHierarchy(CLASSSUP==clsFiltroRoot,anyChildren:CLASS)
+		Model(CLASSNAME==anyChildren,PROP==idpropFiltro)
+	)	 
+
+	//no actue en la propiedad responsable de proyecto pq sino ningun otro miembro podría ver el proyecto
+	eval(!(propiedadfiltro.equals("responsable")&&clsFiltroRoot.equals("PROYECTO")))
+	not(FilterValue(ID==idFiltroRoot, PROPNAME==propiedadfiltro,VALOR==valorFiltro))
+	//mejora rendimiento y evita problemas implementacion server
+	not(ObjValue(VALOR==idFiltroRoot, PROPNAME=="documento"||=="consumido_por"))
+	not(RangeFilter(VALUE==idFiltroRoot, PROPNAME=="documento"||=="consumido_por"))
+then	
+	dma.printRule("\n============ FILTRADO DATOS POR VISIBILIDAD ASIGNADA AL USUARIO LOGADO propiedadfiltro="+propiedadfiltro+" valorFiltro:"+valorFiltro+"  tipoObjeto="+tipoObjeto+" claseFiltro:"+claseFiltro+" ido="+idFiltroRoot);
+
+	dma.setFilterValue(idoFiltroRoot,propiedadfiltro,objetoFiltro);
+	//OBLIGAMOS A QUE TENGAN VALOR EN ESA PROPIEDAD LOS INDIVIDUOS A ENCONTRAR
+	Property pr=dma.getDDM().SystemGetProperty(idoFiltroRoot,idtoFiltroRoot,idpropFiltro);
+	if(pr.getCardMin()!=null&&pr.getCardMin().intValue()==1){
+		//System.err.println("\n debug no hace falta fijar cardinalidad pr="+pr);
+	}
+	else{
+		dma.setCardinality(idoFiltroRoot,idtoFiltroRoot,idpropFiltro,1);
+		Property prAfter=dma.getDDM().SystemGetProperty(idoFiltroRoot,idtoFiltroRoot,idpropFiltro);
+		//System.err.println("\n debug DE HA FIJADO CARDINALIDAD AL FILTRO, PR DESPUES="+prAfter);
+	}
+end
+
+rule "FILTRADO DE LOTE DE LINEA CUANDO SE SELECCIONA EL PRODUCTO"
+ agenda-group "rules" when 
+  	
+  	Lock(nameclass:CLASSNAME, iddominio:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+    exists(FactHierarchy(CLASS==nameclass, CLASSSUP=="FLUJO_ARTÍCULOS"||=="PRODUCCIÓN"||=="REGULARIZACIÓN"||=="FACTURA")) //4-10-10 se añade factura peticion alfonso    
+  	ObjValue(ID==iddominio,PROPNAME=="consumo"||=="línea",idLinea:VALOR!=null,idtoLinea:VALUECLS)
+  	ObjValue(claseLinea:CLASSNAME,ID==idLinea,PROPNAME=="producto",producto:VALOR!=null,claseProducto:RANGENAME!=null,ovproducto:OBJECTVALUE)
+	//Model(CLASSNAME=="LOTE", PROPNAME=="producto",OP==Constants.OP_INTERSECTION)	  	
+ 	DatValue(ID==producto,PROPNAME=="requiere_lote",BOOLEANVALOR==true)	
+	RangeFilter(ID==idLinea,PROPNAME=="lote",filtrolote:VALUE,idtoLote:VALUECLS)
+	not(exists(Individual(ID==filtrolote)))
+  	not(exists(FilterValue(ID==filtrolote,PROPNAME=="producto",VALOR==producto)))
+  	
+then
+	dma.printRule("\n\n------------------- RULE FILTRADO DE LOTE DE LINEA CUANDO SE SELECCIONA EL PRODUCTO: nameclass="+nameclass+"  idlinea="+idLinea);
+	dma.setFilterValue(filtrolote,"producto",ovproducto);
+end
+
+rule "INSTALACION FILTRO DE LOTE DE LINEA CUANDO SE SELECCIONA EL PRODUCTO"
+ agenda-group "rules" when 
+  	
+  	Lock(nameclass:CLASSNAME, iddominio:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK, LOCKEDBYUSER==true)
+  	exists(FactHierarchy(CLASS==nameclass, CLASSSUP=="FLUJO_ARTÍCULOS"||=="PRODUCCIÓN"||=="REGULARIZACIÓN"))     
+    ObjValue(ID==iddominio,PROPNAME=="consumo"||=="línea",idLinea:VALOR!=null)
+  	 ObjValue(claseLinea:CLASSNAME,ID==idLinea,idtoLinea:IDTO,idoLinea:IDO,PROPNAME=="producto",producto:VALOR!=null,claseProducto:RANGENAME!=null)
+ 	DatValue(ID==producto,PROPNAME=="requiere_lote",BOOLEANVALOR==true)	
+	Model(CLASSNAME==claseLinea,proplote:PROP,PROPNAME=="lote",OP==Constants.OP_INTERSECTION, idtoLote:VALUECLS!=null)  		  	 
+  	not(RangeFilter(ID==idLinea,PROPNAME=="lote",filtrolote:VALUE!=null))
+then
+	dma.printRule("\n\n------------------- RULE INSTALACION FILTRO DE LOTE DE LINEA CUANDO SE SELECCIONA EL PRODUCTO: nameclass="+nameclass+"  idlinea="+idLinea);
+	dma.getDDM().SystemSetRange(idoLinea,idtoLinea, proplote, idtoLote, 1/*No necesitamos ningun filtro por debajo de lote*/); 
+end
+
+rule "INSTALACION FILTRO DE LÍNEA DE DOCUMENTO PARA REGLA FILTRADO PRODUCTOS POR CATALOGO EN DOCUMENTO COMERCIAL"
+salience -100
+agenda-group "rules" when
+	
+    FactHierarchy(nameclass:CLASS,CLASSSUP=="DOCUMENTO")
+  	Lock(idDoc:ID,idtodoc:IDTO,idoDoc:IDO,CLASSNAME==nameclass, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+    not(RangeFilter(ID==idDoc,PROPNAME=="línea",filtrolinea:VALUE!=null))
+	Model(CLASSNAME==nameclass,PROPNAME=="línea",OP==Constants.OP_INTERSECTION,proplinea:PROP,idtoLinea:VALUECLS,claseLINEA:RANGENAME!=null)
+then
+    dma.printRule("\n\n  =============== INSTALACION FILTRO DE LÍNEA PARA REGLA CATALOGO");
+	dma.getDDM().SystemSetRange(idoDoc,idtodoc,proplinea,idtoLinea,2/*Ya que necesitamos que exista tambien el filtro de almacén debajo del filtro de linea*/);
+end
+
+rule "INSTALACION FILTRO DE CLIENTE DE DOCUMENTO"
+ agenda-group "rules" when
+ 	FactHierarchy(nameclass:CLASS,CLASSSUP=="DOCUMENTO")
+ 	Lock(idDoc:ID,idtodoc:IDTO,idoDoc:IDO,CLASSNAME==nameclass, STATE==Constants.INDIVIDUAL_STATE_LOCK)   	
+  	RangeFilter(IDO==idoDoc,PROPNAME=="cliente",idFiltroCliente:VALUE!=null,idtoCliente:VALUECLS)  	     
+	Model(IDTO==idtoCliente,propAgente:PROP,PROPNAME=="agente_comercial",OP==Constants.OP_INTERSECTION, idtoAgente:VALUECLS!=null)  		  	 
+  	not(RangeFilter(ID==idFiltroCliente,PROPNAME=="agente_comercial",VALUE!=null))
+then
+	dma.printRule("-------------------INSTALACION FILTRO DE CLIENTE DE DOCUMENTO ");
+	dma.getDDM().SystemSetRange(new Integer(idFiltroCliente),idtoCliente, propAgente, idtoAgente, 1); 
+end
+
+//PARA QUE ESTA REGLA VAYA BIEN LA CADENA NAGEGACION DEBERIA SER OBLIGATORIA
+/*rule "FILTRADO EXCLUIR DE LAS BUSQUEDAS LOS NO ACTIVOS A 2 NIVELES"
+ agenda-group "rules" when   	  	
+	Model(idtoTarget:IDTO,PROPNAME=="activo",OP==Constants.OP_INTERSECTION,propactivo:PROP!=null)
+	RangeFilter(idRoot1:ID,idFiltroTarget:VALUE,VALUECLS==idtoTarget)
+	
+	(or exists(Lock(ID==idRoot1, STATE==Constants.INDIVIDUAL_STATE_LOCK))
+		exists((and	RangeFilter(idoRoot2:IDO,VALUE==idRoot1)	
+					Lock(IDO==idoRoot2, STATE==Constants.INDIVIDUAL_STATE_LOCK))))
+							
+	not(FilterNotValue(ID==idFiltroTarget, PROPNAME=="activo",NOTVALUE=="false"))	
+then	
+	dma.printRule("==============FILTRADO EXCLUIR DE LAS BUSQUEDAS LOS NO ACTIVOS A 2 NIVELES");
+	IPropertyDef fi=new FactInstance(idtoTarget,new Integer(idFiltroTarget),propactivo,null,Constants.IDTO_BOOLEAN,Constants.DATA_BOOLEAN,new Double (0.0),new Double(0.0),Constants.OP_NEGATION,dma.getClassName(idtoTarget));
+	dma.getDDM().getRuleEngine().insertFact(fi);
+end*/
+
+
+rule "FILTRADO EMPRESAS NO ACTIVAS EN UTASK DE OBJETOS CON PROPIEDAD MIEMPRESA"
+ agenda-group "rules" when 
+	FactHierarchy(CLASSSUP=="UTASK",clsTask:CLASS)
+	RangeFilter(CLASSNAME==clsTask, PROPNAME==Constants.PROP_TARGETCLASS,filtroDocumento:VALUE!=null,idtoClaseConMiEmpresa:VALUECLS)
+	RangeFilter(ID==filtroDocumento,PROPNAME=="mi_empresa",filtroMiempresa:VALUE,idtoMiEmpresa:VALUECLS)
+	Model(IDTO==idtoMiEmpresa,PROPNAME=="activo",propactivo:PROP,claseMiEmpresa:CLASSNAME)
+	not(FilterNotValue(ID==filtroMiempresa, PROPNAME=="activo",NOTVALUE=="false"))
+then	
+	dma.printRule("\n\n ============== FILTRADO EMPRESAS NO ACTIVAS EN UTASK DE OBJETOS CON PROPIEDAD MIEMPRESA: clsTask="+clsTask);
+	IPropertyDef fi=new FactInstance(idtoMiEmpresa,Integer.parseInt(filtroMiempresa),propactivo,null,Constants.IDTO_BOOLEAN,Constants.DATA_BOOLEAN,new Double (0.0),new Double(0.0),Constants.OP_NEGATION,claseMiEmpresa);
+	dma.getDDM().getRuleEngine().insertFact(fi);
+end		
+
+
+//CODIGO BARRAS COMPUESTO 3 REGLAS
+
+/*El usuario lee un codigo de barras compuesto que codifica varios campos, y lo leee en el campo producto de la linea
+La regla de lectura (solo reacciona ante un codigo que contiene algún caracter separador (o "no de palabras" \\W) 
+captura dicho codigo compuesto al vuelo y modifica el finder para que sea directamente el primer campo, el de producto.
+Esta regla de lectura en cache memoriza el codigo compuesto y el codigo de producto. El codigo compuesto lo cacheamos para no perderlo, ya que tras la sesion
+de finder se hace rollback antes de una nueva sesion o run donde se crea el prototipo de la linea. Y el producto en concreto lo cacheamos para utilizarlo 
+en la regla de asignación, para reaccionar unicamente con una linea cuyo producto coincida con el cacheado, y ademas debe estar bloqueada por usuario.
+El caso que queremos evitar que falle es: se realiza una lectura compuesta que no encuentra nada en base de datos, el cache se ha grabado pero no se ha limpiado,
+y despues me meto en otra linea de otro producto y la regla asigna los valores cacheados, por ejemplo en una regla partida.*/
+
+rule "CODIGO BARRAS COMPUESTO:LECTURA"
+no-loop true
+ agenda-group "finder" when 
+  	//Sintaxis:  xxxx S yyy    campo n= tipo,separador; or tipo,inicio,fin or tipo,(item1,item2..) or tipo,(*) este ultimo seria el utlimo campo, y significa que pilla toda la cadena restante;
+  	DatValue(CLASSNAME=="PARAMETRO_VERDADERO",idoParam:IDO,PROPNAME=="rdn",rdnparam:VALOR!=null)
+  	eval((rdnparam.contains("codigo")||rdnparam.contains("código")||rdnparam.contains("CODIGO")||rdnparam.contains("CÓDIGO"))&&(rdnparam.contains("barra")||rdnparam.contains("BARRA")))
+  	DatValue(IDO==idoParam,PROPNAME=="filtro",expresion:VALOR!=null)
+  	DatValue(IDO==idoParam,PROPNAME=="activo",BOOLEANVALOR==true)
+	Lock(claseDoc:CLASSNAME,idDoc:ID!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	exists(FactHierarchy(CLASS==claseDoc,CLASSSUP=="DOCUMENTO"||=="LIQUIDACIÓN_POR_CAMBIO_PRECIO"))
+		
+	RangeFilter(ID==idDoc,PROPNAME=="línea"||=="productos_y_precios",filtroLinea:VALUE!=null)
+	RangeFilter(ID==filtroLinea,PROPNAME=="producto",filtroProducto:VALUE!=null)
+	FilterValue(ID==filtroProducto,idoFP:IDO,idtoFP:IDTO,PROPNAME=="rdn",inputStr:VALUE!=null)
+		
+	eval(!Auxiliar.equals(inputStr,dma.getDDM().getCache().get("code_compuesto_producto")))
+	eval(Pattern.compile(expresion,Pattern.COMMENTS).matcher(inputStr.replaceAll("%","")).matches())
+		
+then
+	dma.printRule("===========CODIGO BARRAS COMPUESTO:LECTURA "+inputStr);
+	
+	//parece que si modifico inputStr sobre si misma, falla drools por estar declarada en antecedente
+	String input=inputStr.replaceAll("%","");	
+		Pattern p=Pattern.compile(expresion,Pattern.COMMENTS);
+		Matcher m=p.matcher(input);
+		m.matches();
+		dma.printRule("previo group");		
+		String rdnProducto=m.group("producto");
+		if(expresion.contains("(?i)")){
+			rdnProducto=rdnProducto.toLowerCase();
+		}
+		dma.printRule("post group "+rdnProducto);					
+		for(int i=0;i<m.groupCount();i++){
+			//dma.printRule(
+		}
+	
+		if(rdnProducto!=null){		
+			dma.getDDM().getCache().put("code_compuesto",input);
+			dma.getDDM().getCache().put("code_compuesto_producto",rdnProducto);
+			dma.getDDM().getCache().put("expresion",expresion);
+			dma.printRule(" Asignado a cache "+input+","+rdnProducto);
+			dma.setFilterValue(idoFP,"rdn",new StringValue(rdnProducto));
+		}
+	
+
+	//Al asignar rdn de producto a nullrow, el finder localiara el producto en BD, y si puede clasificar la 
+	//linea creara automaticamente la linea. GUI antes de crear la línea hace rollback del finder, pero queda el cache	
+end
+
+
+rule "CODIGO BARRAS COMPUESTO:LIMPIEZA"
+//En el caso disjunto, que se entre con finder con un codigo no compuesto, limpio el cache
+salience -200 
+no-loop true
+ agenda-group "rules" when 
+  	
+	Lock(claseDoc:CLASSNAME,idDoc:ID!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	exists(FactHierarchy(CLASS==claseDoc,CLASSSUP=="DOCUMENTO"))
+		
+	eval(dma.getDDM().getCache().get("expresion")!=null)
+	
+	RangeFilter(ID==idDoc,PROPNAME=="línea",filtroLinea:VALUE!=null)
+	RangeFilter(ID==filtroLinea,PROPNAME=="producto",filtroProducto:VALUE!=null)
+	FilterValue(ID==filtroProducto,idoFP:IDO,idtoFP:IDTO,PROPNAME=="rdn",codigoFinderProducto:VALUE!=null)
+		
+	//eval(codigoFinderProducto.length()>0&&expresion.startsWith("producto")&&codigoFinderProducto.matches("\\w+"))		
+then
+	dma.printRule("===========CODIGO BARRAS COMPUESTO:LIMPIEZA");	
+	dma.getDDM().getCache().remove("code_compuesto");
+	dma.getDDM().getCache().remove("code_compuesto_producto");	
+end
+
+
+rule "CODIGO BARRAS COMPUESTO:ASIGNACION"
+salience 100 //mas prioridad que instalacion
+no-loop true
+ agenda-group "rules" when 
+  	
+  	FactHierarchy(claseDoc:CLASS,CLASSSUP=="DOCUMENTO")
+	Lock(CLASSNAME==claseDoc,idDoc:ID!=null,idoDoc:IDO,idtoDoc:IDTO,STATE==Constants.INDIVIDUAL_STATE_LOCK)	
+		
+	//eval(rdnProducto.equals(dma.getDDM().getCache().get("code_compuesto_producto"))) 
+	FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA")
+	Lock(IDTO==idtoLinea,idoLinea:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK,LOCKEDBYUSER==true,clsLinea:CLASSNAME)
+	ObjValue(IDO==idoLinea,PROPNAME=="producto",idoProducto:IDOVALUE!=null)
+	DatValue(IDO==idoProducto,PROPNAME=="rdn",rdnProducto:VALOR!=null)	
+	eval(dma.getDDM().getCache().get("expresion")!=null)
+	
+	listaProp:ArrayList()	from collect(Model(CLASSNAME==clsLinea,PROPNAME=="lote"||=="talla"||=="color"||=="tarjeta",OP==Constants.OP_INTERSECTION))	
+			
+then
+	String posibleCache=(String)dma.getDDM().getCache().get("code_compuesto");
+   	String codeProducto=(String)dma.getDDM().getCache().get("code_compuesto_producto");
+
+   	dma.printRule("===========CODIGO BARRAS COMPUESTO:ASIGNACION "+rdnProducto+" "+posibleCache+" "+codeProducto);
+      
+   	if(posibleCache!=null&&codeProducto!=null && codeProducto.equals(rdnProducto)){
+   		String expresion=(String)dma.getDDM().getCache().get("expresion");
+   		Pattern p=Pattern.compile(expresion,Pattern.COMMENTS);
+		Matcher m=p.matcher(posibleCache);
+		m.matches();
+				
+   	    Domain domLinea= new Domain(idoLinea,idtoLinea);   	    
+   	    
+   	    procesaCodigoBarras(dma,"talla",m,"talla",domLinea,listaProp);
+   	    procesaCodigoBarras(dma,"color",m,"color",domLinea,listaProp);
+   	    procesaCodigoBarras(dma,"tarjeta",m,"tarjeta",domLinea,listaProp);
+   	    		   	   		
+		dma.getDDM().getCache().remove("code_compuesto");
+    	dma.getDDM().getCache().remove("code_compuesto_producto");
+    	dma.getDDM().getCache().remove("expresion");    	
+    }
+end
+
+function void procesaCodigoBarras(DataModelAdapter dma, String propType, Matcher m, String prop, Domain domLinea,ArrayList listaProp){
+	String code=null;
+	try{
+		code=m.group(prop);
+	}catch(IllegalArgumentException e){	
+		dma.printRule("no hay grupo "+prop);
+	}		
+	if(code!=null){		     
+		for(int p=0;p<listaProp.size();p++){
+			Fact f=(Fact)listaProp.get(p);
+        	//Si es una Object Property
+        	if(f.getPROPNAME().equals(propType)){
+
+	        	HashSet<IDIndividual> res=dma.loadIndividualByRdn(f.getRANGENAME(),code,1);
+    			ObjectValue valor=null;
+            	if(res.size()==0){
+	            	Domain domDetail=dma.creaIndividualOfClass(f.getRANGENAME());
+    	            dma.setStringValue(domDetail.getIdo(),domDetail.getIdto(),2,code,false);
+        	        valor=new ObjectValue(domDetail);
+            	}else{
+            		Iterator it=res.iterator();                    
+                	while(it.hasNext()){
+                		IDIndividual idind=(IDIndividual)it.next();
+                    	valor=new ObjectValue(idind.getIDOIndividual(),idind.getIDTOIndividual());   
+                   		break;                  
+                	}
+             	}
+             	dma.printRule(" ASIGNANDO "+propType+" "+valor);
+             	dma.setValue(domLinea,propType,valor);   
+			}
+		}
+	}   
+}
+/*
+	Cuando el usuario elige un dominio se filtran las propiedades que puede elegir, solo las que tiene ese dominio
+*/
+
+rule "FILTRADO DE PROPIEDAD EN CONFIGURACIÓN"
+no-loop true
+ agenda-group "rules" when 
+  	
+	Lock(clase:CLASSNAME,id:ID!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	exists(FactHierarchy(CLASS==clase,CLASSSUP=="CAMPO_DESTACADO"||=="CAMPO_REQUERIDO"||=="GRUPO_CAMPOS"||=="MÁSCARA_CAMPO"||=="VALOR_POR_DEFECTO"))
+	ObjValue(ID==id,PROPNAME=="dominio", idoDominio:IDOVALUE, idtoDominio:VALUECLS)
+	RangeFilter(ID==id,PROPNAME=="propiedad",filtroPropiedad:VALUE!=null)
+then
+	dma.printRule("===========FILTRADO DE PROPIEDAD EN CONFIGURACIÓN ido dominio:"+idoDominio);
+	int idoFP=Integer.valueOf(filtroPropiedad);
+	dma.setFilterValue(idoFP,"clase",idoDominio!=null?new ObjectValue(idoDominio,idtoDominio):null/*El null nos sirve para quitar el filtro cuando el usuario borra el dominio*/);
+end
+
+/*
+	Necesitamos crear un filtro ya que el de por defecto tiene menos niveles de los que necesitamos. Lo hacemos para cuando el usuario elige una tabla en Columnas_Tabla o un dominio en Orden_Relativo_Campos se filtran las propiedades que puede elegir, solo las que tiene ese dominio.
+*/
+
+rule "INSTALACION FILTRO DE PROPIEDAD EN CONFIGURACION CON ORDEN CAMPO"
+agenda-group "rules" when 
+  	
+  	Individual(clase:CLASSNAME=="COLUMNAS_TABLA"||=="ORDEN_RELATIVO_CAMPOS",id:ID!=null,ido:IDO,idto:IDTO)
+	Model(CLASSNAME==clase,propFiltro:PROP,propName:PROPNAME=="columnas"||=="campos",OP==Constants.OP_INTERSECTION, idtoFiltro:VALUECLS!=null)
+	eval((clase.equals("COLUMNAS_TABLA") && propName.equals("columnas")) || (clase.equals("ORDEN_RELATIVO_CAMPOS") && propName.equals("campos")))
+	RangeFilter(IDO==ido,PROPNAME==propName,idoF:VALUE!=null,idtoF:VALUECLS)
+	not(RangeFilter(ID==idoF,PROPNAME=="propiedad",VALUE!=null))
+	Model(IDTO==idtoF,propF:PROP,PROPNAME=="propiedad",OP==Constants.OP_INTERSECTION, rangeFiltro:VALUECLS!=null)
+  	//not(RangeFilter(ID==id,PROPNAME==propName,VALUE!=null))
+then
+	dma.printRule("\n\n------------------- INSTALACION FILTRO DE PROPIEDAD EN CONFIGURACION CON ORDEN CAMPO: nameclass="+clase+" prop="+propName);
+	dma.getDDM().SystemSetRange(Integer.valueOf(idoF),idtoF,propF,rangeFiltro,2); 
+end
+
+/*
+	Filtrado para cuando el usuario elige una tabla en Columnas_Tabla o un dominio en Orden_Relativo_Campos se filtran las propiedades que puede elegir, solo las que tiene ese dominio.
+*/
+rule "FILTRADO DE PROPIEDAD EN CONFIGURACIÓN CON ORDEN CAMPO"
+no-loop true
+ agenda-group "rules" when 
+  	
+	Lock(clase:CLASSNAME=="COLUMNAS_TABLA"||=="ORDEN_RELATIVO_CAMPOS",id:ID!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(ID==id,propName:PROPNAME=="tabla"||=="dominio", idDominio:VALUE, idoDominio:IDOVALUE!=null, idtoDominio:VALUECLS)
+	eval((clase.equals("COLUMNAS_TABLA") && propName.equals("tabla")) || (clase.equals("ORDEN_RELATIVO_CAMPOS") && propName.equals("dominio")))
+	RangeFilter(classProp:CLASSNAME,classFilter:IDTO,PROPNAME=="propiedad",filtroPropiedad:VALUE!=null)
+	exists(FactHierarchy(CLASS==classProp,CLASSSUP=="ORDEN_CAMPO"))
+	not(exists(RangeFilter(ID==filtroPropiedad,PROPNAME=="clase",VALUE==idDominio)))
+then
+	dma.printRule("===========FILTRADO DE PROPIEDAD EN CONFIGURACIÓN CON ORDEN CAMPO nameclass="+clase+" prop="+propName+" filtro="+filtroPropiedad);
+	int idoFP=Integer.valueOf(filtroPropiedad);
+	dma.setFilterValue(idoFP,"clase",new ObjectValue(idoDominio,idtoDominio));
+end
+
+/*
+	Borrado del filtro para cuando el usuario borra tabla en Columnas_Tabla o dominio en Orden_Relativo_Campos.
+*/
+
+rule "BORRADO FILTRADO DE PROPIEDAD EN CONFIGURACIÓN CON ORDEN CAMPO"
+no-loop true
+ agenda-group "rules" when 
+  	
+	Lock(clase:CLASSNAME=="COLUMNAS_TABLA"||=="ORDEN_RELATIVO_CAMPOS",id:ID!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(ID==id,propName:PROPNAME=="tabla"||=="dominio", IDOVALUE==null, idtoDominio:VALUECLS)
+	eval((clase.equals("COLUMNAS_TABLA") && propName.equals("tabla")) || (clase.equals("ORDEN_RELATIVO_CAMPOS") && propName.equals("dominio")))
+	//RangeFilter(ID==id,PROPNAME=="columnas"||=="campos",filtroCol:VALUE!=null)
+	RangeFilter(classProp:CLASSNAME,classFilter:IDTO,PROPNAME=="propiedad",filtroPropiedad:VALUE!=null)
+	exists(FactHierarchy(CLASS==classProp,CLASSSUP=="ORDEN_CAMPO"))
+then
+	dma.printRule("===========BORRADO FILTRADO DE PROPIEDAD EN CONFIGURACIÓN CON ORDEN CAMPO nameclass="+clase+" prop="+propName+" filtro="+filtroPropiedad);
+	int idoFP=Integer.valueOf(filtroPropiedad);
+	dma.setFilterValue(idoFP,"clase",null);
+end
+
+
+/*
+	Filtrado para solo encontrar memos en propiedad de TAMAÑO_CAMPO
+*/
+rule "FILTRADO DE PROPIEDAD EN CONFIGURACIÓN CON TAMAÑO CAMPO"
+no-loop true
+ agenda-group "rules" when 
+  	
+	Lock(clase:CLASSNAME=="TAMAÑO_CAMPO",id:ID!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK)	
+	ObjValue(ID==id,propName:PROPNAME=="propiedad", idDominio:VALUE, idoDominio:IDOVALUE!=null, idtoDominio:VALUECLS)	
+	//eval((clase.equals("COLUMNAS_TABLA") && propName.equals("tabla")) || (clase.equals("ORDEN_RELATIVO_CAMPOS") && propName.equals("dominio")))
+	RangeFilter(ID==id,classProp:CLASSNAME,classFilter:IDTO,PROPNAME=="propiedad",filtroPropiedad:VALUE!=null)	
+	exists(FactHierarchy(CLASS==classProp,CLASSSUP=="TAMAÑO_CAMPO"))
+	not(exists(FilterValue(ID==filtroPropiedad,PROPNAME=="valuecls",VALUE!=null)))	
+then
+	dma.printRule("===========FILTRADO DE PROPIEDAD EN CONFIGURACIÓN CON TAMAÑO CAMPO nameclass="+clase+" prop="+propName+" filtro="+filtroPropiedad);
+	int idoFP=Integer.valueOf(filtroPropiedad);
+	dma.setFilterValue(idoFP,"valuecls",new IntValue(Constants.IDTO_MEMO));
+end
+
+
+rule "FILTRADO EXCLUIR DE LAS BUSQUEDAS NO ACTIVOS"
+ agenda-group "rules" when 
+ 	FactHierarchy(idtoTask:IDTO,CLASSSUP=="UTASK")
+ 	RangeFilter(IDTO==idtoTask,PROPNAME=="targetClass",filter:VALUE!=null,idtoTarget:VALUECLS)
+ 	Model(IDTO==idtoTarget,PROPNAME=="activo",OP==Constants.OP_INTERSECTION)
+then	
+	dma.printRule("============= FILTRADO EXCLUIR DE LAS BUSQUEDAS NO ACTIVOS");
+	
+	dma.setFilterValue(	filter,"activo", new BooleanValue(true));
+end
+
+rule "FILTRADO EXCLUIR DE LAS BUSQUEDAS NO ACTIVOS NIVELES INFERIORES"
+ agenda-group "rules" when  	 	
+ 	Lock(ido:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+ 	RangeFilter(IDO==ido,filter:VALUE!=null,idtoFilter:VALUECLS) 	
+ 	Model(IDTO==idtoFilter,PROPNAME=="activo",OP==Constants.OP_INTERSECTION)
+then	
+	dma.printRule("============= FILTRADO EXCLUIR DE LAS BUSQUEDAS NO ACTIVOS NIVELES INFERIORES");
+	
+	dma.setFilterValue(	filter,"activo", new BooleanValue(true));
+end
+
+
+rule "FILTRADO CATALOGO GASTOS EN LÍNEA GASTOS"
+agenda-group "rules" when
+    RangeFilter(CLASSNAME=="LÍNEA_GASTO",PROPNAME=="producto", filterarticulo:VALUE!=null,idtofilterarticulo:VALUECLS,idoRoot:IDO!=null)
+    Individual(IDO==idoRoot)//Para que solo filtre en la creación/edición de líneas gasto, no debe afectar a la busqueda de lineas gasto que debe encontrar todas
+	DatValue(CLASSNAME=="CATÁLOGO", VALOR=="Catálogo_Gastos", PROPNAME==Constants.PROP_RDN, idocatalCompras:IDO!=null,idcatalCompras:ID,idtocatal:IDTO)
+	not(Individual(ID==filterarticulo))
+	not(FilterValue(ID==filterarticulo,PROPNAME=="catálogo",VALOR==idcatalCompras))
+then
+   dma.printRule("\n\n ========== FILTRADO CATALOGO GASTOS EN LÍNEA GASTOS: filterArticulo: "+filterarticulo+" idoRoot:"+idoRoot);
+	int idofilterarticulo=Integer.parseInt(filterarticulo);
+	Integer idcatal=idocatalCompras;
+	dma.addFilterValue(filterarticulo,"catálogo",new ObjectValue(idocatalCompras,idtocatal));
+end

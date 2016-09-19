@@ -1,0 +1,629 @@
+package dynagent.ruleengine.src.ruler.ERPrules
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import org.drools.WorkingMemory;
+import dynagent.common.exceptions.*;
+import dynagent.common.basicobjects.*;
+import dynagent.common.utils.IndividualValues;
+
+import rules.*;
+
+global DataModelAdapter dma;
+
+rule "PERMISO SET DENEGADO EN RDN DE CLASES APUNTADAS ESTRUCTURALMENTE"
+agenda-group "inicializerules" when 
+ 		jb:JBossEngine()
+		
+		Model(OP!=null, idtoclaseEstructural:VALUECLS,idpropEstructural:PROP,claseEstructural:RANGENAME!=null)
+	  	FactProp(idprop:PROP==idpropEstructural,cat:CAT!=null)
+		eval((cat.intValue())%19==0)//ESTA ES LA C
+        not(FactAccess(IDTO==idtoclaseEstructural,DENNIED==1,ACCESSTYPE==4,IDO==null,PROP==2,USER==null,VALUE==null,VALUECLS==null))
+then
+	dma.printRule("\n      =================INICIALIZERULES: PERMISO SET DENEGADO EN RDN DE CLASES APUNTADAS ESTRUCTURALMENTE: "+claseEstructural);
+	FactAccess f=new FactAccess(idtoclaseEstructural,null,2 ,null,null,null,null,null,new Integer(1),Constants.ACCESS_SET,Constants.MAX_ACCESS_PRIORITY-1,dma.getDDM());//ponemos 2 para que puedan hacerse excepciones 
+	jb.insertFact(f);
+end
+
+
+/*
+rule "PROPIEDADES ESTRUCTURALES PERMISO REL DENEGADO"
+agenda-group "inicializerules" when 
+		jb:JBossEngine();
+		ddm:DocDataModel(USER!="dynagent")
+		factsToInsert: HashSet(size>0) 
+            	from accumulate(
+            				 (and 
+            				 		FactProp(idprop:PROP!=null,cat:CAT!=null)
+									eval((cat.intValue())%19==0)//ESTA ES LA CONDICIÓN QUE COMPRUEBA QUE LA PROPIEDAD ES ESTRUCTURAL (LA LÓGICA DE CATEGPROAS ESTÁ IMPLEMENTADA EN LA CLASE CATEGORY DE RULEENGINE
+									not(FactAccess(IDTO==null,DENNIED==1,ACCESSTYPE==Constants.ACCESS_REL,IDO==null,PROP==idprop,TASK==null,USER==null,VALUE==null,VALUECLS==null))
+
+            				  ),
+                              init	( HashSet factsToInsert2= new HashSet();
+          		              ),
+                              action( 
+									FactAccess permisodenegRel=new FactAccess(null,null,idprop ,null,null,null,null,null,new Integer(1),Constants.ACCESS_REL,Constants.MAX_ACCESS_PRIORITY-1,dma);
+									factsToInsert2.add(permisodenegRel);
+                           ),                            
+                             result(factsToInsert2))
+then
+	dma.printRule("\n      =================INICIALIZERULES:  PROPIEDADES ESTRUCTURALES PERMISO REL DENEGADO.  numeroFacts="+factsToInsert.size());
+	Iterator it=factsToInsert.iterator();
+	while (it.hasNext()){
+		 FactAccess f=(FactAccess)it.next();
+		jb.insertFact(f);
+	}
+end
+*/
+
+rule "RDN CLASES TIPO ENUMERADO EDITABLE POR USUARIO"
+agenda-group "inicializerules" when 
+		jb:JBossEngine();
+		
+		factsToInsert: HashSet(size>0) 
+            	from accumulate(
+            				 (and 
+            				 		fh:FactHierarchy(idto:IDTO!=null,CLASSSUP=="ENUMERATED")
+									not(FactAccess(IDTO==idto,DENNIED==0,ACCESSTYPE==Constants.ACCESS_SET,PROP==Constants.IdPROP_RDN,PRIORITY==1))
+									
+            				  ),
+                              init	( HashSet factsToInsert2= new HashSet();
+          		              ),
+                              action( 
+									FactAccess permiso=new FactAccess(idto,null,Constants.IdPROP_RDN,null,null,null,null, null,0,Constants.ACCESS_SET,1,dma.getDDM());
+									factsToInsert2.add(permiso);
+                           ),                            
+                             result(factsToInsert2))
+then
+	dma.printRule("\n      =================INICIALIZERULES: RDN CLASES TIPO ENUMERADO EDITABLE POR USUARIO: numeroFacts="+factsToInsert.size());
+	Iterator it=factsToInsert.iterator();
+	while (it.hasNext()){
+		 FactAccess f=(FactAccess)it.next();
+		 jb.insertFact(f);
+	}
+end
+
+/*rule "PERMISO VIEW DENEGADO EN RDN DE CLASES HEREDAN DE PARAMS/DATA_TRANSFER"
+agenda-group "inicializerules" when 
+ 		jb:JBossEngine();
+		
+	  	factsToInsert: HashSet(size>0) 
+            	from accumulate(
+            				 (and 
+            				 	 FactHierarchy(CLASSSUP=="PARAMS"||=="DATA_TRANSFER",idto:IDTO,clase:CLASS)
+	 							 not(FactAccess(IDTO==idto,DENNIED==1,ACCESSTYPE==1,IDO==null,PROP==2,USER==null,VALUE==null,VALUECLS==null))
+
+            				  ),
+                              init	( HashSet factsToInsert2= new HashSet();
+          		              ),
+                              action( 
+									FactAccess fa=new FactAccess(idto,null,2,null,null,null,null,null,1,1,Constants.MAX_ACCESS_PRIORITY,dma.getDDM());
+									factsToInsert2.add(fa);
+                           ),                            
+                             result(factsToInsert2))
+then
+	dma.printRule("\n      =================INICIALIZERULES: PERMISO VIEW DENEGADO EN RDN DE CLASES HEREDAN DE PARAMS/DATA_TRANSFER: n. permisos a insertar="+factsToInsert.size());
+	HashSet clonefactsToInsert=(HashSet)factsToInsert.clone();
+	Iterator it=clonefactsToInsert.iterator();
+	while (it.hasNext()){
+		 FactAccess f=(FactAccess)it.next();
+		 jb.insertFact(f);
+	}
+end
+
+rule "PERMISO SET DENEGADO EN RDN DE CLASES HEREDAN DE PARAMS/DATA_TRANSFER"
+agenda-group "inicializerules" when 
+ 		jb:JBossEngine();
+		
+	  	factsToInsert: HashSet(size>0) 
+            	from accumulate(
+            				 (and 
+            				 	 FactHierarchy(CLASSSUP=="PARAMS"||=="DATA_TRANSFER",idto:IDTO,clase:CLASS)
+	 							 not(FactAccess(IDTO==idto,DENNIED==1,ACCESSTYPE==4,IDO==null,PROP==2,USER==null,VALUE==null,VALUECLS==null))
+
+            				  ),
+                              init	( HashSet factsToInsert2= new HashSet();
+          		              ),
+                              action( 
+									FactAccess fa=new FactAccess(idto,null,2,null,null,null,null,null,1,4,Constants.MAX_ACCESS_PRIORITY,dma.getDDM());
+									factsToInsert2.add(fa);
+                           ),                            
+                             result(factsToInsert2))
+then
+	dma.printRule("\n      =================INICIALIZERULES: PERMISO SET DENEGADO EN RDN DE CLASES HEREDAN DE PARAMS/DATA_TRANSFER: n. permisos a insertar="+factsToInsert.size());
+	HashSet clonefactsToInsert=(HashSet)factsToInsert.clone();
+	Iterator it=clonefactsToInsert.iterator();
+	while (it.hasNext()){
+		 FactAccess f=(FactAccess)it.next();
+		 jb.insertFact(f);
+	}
+end
+*/
+
+rule "CARGA USUARIO LOGADO"
+agenda-group "inicializerules" when 
+	DocDataModel(user:USER!=null)
+	
+	Model(claseUsuario:CLASSNAME=="USER"||=="USUARIO",OP=="AND",PROPNAME=="rdn")
+	not(DatValue(CLASSNAME==claseUsuario,idUser:ID,PROPNAME==Constants.PROP_RDN,VALOR==user))
+then
+	dma.printRule("\n      =================INICIALIZERULES: CARGA USUARIO LOGADO......");
+	 HashMap<String, Value> properties=new HashMap<String,Value>();
+	 properties.put("rdn",new StringValue(user));
+	 instance instanceFilter=dma.buildInstanceWith(claseUsuario, properties,null,null,null);
+	 HashSet<IDIndividual> idos=dma.loadIndividualsWithSatisficedFilter(instanceFilter,3);//dos niveles para cargar rol
+	 dma.printRule("\n....numero de usuarios cargados en motor: "+idos);
+end
+
+rule "CARGA ROL"
+salience -100
+agenda-group "inicializerules" when 
+  	 DocDataModel(user:USER!=null)	  
+	 DatValue(CLASSNAME=="USER", idUser:ID, PROPNAME==Constants.PROP_RDN,VALOR==user)
+	 ObjValue(ID==idUser,PROPNAME=="userRol",idoRol:IDOVALUE,idtoRol:VALUECLS)
+	 not(DatValue(IDO==idoRol,PROPNAME=="rdn"))
+then
+	dma.printRule("\n      =================INICIALIZERULES: CARGA ROL......");
+ 	dma.ruleGetFromServer(idoRol,idtoRol,1,false);
+end
+
+rule "CARGA EMPLEADO LOGADO"
+salience 100
+agenda-group "inicializerules" when 
+	DocDataModel(user:USER!=null)
+	
+	Model(claseUsuario:CLASSNAME=="USER"||=="USUARIO",OP=="AND",PROPNAME=="rdn")
+	DatValue(CLASSNAME==claseUsuario,idUser:ID,idoUser:IDO,idtoUser:IDTO,PROPNAME==Constants.PROP_RDN, VALOR==user)
+	Model(CLASSNAME=="EMPLEADO",OP=="AND",PROPNAME=="usuario")
+	not((and FactHierarchy(CLASSSUP=="EMPLEADO", idtoEmpleado:IDTO)
+			 ObjValue(IDTO==idtoEmpleado, PROPNAME=="usuario", VALOR==idUser)))
+then
+	dma.printRule("\n      =================INICIALIZERULES: CARGA EMPLEADO LOGADO");
+	 HashMap<String, Value> properties=new HashMap<String,Value>();
+	 properties.put("usuario",new ObjectValue(idoUser,idtoUser));
+	 instance instanceFilter=dma.buildInstanceWith("EMPLEADO", properties,null,null,null);
+	 HashSet<IDIndividual> idos=dma.loadIndividualsWithSatisficedFilter(instanceFilter);
+	 dma.printRule("\n....numero de empleados cargados en motor: "+idos);
+end
+
+rule "CARGA EMPRESA ACTIVA DE USUARIO LOGADO"
+salience 100
+agenda-group "inicializerules" when 
+	DocDataModel(user:USER!=null)
+	
+	Model(claseUsuario:CLASSNAME=="USER"||=="USUARIO",OP=="AND",PROPNAME=="rdn")
+	DatValue(CLASSNAME==claseUsuario,idUser:ID,PROPNAME==Constants.PROP_RDN,VALOR==user)
+	ObjValue(ID==idUser,PROPNAME=="empresa_activa",empresaActiva:VALOR!=null,idtoempresa:IDTO)
+	eval(dma.preload(Integer.parseInt(empresaActiva),idtoempresa))
+then
+	dma.printRule("\n      =================INICIALIZERULES: CARGA EMPRESA ACTIVA DE USUARIO LOGADO: empresaActiva="+empresaActiva);
+end
+
+
+rule "CARGA INDIVIDUOS CONFIGURATION"
+salience 200
+agenda-group "inicializerules" when 
+	
+	Model(IDTO==Constants.IDTO_CONFIGURATION, PROPNAME=="rdn",OP=="AND")//esta definida la clase configuration en el modelo
+then
+	dma.printRule("\n      =================INICIALIZERULES: RULE CARGA INDIVIDUOS CONFIGURATION");
+	dma.getDDM().loadInRulerFactsOfIndividualSpecializedOfClass(Constants.IDTO_CONFIGURATION,2);
+end
+
+rule "CARGA INDIVIDUOS ESTRUCTURALES acumulando gruporules inicializerules"
+ salience -100
+ agenda-group "inicializerules" when 
+  	
+	idos: HashSet(size>0) 
+		from accumulate(
+				(and 
+					ObjValue(IDO!=null, idprop:PROP!=null, idApuntado:OBJECTVALUE!=null)
+					not( Individual(IDO==(idApuntado.getValue())) )
+					eval( dma.getDDM().getCategory(idprop).isStructural() )
+				),
+			init( HashSet<IDIndividual> idos2 = new HashSet<IDIndividual> (); ),
+			action( idos2.add(idApuntado); ),                            
+			result( idos2 )
+		)
+then
+ 	dma.printRule("\n      =================INICIALIZERULES: CARGA INDIVIDUOS ESTRUCTURALES ACUMULANDO gruporules inicializerules idos"+idos);
+ 	Iterator it = idos.iterator();
+ 	dma.ruleGetFromServer(idos, 2, false);
+end
+
+
+rule "CONFIGURACION APLICACION HA DE SER UNICA"
+salience -200
+agenda-group "inicializerules" when 
+	
+	FactHierarchy(CLASSSUP=="APLICACIÓN", namecls:CLASS)
+	Individual(CLASSNAME==namecls, id1:ID!=null,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+	Individual(CLASSNAME==namecls, id2:ID!=null&&!=id1,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+then
+	dma.printRule("\n\n ============= CONFIGURACION APLICACION HA DE SER UNICA:  idEmpresa1="+id1+" idEmpresa2="+id2);
+	throw new OperationNotPermitedException("SOLO SE PUEDE DEFINIR UNA CONFIGURACIÓN PARA LA CONFIGURACIÓN");
+end
+
+rule "CONFIGURACION APLICACION HA DE SER UNICA: grupo rules"
+salience -200
+agenda-group "rules" when 
+	
+	FactHierarchy(CLASSSUP=="APLICACIÓN", namecls:CLASS)
+	Individual(CLASSNAME==namecls, id1:ID!=null,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+	Individual(CLASSNAME==namecls, id2:ID!=null&&!=id1,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+then
+	dma.printRule("\n\n ============= CONFIGURACION APLICACION HA DE SER UNICA: grupo rules:  idEmpresa1="+id1+" idEmpresa2="+id2);
+	throw new OperationNotPermitedException("SOLO SE PUEDE DEFINIR UNA CONFIGURACIÓN PARA LA CONFIGURACIÓN");
+end
+
+
+rule "DETECTAR CONFIGURACION MI EMPRESA/APLICACIÓN INCOMPLETA: FALTAN VALORES"
+salience -200
+agenda-group "inicializerules" when 
+	
+	FactHierarchy(CLASSSUP=="APLICACIÓN", namecls:CLASS)
+	I:Individual(CLASSNAME==namecls, ido:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_READY)
+	Model(CLASSNAME==namecls, propiedad:PROPNAME!=null,OP==Constants.OP_CARDINALITY, cardMin:QMIN!=null)
+	valores: Long() from accumulate(	
+												(and	
+													fvalor:IndividualValue(IDO==ido,PROPNAME==propiedad,VALOR!=null)
+	
+												),
+            				 					
+            				 					count( fvalor ))    
+    eval(valores==null||valores.intValue()<cardMin)
+then
+	dma.printRule("\n\n ============= DETECTAR CONFIGURACION MI EMPRESA/APLICACION INCOMPLETA. FALTAN VALORES: propiedad="+propiedad+"  nvalores="+valores+" idEmpresa="+ido+"\n"+I);
+	dma.showMessage("CONFIGURACIÓN DE "+namecls+" INCOMPLETA. Falta valor en la propiedad "+propiedad);
+end
+
+
+rule "DETECTAR CONFIGURACION APLICACION INCOMPLETA. FALTA APLICACION"
+salience -100
+agenda-group "rules" when 
+	
+	FactHierarchy(namesupcls:CLASSSUP=="APLICACIÓN", namecls:CLASS)
+	FactHierarchy(CLASSSUP=="UTASK", nameTASK:CLASS)
+	Model(CLASSNAME==nameTASK,PROPNAME=="targetClass",OP=="AND",RANGENAME==namecls)
+	not(Individual(CLASSNAME==namecls,ID!=null))
+then
+	dma.printRule("\n\n ============= DETECTAR CONFIGURACION APLICACION INCOMPLETA: FALTA "+namesupcls);
+	dma.showMessage("CONFIGURACIÓN INCOMPLETA. Falta crear y configurar "+namecls);
+end
+
+rule "CONFIGURACIÓN MI_EMPRESA"
+agenda-group "rules" when
+    FactHierarchy(namesupcls:CLASSSUP=="MI_EMPRESA", namecls:CLASS)
+	FactHierarchy(CLASSSUP=="UTASK", nameTASK:CLASS)
+	Model(CLASSNAME==nameTASK,PROPNAME=="targetClass",OP=="AND",RANGENAME==namecls)
+	not(Individual(CLASSNAME==namecls,ID!=null,LEVEL==Constants.LEVEL_INDIVIDUAL))
+then
+   	dma.printRule("\n\n=======================RULE CONFIGURACIÓN MI_EMPRESA "+namecls);   	
+   	IndividualValues data=new IndividualValues(dma.getIdClass("MI_EMPRESA"),null);
+   	data.addData(dma.getIdProperty("rdn"),"001");
+   	dma.questionRequest(Constants.BUSINESS_QUESTION_TASK_RDN,data,null);
+end
+
+rule "CONFIGURACIÓN DE APLICACION"
+agenda-group "rules" when    
+    DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.BUSINESS_QUESTION_TASK_RDN)
+    ObjValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="confirmedSource",RANGENAME=="MI_EMPRESA",ovEmpresa:OBJECTVALUE)	
+    Individual(CLASSNAME=="APLICACIÓN",idoApp:IDO!=null,idtoApp:IDTO)	
+	not(ObjValue(IDO==idoApp,PROPNAME=="mi_empresa",VALOR!=null))		
+then
+   	dma.printRule("=======================CONFIGURACIÓN DE APLICACION");     	 	
+   	dma.setValue(idoApp,idtoApp,"mi_empresa",ovEmpresa);
+   	dma.questionRequest(Constants.BUSINESS_QUESTION_TASK_RDN,new IndividualValues(idoApp,null),null);
+end
+
+rule "CONFIGURACIÓN MI_EMPRESA HELP"
+agenda-group "rules" when
+    DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.BUSINESS_QUESTION_TASK_RDN)    
+then
+   	dma.printRule("======================CONFIGURACIÓN MI_EMPRESA HELP");
+   	String msg="<html><body style=\"font-family:verdana;\" width=\"700\">";
+   	msg+="<h3>Hola, vamos a tomarnos 30 segundos para identificar nuestra empresa en la aplicación!</h3><br>";
+   	msg+="( recuerde que el titulo de la ventana siempre indíca donde se encuentra, en este caso \"Creación de Mi Empresa\")<br><br>";
+   	msg+="- Los campos obligatorios se reconocen por el fondo amarillo.<br><br>";
+   	msg+="- Le animamos a utilizar el teclado: salte cómodamente al siguiente campo obligatorio (no relleno) pulsando la tecla \"intro\",<br><br>";
+   	msg+=".. y salte al siguiente campo sea cual sea mediante la tecla \"Tabulador\"<br><br>";
+   	msg+="- Recuerde que dispone de un período gratuito de soporte en el mail soporte@dynagent.es <br><br>";
+   	msg+="</body></html>";
+   	dma.showMessage(msg);   	
+end
+
+rule "CONFIGURACIÓN DELEGACION"
+//menos prioridad regla crea almacen
+//En esta regla no se crea el almacen, para que la regla que lo crea actue tanto debido a esta como a una creacion directa de delegacion
+agenda-group "rules" when
+	FactHierarchy(idtoTarget:IDTO,clsSup:CLASSSUP=="APLICACIÓN"||=="ALMACÉN")
+   	DatValue(IDTO==idtoTarget,idoTarget:IDO,PROPNAME=="rdn",rdnTarget:VALOR!=null)
+   	//No funciona con end lock
+	Lock(IDO==idoTarget,STATE==Constants.INDIVIDUAL_STATE_LOCK,LOCKEDBYUSER==true)
+   
+	//no puede estar completo
+	not((and 	eval(clsSup.equals("ALMACÉN"))
+				DatValue(CLASSNAME=="DELEGACIÓN",PROPNAME=="rdn",VALOR==rdnTarget)))
+				
+	not((and 	eval(clsSup.equals("APLICACIÓN"))//no poner valor!=null porque actuaria si desvinculo
+				ObjValue(IDO==idoTarget,PROPNAME=="delegación")))				
+	
+	forall(	DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.BUSINESS_QUESTION_TASK_RDN)
+			FactHierarchy(IDTO==idtoTarget,CLASSSUP=="APLICACIÓN")
+    		Lock(IDO==idoTarget,LOCKEDBYUSER==true))    		        			    
+    		    	    				    				             
+    ObjValue(IDO==idoTarget,PROPNAME=="mi_empresa"||=="empresa",ovEmpresa:OBJECTVALUE,idoMiEmpresa:IDOVALUE!=null,idtoEmpresa:VALUECLS)
+    not(Lock(IDO==idoMiEmpresa,LOCKEDBYUSER==true))    
+	FactHierarchy(CLASSSUP=="UTASK", nameTASK:CLASS)
+	Model(CLASSNAME==nameTASK,PROPNAME=="targetClass",OP=="AND",rnAlm:RANGENAME=='ALMACÉN')	
+	  			
+then
+   	dma.printRule("=======================CONFIGURACIÓN DELEGACION "+rdnTarget);   
+   	
+   	Boolean crearDeleg= new Boolean(idoTarget.intValue()<0 && clsSup.equals("APLICACIÓN"));
+   	if(!crearDeleg.booleanValue() && idoTarget.intValue()<0) crearDeleg=dma.showQuestion("¿Desea que se cree automaticamente la delegación "+rdnTarget+"?");
+   	
+   	dma.printRule(" mostrada question "+crearDeleg);
+   	if(crearDeleg!=null && crearDeleg.booleanValue()){
+   		dma.printRule(" si crear delegacion ");
+   		Domain delegacion= dma.cloneIndividual(	clsSup.equals("APLICACIÓN")?idoMiEmpresa:idoTarget,
+   												clsSup.equals("APLICACIÓN")?idtoEmpresa:idtoTarget,
+   												dma.getIdClass("DELEGACIÓN"),"rdn#nombre");
+   		dma.setValue(delegacion,"empresa",ovEmpresa);
+   	   	      	   	
+   		if(clsSup.equals("APLICACIÓN")){
+   	   		dma.setValue(delegacion,"rdn",new StringValue("001"));          	   	   	
+   			dma.setValue(delegacion,"nombre",new StringValue("CENTRAL"));   
+   			Domain cfg= dma.creaIndividualOfClass("CONFIGURACIÓN_CONTABLE");
+   			dma.setValue(cfg,"mi_empresa",ovEmpresa);
+   			dma.setDataValue(cfg,"activo","true");
+   			dma.setValue(idoTarget,idtoTarget,"delegación",new ObjectValue(delegacion));     			
+   		}else{
+   			dma.setValue(delegacion,"rdn",new StringValue(rdnTarget));          	   	   	
+   			dma.setValue(delegacion,"nombre",new StringValue(rdnTarget));
+	   	}	   	
+	}	
+end
+
+rule "REPLICAS: NUEVA DELEGACION: CREACION USUARIOS"
+salience -100 
+agenda-group "rules" when 	  	
+	FactHierarchy(idtoDel:IDTO, CLASSSUP=="DELEGACIÓN") 
+	DatValue(idoDel:IDO<0,IDTO==idtoDel,PROPNAME=="rdn",rdnDel:VALOR!=null)
+	
+	//tiene replicas
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="mi_empresa",idoMiEmpresa:IDOVALUE)
+	ObjValue(IDO==idoMiEmpresa,PROPNAME=="delegacion_central",VALOR!=null)
+	
+	DatValue(CLASSNAME=="USERROL",idoRol:IDO,idtoRol:IDTO,PROPNAME=="rdn",VALOR=="intercom")	
+then
+	dma.printRule("==== REPLICAS: NUEVA DELEGACION: CREACION USUARIOS");
+	   	   			
+   	Domain user= dma.creaIndividualOfClass("USER");
+   	ObjectValue ovRol=new ObjectValue(idoRol,idtoRol);
+   	dma.setValue(user,"rdn",new StringValue("global_"+rdnDel));
+   	dma.setValue(user,"password",new StringValue("scheduler"));
+   	dma.setValue(user,"userRol",ovRol);
+   	user= dma.creaIndividualOfClass("USER");   	
+   	dma.setValue(user,"rdn",new StringValue("sch_"+rdnDel));
+   	dma.setValue(user,"password",new StringValue("scheduler"));
+   	dma.setValue(user,"userRol",ovRol);	
+end  
+
+rule "ORGANIZACIONES ASOCIADAS: CLONACION POR DEFECTO"
+salience -100 
+agenda-group "rules" when
+	FactHierarchy(idtoOrgSource:IDTO, clsSrc:CLASSSUP=="DELEGACIÓN"||=="ALMACÉN"||=="MI_EMPRESA")
+	Lock(IDTO==idtoOrgSource,idoOrgSource:IDO,LOCKEDBYUSER==true)
+	FactHierarchy(idtoOrgClone:IDTO, clsClon:CLASSSUP=="DELEGACIÓN"||=="ALMACÉN"||=="MI_EMPRESA")
+	Individual(IDTO==idtoOrgClone,idoOrgClone:IDO) 
+	//para evitar bucle cuando cambio direccion de emprsa de un almacen. Por esto en ese caso el nombre comercial de la empresa no se copia a la delegacion
+	not(Lock(IDO!=idoOrgSource,LOCKEDBYUSER==true))
+	
+	(or exists(ObjValue(IDO==idoOrgSource,PROPNAME=="empresa"||=="mi_empresa"||=="almacén"||=="delegación"||=="centro_trabajo",IDOVALUE==idoOrgClone))
+		exists(ObjValue(IDO==idoOrgClone,PROPNAME=="empresa"||=="mi_empresa"||=="almacén"||=="delegación"||=="centro_trabajo",IDOVALUE==idoOrgSource))
+		exists((and ObjValue(IDO==idoOrgSource,PROPNAME=="empresa"||=="mi_empresa"||=="almacén"||=="delegación"||=="centro_trabajo",linkAny:IDOVALUE)
+					ObjValue(IDO==linkAny,PROPNAME=="empresa"||=="mi_empresa"||=="almacén"||=="delegación"||=="centro_trabajo",IDOVALUE==idoOrgClone)))		
+					)
+					
+	forall(	FactHierarchy(IDTO==idtoOrgClone, CLASSSUP=="MI_EMPRESA")
+			Individual(IDO==idoOrgClone&&IDO<0))
+			
+	IndividualValue(IDO==idoOrgSource,p:PROPNAME,v:CVALUE!=null,vs:VALOR)
+	Model(IDTO==idtoOrgClone,OP=="AND",PROPNAME==p)
+	
+	not(IndividualValue(IDO==idoOrgClone,PROPNAME==p,VALOR!=null&&hasCHANGED==true||IDO>0))//para evitar ruido no puedo poner un valor acaba de cambiar
+	//si el indiv clone ya tiene valor, actualizo si esta siendo creado
+	//prv:String() from accumulate(IndividualValue(IDO==idoOrgClone,PROPNAME==p,pv:PREVALOR!=null),init(String res="";),action(res=pv;),result(res))
+then
+	dma.printRule("ORGANIZACIONES ASOCIADAS: CLONACION POR DEFECTO "+p+" src:"+clsSrc+" clon:"+clsClon+" new "+vs);//+" prev:"+prv);
+	dma.setValue(idoOrgClone,idtoOrgClone,p,v);	
+	dma.consumirEventoCambio(idoOrgClone,p);//este cambio por clonacion no cuenta, cuenta cambios por usuario o reglas calculo
+end
+
+rule "PRECARGA ALMACENES NUEVA DELEGACION"
+salience -100 
+agenda-group "rules" when 	  	
+	FactHierarchy(idtoDel:IDTO, CLASSSUP=="DELEGACIÓN") 
+	DatValue(idoDel:IDO<0,IDTO==idtoDel,PROPNAME=="rdn",rdnDel:VALOR!=null)
+	not((and FactHierarchy(idtoAlm:IDTO, CLASSSUP=="ALMACÉN")
+			 ObjValue(IDTO==idtoAlm,PROPNAME=="delegación",IDOVALUE==idoDel)))
+then
+	dma.printRule("\n\n ================  PRECARGA ALMACEN NUEVA DELEGACION "+rdnDel);
+	HashMap<String,Value> whereAlmacen=new HashMap<String,Value>();
+	whereAlmacen.put("rdn",new StringValue(rdnDel));
+	instance  filerAlmacen=dma.buildInstanceWith("ALMACÉN",whereAlmacen,null,null,null);
+	HashSet<IDIndividual> idos=dma.loadIndividualsWithSatisficedFilter(filerAlmacen);
+	dma.printRule("NUMERO ENCONTRADO "+idos.size());
+end	
+ 	
+rule "PRECARGA ROL INTERCOM (para replicas)"
+agenda-group "rules" when 	  	
+	FactHierarchy(idtoTarget:IDTO,clsSup:CLASSSUP=="ALMACÉN"||=="DELEGACIÓN"||=="MI_EMPRESA") 	
+	Lock(IDTO==idtoTarget,idoTarget:IDO,LOCKEDBYUSER==true)
+	DatValue(IDO==idoTarget,PROPNAME=="rdn",rdnTarget:VALOR!=null)
+	//Mismas condiciones que regla CONFIGURACIÓN DELEGACION
+	not(DatValue(CLASSNAME=="USERROL",PROPNAME=="rdn",VALOR=="intercom"))	
+then
+	dma.printRule("\n\n ================  PRECARGA ROL INTERCOM (para replicas)");
+	HashMap<String,Value> whereAlmacen=new HashMap<String,Value>();
+	whereAlmacen.put("rdn",new StringValue("intercom"));
+	instance  filerAlmacen=dma.buildInstanceWith("USERROL",whereAlmacen,null,null,null);
+	HashSet<IDIndividual> idos=dma.loadIndividualsWithSatisficedFilter(filerAlmacen);
+	dma.printRule("NUMERO ROL ENCONTRADO "+idos.size());
+	
+	if(clsSup.equals("ALMACÉN")){
+		whereAlmacen=new HashMap<String,Value>();
+		whereAlmacen.put("rdn",new StringValue(rdnTarget));
+		filerAlmacen=dma.buildInstanceWith("DELEGACIÓN",whereAlmacen,null,null,null);
+		idos=dma.loadIndividualsWithSatisficedFilter(filerAlmacen);
+		dma.printRule("NUMERO DEL ENCONTRADO "+idos.size());
+	}	
+end	
+ 	
+rule "CONFIGURACIÓN ALMACEN"
+salience 100//mas prioridad regla configura delegacion
+agenda-group "rules" when
+    Lock(CLASSNAME=="DELEGACIÓN",idoDeleg:IDO<0,idtoDeleg:IDTO,st:STATE==Constants.INDIVIDUAL_STATE_END_LOCK||==Constants.INDIVIDUAL_STATE_LOCK,lockUserDel:LOCKEDBYUSER)
+
+	//si esta bloqueado por usuario espero a end lock
+	eval(!(lockUserDel && st.equals(Constants.INDIVIDUAL_STATE_LOCK)))
+       	    	
+    Model(CLASSNAME=="ALMACÉN",OP=="AND",PROPNAME=="delegación")
+    Model(CLASSNAME=="CAJA",OP=="AND",PROPNAME=="delegación")
+    
+	not((and 	FactHierarchy(CLASSSUP=="ALMACÉN", idtoAlm:IDTO)
+    			ObjValue(IDTO==idtoAlm,PROPNAME=="delegación",IDOVALUE==idoDeleg)))
+    			
+    DatValue(IDO==idoDeleg,PROPNAME=="rdn",codeDelegacion:VALOR!=null)
+
+    almacenMismoRdnNoAsignado:Domain() from accumulate((and FactHierarchy(CLASSSUP=="ALMACÉN", idtoAlm:IDTO)
+    											DatValue(IDTO==idtoAlm,idoAlm:IDO,PROPNAME=="rdn",VALOR==codeDelegacion)
+    											not(ObjValue(IDO==idoAlm,PROPNAME=="delegación",IDOVALUE!=null))),
+    											
+    											init(Domain res=new Domain(0,0);),
+    											action(res=new Domain(idoAlm,idtoAlm);),
+    											result(res))
+    											
+    not((and 	FactHierarchy(CLASSSUP=="ALMACÉN", idtoAlm:IDTO)
+    			DatValue(IDTO==idtoAlm,idoAlm:IDO,PROPNAME=="rdn",VALOR==codeDelegacion)
+    			ObjValue(IDO==idoAlm,PROPNAME=="delegación",IDOVALUE==idoDeleg)))			    			
+	
+	defecto:ArrayList() from accumulate((and f:IndividualValue(IDO==idoDeleg,p:PROPNAME,VALOR!=null)
+											 exists(Model(CLASSNAME=="ALMACÉN",idtoAlm:IDTO,PROPNAME==p))),
+											 init(ArrayList res=new ArrayList();),
+											 action(res.add(f);),
+											 result(res))
+
+	Individual(CLASSNAME=="APLICACIÓN",idoApp:IDO!=null,idtoApp:IDTO)
+    ObjValue(IDO==idoApp,PROPNAME=="mi_empresa",ovEmpresa:OBJECTVALUE,valueEmpresa:IDOVALUE)
+    
+    EsDelgacionEstaAplicacion:ArrayList() from collect(ObjValue(IDO==idoApp,PROPNAME=="delegación",IDOVALUE==idoDeleg))
+												      			
+then
+   	dma.printRule("=======================CONFIGURACIÓN ALMACEN "+defecto.size()+" "+almacenMismoRdnNoAsignado.getIdo()); 
+        
+   	Domain almacen=almacenMismoRdnNoAsignado;
+   	
+   	if(almacen.getIdo()==0 ){
+   		almacen=dma.creaIndividualOfClass("ALMACÉN");   		
+   		dma.setValue(almacen,"rdn",new StringValue(codeDelegacion));       
+   	}
+   	   	
+   	ObjectValue delegacion=new ObjectValue(idoDeleg,idtoDeleg);
+   	dma.setValue(almacen,"delegación",delegacion);
+   	
+   	for(int i=0;i<defecto.size();i++){
+   		IndividualValue iv=(IndividualValue)defecto.get(i); 
+   		dma.printRule(" prop defecto "+iv.getPROPNAME());
+   		if(iv instanceof ObjValue){
+   			dma.setValue(almacen,iv.getPROPNAME(),((ObjValue)iv).getOBJECTVALUE());
+   		}
+   		else{
+   			if(almacen.getIdo()>0 && dma.getValue(almacen,iv.getPROPNAME())!=null) continue;
+   			dma.setDataValue(almacen,iv.getPROPNAME(),iv.getVALOR());   			
+   		}
+   	}   
+   	ObjectValue ovAlmacen=new ObjectValue(almacen);
+   		   	   	
+   	ObjectValue empAlm=(ObjectValue)dma.getValue(almacen,"empresa");
+   	if(empAlm==null){ 	   	   	     	
+   		dma.setValue(almacen,"empresa",ovEmpresa);
+   	}else{
+   		ovEmpresa=empAlm;
+   	}  	
+   	dma.setValue(delegacion,"empresa",ovEmpresa);
+   	   	
+   	Domain caja= dma.creaIndividualOfClass("CAJA");
+   	dma.setValue(caja,"rdn",new StringValue(codeDelegacion));   	
+   	dma.setValue(caja,"delegación",delegacion);
+	
+   	if(EsDelgacionEstaAplicacion.size()>0){   	   		   	
+   		dma.setValue(idoApp,idtoApp,"almacén_por_defecto",ovAlmacen);   		
+   		dma.setValue(idoApp,idtoApp,"almacén_entradas_por_defecto",ovAlmacen);
+   		dma.setValue(idoApp,idtoApp,"almacén_salidas_por_defecto",ovAlmacen);
+   	}
+   		   	   	    
+end
+
+
+/*
+rule "CONFIGURACIÓN APLICACIÓN"
+agenda-group "rules" when
+    DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.BUSINESS_QUESTION_TASK_RDN)
+    ObjValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="confirmedSource",valueAlmacen:IDOVALUE!=null,RANGENAME=="ALMACÉN")
+    
+    ObjValue(IDO==valueAlmacen,PROPNAME=="empresa",valueEmpresa:IDOVALUE!=null)
+    
+    Individual(CLASSNAME=="APLICACIÓN",idoAplication:IDO!=null)
+then
+   	dma.printRule("\n\n=======================RULE CONFIGURACIÓN APLICACIÓN"); 
+   	IndividualValues data=new IndividualValues(idoAplication,null);
+   	data.addData(dma.getIdProperty("mi_empresa"),valueEmpresa);
+   	data.addData(dma.getIdProperty("almacén_por_defecto"),valueAlmacen);
+   	data.addData(dma.getIdProperty("almacén_entradas_por_defecto"),valueAlmacen);
+   	data.addData(dma.getIdProperty("almacén_salidas_por_defecto"),valueAlmacen);
+   	
+   	Domain caja= dma.creaIndividualOfClass("CAJA");
+   	dma.setValue(caja,"rdn",new StringValue("Caja 0"));
+   	data.addData(dma.getIdProperty("caja"),new ObjectValue(caja));
+	   	
+   	dma.questionRequest(Constants.BUSINESS_QUESTION_TASK_RDN,data,null);
+end*/
+
+rule "CONFIGURACIÓN DATOS APLICACION A PARTIR DEL USUARIO"
+agenda-group "rules" when
+	DocDataModel(user:USER!=null)
+	DatValue(CLASSNAME=="USER", idUser:ID, PROPNAME==Constants.PROP_RDN,VALOR==user)
+	FactHierarchy(CLASSSUP=="EMPLEADO", idtoEmpleado:IDTO)
+	ObjValue(idoEmpleado:IDO!=null,IDTO==idtoEmpleado, PROPNAME=="usuario", VALOR==idUser)
+	ObjValue(IDO==idoEmpleado,IDTO==idtoEmpleado, PROPNAME=="delegación", idoDelegacion:IDOVALUE, idtoDelegacion:VALUECLS)
+	FactHierarchy(idtoAplicacion:IDTO,clsSup:CLASSSUP=="APLICACIÓN")
+   	DatValue(IDTO==idtoAplicacion,idoAplicacion:IDO,PROPNAME=="rdn",rdnAplicacion:VALOR!=null)
+   	
+   	DatValue(IDTO==idtoDelegacion,IDO==idoDelegacion,PROPNAME=="rdn",rdnDelegacion:VALOR!=null)
+   	ObjValue(IDTO==idtoDelegacion,IDO==idoDelegacion, PROPNAME=="empresa", idoEmpresa:IDOVALUE, idtoEmpresa:VALUECLS)
+   	//FactHierarchy(CLASSSUP=="ALMACÉN", idtoAlmacen:IDTO)
+   	//DatValue(IDTO==idtoAlmacen,idoAlmacen:IDO,PROPNAME=="rdn",VALOR==rdnDelegacion)
+	  			
+then
+   	dma.printRule("=======================CONFIGURACIÓN DATOS APLICACION A PARTIR DEL USUARIO usuario:"+user+" delegacion:"+rdnDelegacion);   
+   	
+   	dma.setValue(idoAplicacion,idtoAplicacion,"delegación",new ObjectValue(idoDelegacion,idtoDelegacion));
+   	
+   	int idtoAlmacen=dma.getIdClass("ALMACÉN");
+   	int idoAlmacen=Auxiliar.getIdoFromServer(idtoAlmacen,rdnDelegacion,null,dma.getDDM()).getIDO();
+   	dma.setValue(idoAplicacion,idtoAplicacion,"almacén_entradas_por_defecto",new ObjectValue(idoAlmacen,idtoAlmacen));
+   	dma.setValue(idoAplicacion,idtoAplicacion,"almacén_salidas_por_defecto",new ObjectValue(idoAlmacen,idtoAlmacen));
+   	dma.setValue(idoAplicacion,idtoAplicacion,"almacén_por_defecto",new ObjectValue(idoAlmacen,idtoAlmacen));
+   	
+   	dma.setValue(idoAplicacion,idtoAplicacion,"mi_empresa",new ObjectValue(idoEmpresa,idtoEmpresa));
+   	
+end
+
+

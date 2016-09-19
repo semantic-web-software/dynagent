@@ -1,0 +1,10 @@
+<?xml version = '1.0' encoding = 'UTF-8' ?>
+<dynagent>
+<dir IP="192.169.0.3"/>
+<business numero="5"/>
+
+<access ido="7" property = "10"/>
+<access idto="7" property = "11"/>
+<access ido="8" property = "12"/>
+	
+</dynagent>

@@ -1,0 +1,233 @@
+package dynagent.ruleengine.src.ruler.ERPrules
+
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.utils.QueryConstants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import java.text.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+global DataModelAdapter dma;
+
+rule "EL IMPORTE DE LIQUIDACIÓN DE UNA LIQUIDACIÓN POR CAMBIO DE PRECIO ES LA SUMA DE LAS DIFERENCIAS DE PRECIO POR LAS CANTIDADES"
+ agenda-group "rules" when 
+  	
+  	FactHierarchy(nameclass:CLASS,CLASSSUP=="LIQUIDACIÓN_POR_CAMBIO_PRECIO")
+	Lock(CLASSNAME==nameclass,id:ID,idoLiqu:IDO,idtoLiqu:IDTO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	resultadoliquidacion: Double() 
+    from accumulate(
+    				 (and 
+    				 	ObjValue(ID==id,PROPNAME=="productos_y_precios",idprodPrec:VALOR!=null)
+						ObjValue(ID==idprodPrec,PROPNAME=="producto",VALOR!=null)//EL PRODUCTO NO SE USA, PERO ES IMPORTANTE QUE ESTE INFORMADO
+    				 	DatValue(ID==idprodPrec,PROPNAME=="cantidad",cantidad:DOUBLEVALUE!=null)
+						DatValue(ID==idprodPrec,PROPNAME=="precio_anterior",precioantiguo:DOUBLEVALUE!=null)
+						DatValue(ID==idprodPrec,PROPNAME=="precio",precionuevo:DOUBLEVALUE!=null)
+     				  ),
+                      init	( Double resultadoliquidacio2= new Double(0);),
+                      action( 
+                      	
+                      			resultadoliquidacio2+=cantidad*(precioantiguo-precionuevo);
+                      ),                            
+                      result(resultadoliquidacio2)
+   )
+then
+	dma.printRule("\n\n=================>>DISPARO RULE EL IMPORTE DE LIQUIDACIÓN DE UNA LIQUIDACIÓN POR CAMBIO DE PRECIO ES LA SUMA DE LAS DIFERENCIAS DE PRECIO POR LAS CANTIDADES resultadoliquidacion="+id+"  resultadoliquidacion="+resultadoliquidacion);
+	dma.setValue(idoLiqu,idtoLiqu,"importe_liquidación",new DoubleValue(Auxiliar.redondea(resultadoliquidacion,2)));
+end
+
+
+rule "AL ASIGNAR UN PROVEEDOR A UNA  LIQUIDACIÓN PROVEEDOR POR BAJADA PRECIO SE CALCULAN LOS PRODUCTOS, CANTIDADES Y PRECIOS"
+ agenda-group "rules" when 
+  	
+  	Lock(CLASSNAME=="LIQUIDACIÓN_PROVEEDOR_CAMBIO_PRECIO",id:ID,idoLiqui:IDO,idtoLiqui:IDTO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+  	ObjValue(ID==id,PROPNAME=="proveedor",proveedor:OBJECTVALUE!=null)
+  	not(ObjValue(ID==id,PROPNAME=="productos_y_precios",VALOR!=null))
+then
+	dma.printRule("\n\n=================>>DISPARO RULE AL ASIGNAR UN PROVEEDOR A UNA  LIQUIDACIÓN PROVEEDOR POR BAJADA PRECIO SE CALCULAN LOS PRODUCTOS, CANTIDADES Y PRECIOS");
+	dma.ruleLiquidacion(dma,new Domain(idoLiqui,idtoLiqui),proveedor);
+end	
+	
+rule "EL  PRECIO NUEVO ASIGNADO EN UNA LIQUIDACIÓN PROVEEDOR ES EL NUEVO PRECIO DE COMPRA CON ESE PROVEEDOR"
+ agenda-group "rules" when 
+  	
+	Lock(CLASSNAME=="LIQUIDACIÓN_PROVEEDOR_CAMBIO_PRECIO",id:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(ID==id,PROPNAME=="proveedor",proveedor:VALOR!=null)
+    ObjValue(ID==id,PROPNAME=="productos_y_precios",idprodPrec:VALOR!=null)
+    DatValue(ID==idprodPrec,PROPNAME=="precio_nuevo",precionuevo:DOUBLEVALUE!=null)
+	ObjValue(ID==idprodPrec,PROPNAME=="producto",producto:VALOR!=null)
+    ObjValue(ID==producto,PROPNAME=="precios_compra",preciocompra:VALOR!=null)
+    ObjValue(ID==preciocompra,idoPrecioCompra:IDO,idtoPrecioCompra:IDTO,PROPNAME=="proveedor",VALOR==proveedor) 
+   then
+	dma.printRule("------------------ RULE EL  PRECIO NUEVO ASIGNADO EN UNA LIQUIDACIÓN PROVEEDOR ES EL NUEVO PRECIO DE COMPRA CON ESE PROVEEDOR nuevoprecio="+precionuevo);
+	dma.setValue(idoPrecioCompra,idtoPrecioCompra,"precio",new DoubleValue(Auxiliar.redondea(precionuevo,2)));
+end
+
+
+rule "LIQUIDACION: ACTUALIZA PRECIO ANTERIOR"
+salience -100
+agenda-group "rules"  when
+                                                   
+    F:ObjValue(CLASSNAME=="Actualizar_precio_anterior_liquidacion", idUTask:ID,idoUtask:IDO,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+   	ObjValue(IDO==idoUtask, PROPNAME=="sourceClass",idoLiquid:IDOVALUE!=null,ovLiq:OBJECTVALUE)
+	ObjValue(IDO==idoLiquid,PROPNAME=="cliente", idoSujeto:IDOVALUE!=null)
+then
+	dma.printRule("-------------LIQUIDACION: ACTUALIZA PRECIO ANTERIOR");
+	//si dejo espacion al comienzo del SQL algo hace mal al compilar que añade el prefijo drools.update ..
+	String sql=	"update \"línea_cambio_precio\" set precio_anterior=v.precio,precio_iva_incluido_anterior=v.precio_iva_incluido \n"+
+				"	from \"liquidación_cliente_cambio_precio\" as liq,view_liquidacion as v		\n"+
+				"	where v.cliente=" + idoSujeto + " and v.doc<>"+idoLiquid+" and liq.\"tableId\"*1000+584="+QueryConstants.decompressIdo(idoLiquid)+" and \"liquidación_cliente_cambio_precioId\"=liq.\"tableId\";"; 
+	List<List<String>> resultadosbbdd=Query.executeQuery(dma.getDDM(), sql,true);
+	dma.addValue(idoUtask,idtoUtask,"targetClass",ovLiq);
+end
+
+rule "FACTURAR LIQUIDACION"
+salience -100
+agenda-group "rules"  when
+                                                    
+    F:ObjValue(CLASSNAME=="Facturar_Liquidación_Proveedor"||CLASSNAME=="Facturar_Liquidación_Cliente", idUTask:ID,idoUtask:IDO,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+   	sujetosXlineasnofacturadas: HashMap(size>0) 
+   	from accumulate(
+             	(and 
+             		ObjValue(ID==idUTask, PROPNAME=="sourceClass",idLiquid:VALOR!=null)
+					ObjValue(ID==idLiquid,PROPNAME=="cliente"||PROPNAME=="proveedor", idsujeto:OBJECTVALUE!=null)
+             		ObjValue(ID==idLiquid,PROPNAME=="productos_y_precios", idLinea:VALOR)
+					ObjValue(ID==idLinea,PROPNAME=="producto",producto:OBJECTVALUE!=null)
+					DatValue(ID==idLinea,PROPNAME=="precio_anterior", precioantiguo:QMIN!=null)
+					DatValue(ID==idLinea,PROPNAME=="precio",precionuevo:QMIN!=null)
+					DatValue(ID==idLinea,PROPNAME=="cantidad",cantidad:DATAVALUE!=null,DOUBLEVALUE!=0)
+			    ),
+              init( 
+				 HashMap<ObjectValue,ArrayList<Vector<Value>>> sujetosXlineasnofacturadas2=new HashMap<ObjectValue,ArrayList<Vector<Value>>>();
+			  ),
+              action(
+                 // String diferenciaprecios=String.valueOf(Auxiliar.redondea(precionuevo-precioantiguo,2));
+                  //System.err.println("\n\n DEBU DEBUG   diferenciaprecios=  "+diferenciaprecios);
+                  Vector<Value> v= new Vector<Value>();
+				 	v.add(0, producto);
+				 	v.add(1, cantidad);
+				 	v.add(2, new DoubleValue((precionuevo.doubleValue()-precioantiguo.doubleValue())));
+					//v.add(2, diferenciaprecios);
+            	 if(sujetosXlineasnofacturadas2.get(idsujeto)==null){
+	            	 ArrayList<Vector<Value>> lv=new ArrayList<Vector<Value>>();
+	            	 lv.add(v);
+              	 	 sujetosXlineasnofacturadas2.put(idsujeto,lv);
+				 }
+				 else{
+				 	sujetosXlineasnofacturadas2.get(idsujeto).add(v);
+				 }
+              ),
+              result(sujetosXlineasnofacturadas2)
+	 )
+	liquidaciones: ArrayList(size>0)
+	from collect(ObjValue(ID==idUTask, PROPNAME=="sourceClass",idLiquid:VALOR!=null))
+then
+	dma.printRule("\n==========================================> RULE FACTURAR LIQUIDACION  mapaSujetoProductosCantidadesYPrecios="+sujetosXlineasnofacturadas);
+	
+	Iterator<ObjectValue> it=(Iterator<ObjectValue>)sujetosXlineasnofacturadas.keySet().iterator();
+	while(it.hasNext()){
+		ObjectValue sujeto=it.next();
+		ArrayList<Vector<Value>> v2=(ArrayList<Vector<Value>>)sujetosXlineasnofacturadas.get(sujeto);
+		String typefactura=typefactura=null;
+		String typesujeto=null;
+		if(F.getCLASSNAME().equals("Facturar_Liquidación_Cliente")){
+			typefactura="FACTURA_A_CLIENTE";
+			typesujeto="cliente";
+		}
+		else if(F.getCLASSNAME().equals("Facturar_Liquidación_Proveedor")){
+			typefactura="FACTURA_PROVEEDOR";
+			typesujeto="proveedor";
+		}
+		else{System.err.println("////////////////////////WARNING CASO NO CONTEMPLADO EN LA REGLA  "+F.getCLASSNAME());}
+		Domain domFactura=dma.creaIndividualOfClass(typefactura);
+		dma.setValue(domFactura,typesujeto,sujeto);
+		for(int i=0;i<v2.size();i++){
+			Domain domLinea=dma.creaIndividualOfClass("LÍNEA_ARTÍCULOS_MATERIA");
+			Vector <Value> v=v2.get(i);
+			dma.setValue(domLinea,"producto",v.get(0));
+			dma.setValue(domLinea,"cantidad",v.get(1));								
+			dma.setValue(domLinea,"precio",v.get(2));
+			String rdnProducto=dma.getValue(new Domain((ObjectValue)v.get(0)),"rdn").getValue_s();
+			String concepto="Liquidación producto: "+rdnProducto;
+			dma.setValue(domLinea,"concepto",new StringValue(concepto));
+			dma.addValue(domFactura, "línea", new ObjectValue(domLinea));
+			
+			dma.consumirEventoCambio(domLinea.getIdo(),"producto");
+			dma.consumirEventoCambio(domLinea.getIdo(),"cantidad");
+			dma.consumirEventoCambio(domLinea.getIdo(),"precio");			
+		}
+		dma.consumirEventoCambio(domFactura.getIdo(),"cliente");
+		dma.consumirEventoCambio(domFactura.getIdo(),"proveedor");		
+		dma.consumirEventoCambio(domFactura.getIdo(),"mi_empresa");
+		dma.addValue(idoUtask,idtoUtask,"targetClass",new ObjectValue(domFactura));
+	}
+end
+	    
+rule "EN UNA FACTURA DE LIQUIDACION NO HAY DESCUENTOS GLOBALES"
+salience -100
+agenda-group "rules"  when
+                                                    
+    ObjValue(CLASSNAME=="Facturar_Liquidación_Proveedor"||CLASSNAME=="Facturar_Liquidación_Cliente", idUTask:ID,PROPNAME=="targetClass",factura:VALOR!=null) 
+    ObjValue(ID==factura, idtofactura:IDTO,PROPNAME=="descuentos_globales",VALOR!=null) 
+then
+	dma.printRule("\n\n =====================> RULE EN UNA FACTURA DE LIQUIDACION NO HAY DESCUENTOS GLOBALES");
+	dma.delValues(new Integer(factura),idtofactura,"descuentos_globales");
+end
+                    
+       
+rule "CALCULO NUEVO PRECIO DE COMPRA EN LIQUIDACION PROVEEDOR EN BASE PVP Y MARGEN BENEFICIO"
+salience 90
+ agenda-group "rules" when 
+  	 
+	ObjValue(CLASSNAME=="LIQUIDACIÓN_PROVEEDOR_CAMBIO_PRECIO",idDoc:ID,PROPNAME=="proveedor",idprov:VALOR!=null)
+	ObjValue(ID==idDoc,PROPNAME=="productos_y_precios",idLinea:VALOR!=null)
+	ObjValue(ID==idLinea,PROPNAME=="producto",iprod:VALOR!=null)
+	DatValue(ID==idLinea,PROPNAME=="nuevo_pvp_iva_incluido",precioiva:DOUBLEVALUE!=null,idoLinea:IDO,idtoLinea:IDTO)
+	ObjValue(ID==iprod,PROPNAME=="iva",siva:VALOR!=null)
+	DatValue(CLASSNAME=="PROVEEDOR",ID==idprov,PROPNAME=="margen_beneficio",margen:DOUBLEVALUE!=null)
+	d:DatValue(ID==siva,PROPNAME=="porcentaje_iva",iva:DOUBLEVALUE)
+then
+ 	dma.printRule("========== RULE CALCULO NUEVO PRECIO DE COMPRA EN LIQUIDACION PROVEEDOR EN BASE PVP Y MARGEN BENEFICIO");
+	Double pvpSinIva=precioiva/(1+iva*0.01);
+	Double nuevoPrecioCompraSinIva=pvpSinIva*(1-0.01*margen);
+	dma.setValue(idoLinea,idtoLinea,"precio_nuevo",new DoubleValue(Auxiliar.redondea(nuevoPrecioCompraSinIva,2)));
+end
+    
+ 
+rule "ELIMINACION DE LINEAS LIQUIDACION EN LAS QUE NO SE HA ESPECIFICADO PRECIO NUEVO"
+salience 80 //se debe disparar después de que ponga el precio_antiguo
+agenda-group "rules" when
+	
+	FactHierarchy(classname:CLASS,CLASSSUP=="LIQUIDACIÓN_POR_CAMBIO_PRECIO")
+	Lock(CLASSNAME==classname,idDoc:ID,idoDoc:IDO,idtoDoc:IDTO,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+    lineasABorrar:ArrayList(size>0)
+    from accumulate(
+    				 (and 
+    				 	ObjValue(ID==idDoc,PROPNAME=="productos_y_precios",idprodPrec:VALOR!=null,prodPrec:OBJECTVALUE)
+						not(DatValue(ID==idprodPrec,PROPNAME=="precio",precionuevo:DOUBLEVALUE!=null))
+     				  ),
+              init( 
+					ArrayList<ObjectValue> lineasABorrar2=new ArrayList<ObjectValue> ();
+			  ),
+              action(
+	              lineasABorrar2.add(prodPrec);
+                
+              ),
+              result(lineasABorrar2)
+              )
+then
+	dma.printRule("\n\n     =================  RULE ELIMINACION DE LINEAS LIQUIDACION EN LAS QUE NO SE HA ESPECIFICADO PRECIO NUEVO: lineasABorrar="+lineasABorrar);
+	for(int i=0;i<lineasABorrar.size();i++){
+		ObjectValue linea=(ObjectValue)lineasABorrar.get(i);
+		dma.deleteObject(linea.getValue(),linea.getValueCls());
+		dma.delValue(idoDoc,idtoDoc,"productos_y_precios",linea);
+	}
+end
+ 

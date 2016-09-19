@@ -1,0 +1,476 @@
+package dynagent.ruleengine.src.ruler.ERPrules
+
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import java.io.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.text.DecimalFormat;
+import java.text.NumberFormat;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.jdom.Element;
+import org.jdom.Document;
+import org.jdom.Namespace;
+import dynagent.common.utils.jdomParser;
+
+global DataModelAdapter dma;
+
+/**************************************************************************************************************************************
+**												FUNCIONES AUXILIARES REMESAS									 			         **
+***************************************************************************************************************************************/
+	
+function Element buildNodeText(String name,String texto,Namespace ns){
+	Element res= new Element(name,ns);
+	res.setText(texto);
+	return res;
+}
+
+function String nifFormatter(String oldNIF){
+	return oldNIF;	
+		/*String regExpDigit = "([Xx]|[Yy]|[0-9])[0-9]{7}";
+		String regExpChar = "[a-zA-Z]{1}";
+		String out = null;
+		
+		Pattern p1 = Pattern.compile(regExpDigit);
+		Matcher m1 = p1.matcher(oldNIF);
+		if(m1.find()){
+			out = oldNIF.substring(m1.start(), m1.end());
+			
+			p1 = Pattern.compile(regExpChar);
+			m1 = p1.matcher(oldNIF);
+			
+			if(m1.find()){
+				out += oldNIF.substring(m1.start(), m1.end());
+			}
+			
+		}else{
+			System.out.println("No Matches");
+		}
+		
+		return out;*/
+}
+/**************************************************************************************************************************************
+**												REGLAS ESPECÍFICAS DE REMESAS									 			         **
+***************************************************************************************************************************************/
+
+//TODO 
+// remesas: el codigo de acreedor lo calcula segun el sufijo 000, tienen en cuenta si nombre de empresa coincide o no, deberia respetar el codigo configurado si ya cumple el formato
+
+
+rule "REMESAS:PRECARGA: PRECARGA VENCIMIENTOS"
+	salience 100
+	agenda-group "rules" when
+   	    
+	   	ObjValue(typetask:CLASSNAME=="Adeudo_directo_norma_19_CORE"||=="Adeudo_directo_norma_19_B2B", idUTask:ID, idtoUTask:IDTO, PROPNAME==Constants.prop_estado_realizacion, idEstado:VALOR!=null)
+	    ObjValue(ID==idUTask, PROPNAME==Constants.prop_source_class, idRemesa:VALOR!=null, remesa:OBJECTVALUE)  	 
+	    eval( dma.preload(remesa) )
+	    ObjValue(ID==idUTask, PROPNAME==Constants.prop_params, idParams:VALUE!=null)
+	    DatValue(ID==idParams, PROPNAME=="fichero", ruta:VALOR!=null)
+	       
+		idos: HashSet()  
+		from accumulate( 
+					ObjValue(ID==idRemesa, PROPNAME=="recibos", idVencimiento:VALOR!=null),
+				init( HashSet<Integer> idosVencimientos = new HashSet<Integer>(); ),
+                action( idosVencimientos.add(Integer.parseInt(idVencimiento)); ),
+                result( idosVencimientos ) 
+        )
+	    	    
+	then
+		dma.printRule("REMESAS:PRECARGA: PRECARGA VENCIMIENTOS");
+		//Creamos el mapa
+		HashMap<Integer, HashSet<Integer>> mapaIdtoIdos = new HashMap<Integer, HashSet<Integer>>();
+		Integer idto = dma.getIdClass("VENCIMIENTO_DE_COBRO");
+		mapaIdtoIdos.put(idto, idos);
+		
+		//Los cargamos
+		dma.loadIndividuals(mapaIdtoIdos);
+end
+
+rule "REMESAS:PRECARGA: PRECARGA CODIFICACIONES BIC"
+	salience 100
+	agenda-group "rules" when   	    
+	   	ObjValue(typetask:CLASSNAME=="Adeudo_directo_norma_19_CORE"||=="Adeudo_directo_norma_19_B2B", idUTask:ID, idtoUTask:IDTO, PROPNAME==Constants.prop_estado_realizacion, idEstado:VALOR!=null)
+	    ObjValue(ID==idUTask, PROPNAME==Constants.prop_source_class, idRemesa:VALOR!=null, remesa:OBJECTVALUE)  	 
+	    eval( dma.preload(remesa) )
+	    Model(CLASSNAME=="CODIFICACION_BANCARIA_BIC",idtoBic:IDTO, PROPNAME=="rdn",OP=="AND")
+		not(Individual(IDTO==idtoBic))	    	    
+	then
+		dma.printRule("REMESAS:PRECARGA: PRECARGA CODIFICACIONES BIC");
+		dma.getDDM().loadInRulerFactsOfIndividualSpecializedOfClass(idtoBic,1);
+end
+
+rule "REMESAS:CHECK CUENTA CLIENTE REGISTROS NORMA 19"
+	salience 100
+	agenda-group "rules" when	   
+	   	ObjValue(typetask:CLASSNAME=="Adeudo_directo_norma_19_CORE"||=="Adeudo_directo_norma_19_B2B", idUTask:ID, idtoUTask:IDTO, PROPNAME=="sourceClass", idoRemesa:IDOVALUE)
+		ObjValue(IDO==idoRemesa, PROPNAME=="recibos", idVencimiento:VALOR!=null)	    
+	    ObjValue(ID==idVencimiento, PROPNAME=="cliente", idCliente:VALOR!=null, idtoCliente:VALUECLS)
+	    eval( dma.preload(Integer.parseInt(idCliente), idtoCliente) )
+	    DatValue(ID==idCliente, PROPNAME=="rdn", rdnCliente:VALOR!=null)
+	    not(ObjValue(ID==idCliente, PROPNAME=="cuenta_bancaria", idCuentaBanco:VALOR!=null, idtoCuentaBanco:VALUECLS))
+then
+	   throw new OperationNotPermitedException("Atencion el cliente de codigo "+ rdnCliente +" no tiene cuenta bancaria asociada");
+end
+
+
+rule "REMESAS:CHECK:BIC"
+	salience -100
+	agenda-group "rules" when	
+   	//debe tener mismas restricciones inicales antecedente, que precarga, para que de tiempo a precargar BIC
+	ObjValue(typetask:CLASSNAME=="Adeudo_directo_norma_19_CORE"||=="Adeudo_directo_norma_19_B2B", idUTask:ID, idtoUTask:IDTO, PROPNAME==Constants.prop_estado_realizacion, idEstado:VALOR!=null)
+	ObjValue(ID==idUTask, PROPNAME==Constants.prop_source_class, idoRemesa:IDOVALUE!=null)
+	  
+	errorVenc: String()
+	    	from accumulate(
+	    			(and
+	    ObjValue(IDO==idoRemesa, PROPNAME=="recibos", idVencimiento:VALOR!=null)
+	    DatValue(ID==idVencimiento, PROPNAME=="importe", importe:DOUBLEVALUE!=null&&!=0)	    					    				   				    				
+	    ObjValue(ID==idVencimiento, PROPNAME=="cliente", idCliente:VALOR!=null, idtoCliente:VALUECLS)
+	    eval( dma.preload(Integer.parseInt(idCliente), idtoCliente) )			
+	    DatValue(ID==idCliente, PROPNAME=="rdn", rdnCliente:VALOR!=null)
+	    ObjValue(ID==idCliente, PROPNAME=="cuenta_bancaria", idCuentaBanco:VALOR!=null, idtoCuentaBanco:VALUECLS)
+	    eval( dma.preload(Integer.parseInt(idCuentaBanco), idtoCuentaBanco) )
+	    DatValue(ID==idCuentaBanco, PROPNAME=="entidad", entidadCliente:VALOR!=null)
+		not(DatValue(CLASSNAME=="CODIFICACION_BANCARIA_BIC", idoBic:IDO,PROPNAME=="entidad", VALOR==entidadCliente))),
+		init(String res="";),
+		action( 
+				if(res.length()==0){
+					res="Las siguientes entidades no tienen definido su código BIC.\n";
+					res+="Definala en \"Configuracion\"//..Codificaciones bancarias BIC\n";
+				}
+				if(!res.contains(""+entidadCliente))	res+="\nEntidad:"+entidadCliente+ " cliente:("+rdnCliente+")";
+		),
+		result(res))		
+
+	errorCaja: String()
+	    	from accumulate((and 	ObjValue(IDO==idoRemesa, PROPNAME=="caja", idoCaja:IDOVALUE!=null, idtoCaja:VALUECLS) 		   	    
+   	    							eval( dma.preload(idoCaja, idtoCaja) )   	    
+   	    							ObjValue(IDO==idoCaja, PROPNAME=="cuenta_bancaria", idoCuentaOrd:IDOVALUE, idtoCuentaOrd:VALUECLS)
+	    							eval( dma.preload(idoCuentaOrd, idtoCuentaOrd) )   	    
+   	    							DatValue(IDO==idoCuentaOrd, PROPNAME=="entidad", entidadOrd:VALOR!=null)
+   	    							not(DatValue(CLASSNAME=="CODIFICACION_BANCARIA_BIC", idoBic:IDO,PROPNAME=="entidad", VALOR==entidadOrd))),
+   	    	init(String res="";),
+			action( 
+				res="La caja de la remesa no tiene asociada codificacion bancaria.\n";
+				res+="Definala en \"Configuracion\"//..Codificaciones bancarias BIC";								
+			),
+			result(res))						
+   	    		
+ 	then
+ 	if(errorCaja.length()>0) throw new OperationNotPermitedException(errorCaja);
+ 	if(errorVenc.length()>0) dma.showMessage(errorVenc); 	
+end 
+
+
+rule "REMESAS:EXPORTAR:ADEUDO DIRECTO"
+	agenda-group "rules" when
+	    
+	   	ObjValue(typetask:CLASSNAME=="Adeudo_directo_norma_19_CORE"||=="Adeudo_directo_norma_19_B2B", idUTask:ID, idtoUTask:IDTO, PROPNAME==Constants.prop_estado_realizacion, idEstado:VALOR!=null)
+	   	DatValue(ID==idEstado, PROPNAME=="rdn", estado:VALOR==Constants.INDIVIDUAL_REALIZADO)   
+	   	
+	   	
+	    ObjValue(ID==idUTask, PROPNAME=="sourceClass", idoRemesa:IDOVALUE)         		    
+
+ 		ObjValue(IDO==idoRemesa, PROPNAME=="caja", idoCaja:IDOVALUE!=null, idtoCaja:VALUECLS) 		
+   	    
+   	    eval( dma.preload(idoCaja, idtoCaja) )
+   	    
+   	    ObjValue(IDO==idoCaja, PROPNAME=="cuenta_bancaria", idoCuentaOrd:IDOVALUE, idtoCuentaOrd:VALUECLS)
+	    eval( dma.preload(idoCuentaOrd, idtoCuentaOrd) )   	    
+   	    DatValue(IDO==idoCuentaOrd, PROPNAME=="entidad", entidadOrd:VALOR!=null)
+   	    
+   	    //Datos que obtenemos de la remesa:
+   	    DatValue(IDO==idoRemesa, PROPNAME=="rdn", rdnRemesa:VALOR!=null )   	    
+   	    DatValue(IDO==idoRemesa, PROPNAME=="fecha_cobro", fecha_cobro:DATE!=null )   	    
+	    ObjValue(IDO==idoRemesa, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE!=null)
+
+	    //Datos que obtenemos de la configuración de remesas de esa empresa
+	    ObjValue(idoConfigRemesa:IDO, idtoConfigRemesa:IDTO, CLASSNAME=="CONFIGURACIÓN_REMESAS")    
+	    ObjValue(IDO==idoConfigRemesa, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+	    eval( dma.preload(idoConfigRemesa, idtoConfigRemesa) )
+	    DatValue(IDO==idoConfigRemesa, PROPNAME=="entidad", entidad:VALOR==entidadOrd)	    
+	         
+	    DatValue(CLASSNAME=="CODIFICACION_BANCARIA_BIC", idoBicAcreedor:IDO,PROPNAME=="entidad", VALOR==entidad)
+	    DatValue(IDO==idoBicAcreedor,PROPNAME=="rdn", bicAcreedor:VALOR!=null)
+	    					       	    
+  	    DatValue(IDO==idoConfigRemesa, PROPNAME=="sufijo_ordenante", sufijoOrd:VALOR!=null)
+	    DatValue(IDO==idoConfigRemesa, PROPNAME=="NIF-CIF-VAT", nif_presentador:VALOR!=null)
+	    DatValue(IDO==idoConfigRemesa, PROPNAME=="presentador", presentador:VALOR!=null)
+	    
+	    DatValue(IDO==idoConfigRemesa, PROPNAME=="oficina", oficina:VALOR!=null)	    
+	    
+	    //Datos que obtenemos de MI_EMPRESA
+   	    DatValue(IDO==idoMiEmpresa, PROPNAME=="NIF-CIF-VAT", nifOrd:VALOR!=null)
+   	    DatValue(IDO==idoMiEmpresa, PROPNAME=="nombre", nombreOrd:VALOR!=null)   	       	    
+   	    	    
+	    DatValue(IDO==idoCuentaOrd, PROPNAME=="oficina", oficinaOrd:VALOR!=null)
+	    DatValue(IDO==idoCuentaOrd, PROPNAME=="dígito_de_control", digitoControlOrd:VALOR!=null)
+	    DatValue(IDO==idoCuentaOrd, PROPNAME=="número_cuenta", numeroCuentaOrd:VALOR!=null)
+	    
+	    
+	    ObjValue(ID==idUTask, PROPNAME=="params", idParams:VALUE!=null)
+		DatValue(ID==idParams, PROPNAME=="fichero", ruta:VALOR!=null)
+ 		
+	    datosVencimientos: HashMap()
+	    	from accumulate(
+	    			(and
+	    				ObjValue(IDO==idoRemesa, PROPNAME=="recibos", idVencimiento:VALOR!=null)
+	    				DatValue(ID==idVencimiento, PROPNAME=="deuda", importe:DOUBLEVALUE!=null&&!=0)	    					    				   			
+	    				DatValue(ID==idVencimiento, PROPNAME=="rdn", code:VALOR!=null)
+	    				DatValue(ID==idVencimiento, PROPNAME=="concepto", concepto:VALOR!=null)
+	    				ObjValue(ID==idVencimiento, PROPNAME=="cliente", idCliente:VALOR!=null, idtoCliente:VALUECLS)
+	    				eval( dma.preload(Integer.parseInt(idCliente), idtoCliente) )
+	    				DatValue(ID==idCliente, PROPNAME=="nombre", nombreCliente:VALOR!=null)
+	    				DatValue(ID==idCliente, PROPNAME=="rdn", rdnCliente:VALOR!=null)
+	    				ObjValue(ID==idCliente, PROPNAME=="cuenta_bancaria", idCuentaBanco:VALOR!=null, idtoCuentaBanco:VALUECLS)
+	    				eval( dma.preload(Integer.parseInt(idCuentaBanco), idtoCuentaBanco) )
+	    				DatValue(ID==idCuentaBanco, PROPNAME=="entidad", entidadCliente:VALOR!=null)
+	    				DatValue(ID==idCuentaBanco, PROPNAME=="oficina", oficinaCliente:VALOR!=null)
+	    				DatValue(ID==idCuentaBanco, PROPNAME=="dígito_de_control", digitoControlCliente:VALOR!=null)
+	    				DatValue(ID==idCuentaBanco, PROPNAME=="número_cuenta", numeroCuentaCliente:VALOR!=null)
+	    				DatValue(CLASSNAME=="CODIFICACION_BANCARIA_BIC", idoBic:IDO,PROPNAME=="entidad", VALOR==entidadCliente)
+	    				DatValue(IDO==idoBic,PROPNAME=="rdn", bic:VALOR!=null)
+	    				
+	    			),
+	    		init( HashMap lista = new HashMap(); ),
+	    		action(	ArrayList listaDatos=(ArrayList)lista.get(idCliente);	    				
+	    				if(listaDatos==null){
+	    					listaDatos = new ArrayList();
+	    					lista.put(idCliente,listaDatos);	    
+	    										
+	    					listaDatos.add(rdnCliente);
+	    					listaDatos.add(nombreCliente);
+	    					listaDatos.add(entidadCliente);
+	    					listaDatos.add(oficinaCliente);
+	    					listaDatos.add(digitoControlCliente);
+	    					listaDatos.add(numeroCuentaCliente);
+	    					listaDatos.add(importe.toString());	    				
+	    					listaDatos.add(code);//.substring(0,code.indexOf('#')));
+	    					listaDatos.add(bic);
+	    				}else{
+	    					Double importeTotal=new Double((String)listaDatos.get(6))+importe;
+	    					listaDatos.set(6,importeTotal.toString());
+	    					listaDatos.set(7,code);
+	    				}	    				
+	    			 ),
+	    		result( lista )
+	    	)
+	    
+	then
+		dma.printRule("REMESAS:EXPORTAR:ADEUDO DIRECTO");
+		// esquema adeudos directos http://www.iso20022.org/message_archive.page
+		// directorio codigos BIC http://www.bde.es/f/webbde/SPA/sispago/t2/TARGET2_BE_BIC.pdf
+		
+		Double importeAcumulado = 0.0D;
+		int totalRegistros = 0;
+		int totalDomiciliaciones = 0;
+		
+		//Mapa reutilizable que se usará para poner los valores definidos a la hora de crear cada registro	
+		HashMap<String, String> mapa;
+		
+		//Formato para numeros decimales:
+		DecimalFormat df1 = new DecimalFormat("#.00");
+		
+		//Fecha actual formateada
+		Date fechaHoy = Calendar.getInstance().getTime();
+		SimpleDateFormat sdfDia = new SimpleDateFormat("yyyy-MM-dd");
+		String fecha_confeccion = sdfDia.format(fechaHoy);
+		//Fecha de cargo formateada
+		String fecha_cargo= sdfDia.format(fecha_cobro);
+				
+		SimpleDateFormat fechaISO=new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
+		
+		dma.printRule("DBG Tras crear");
+		
+		String code_pais="ES";
+		NumberFormat nf_anglo=NumberFormat.getInstance(Locale.UK);				
+		nf_anglo.setMaximumFractionDigits(2);
+		nf_anglo.setMinimumFractionDigits(2);
+		if(nf_anglo instanceof DecimalFormat){
+			dma.printRule("UK locale es decimal");
+			((DecimalFormat)nf_anglo).setGroupingSize(0);
+		}
+		
+		Namespace ns = Namespace.getNamespace("urn:iso:std:iso:20022:tech:xsd:pain.008.001.02");
+		
+		Element rootAdeudo=new Element("CstmrDrctDbtInitn",ns);
+		Element cabecera=new Element("GrpHdr",ns);
+		rootAdeudo.addContent(cabecera);
+		cabecera.addContent(buildNodeText("MsgId",rdnRemesa+"."+sdfDia.format(fechaHoy),ns));
+		cabecera.addContent(buildNodeText("CreDtTm",fechaISO.format(fechaHoy),ns));
+		cabecera.addContent(buildNodeText("NbOfTxs",""+datosVencimientos.size(),ns));
+		
+			Element InitgPty=new Element("InitgPty",ns);
+			cabecera.addContent(InitgPty);
+			InitgPty.addContent(buildNodeText("Nm",nombreOrd,ns));
+		
+				Element Id_ord=new Element("Id",ns);
+				InitgPty.addContent(Id_ord);
+					boolean pers_Juridica=!presentador.equals(nombreOrd);
+					Element OrgId=new Element(pers_Juridica?"OrgId":"PrvtId",ns);
+					Id_ord.addContent(OrgId);
+						Element Othr=new Element("Othr",ns);
+						OrgId.addContent(Othr);							
+							Othr.addContent( buildNodeText("Id",pers_Juridica?Auxiliar.id_persona_SEPA(code_pais,nifOrd,sufijoOrd):sufijoOrd,ns));		
+		
+		
+		//DATOS PAGO
+		Element PmtInf=new Element("PmtInf",ns);
+		rootAdeudo.addContent(PmtInf);
+			//TODO incrusto un identificador de pago cualquiera
+			PmtInf.addContent(buildNodeText("PmtInfId","001",ns));
+			//CORE
+			PmtInf.addContent(buildNodeText("PmtMtd","DD",ns));
+			
+			Element PmtTpInf=new Element("PmtTpInf",ns);
+			PmtInf.addContent(PmtTpInf);
+				//Nodo no obligatorio pero lo pide Banco Sabadell
+				Element LclInstrm=new Element("LclInstrm",ns);
+				PmtTpInf.addContent(LclInstrm);
+					
+					LclInstrm.addContent(buildNodeText("Cd",(typetask.contains("CORE")?"CORE":"B2B"),ns));
+				//Nodo no obligatorio pero lo pide Banco Sabadell
+				//TODO poder elegir si es recurrente "RCUR" o "OOFF" (puntual), tambien si es primero, ultimo o en medio	
+				PmtTpInf.addContent(buildNodeText("SeqTp","RCUR",ns));			
+			
+			PmtInf.addContent(buildNodeText("ReqdColltnDt",fecha_cargo,ns));
+			Element Cdtr=new Element("Cdtr",ns);
+			PmtInf.addContent(Cdtr);
+				Cdtr.addContent(buildNodeText("Nm",nombreOrd,ns));
+		
+			Element CdtrAcct=new Element("CdtrAcct",ns);
+			PmtInf.addContent(CdtrAcct);
+				Element Id_acc=new Element("Id",ns);
+				CdtrAcct.addContent(Id_acc);
+					String localCodeAc=entidadOrd+oficinaOrd+digitoControlOrd+numeroCuentaOrd;
+					Id_acc.addContent(buildNodeText("IBAN",Auxiliar.getIBAN(code_pais,localCodeAc),ns));
+				
+			Element CdtrAgt=new Element("CdtrAgt",ns);	
+			PmtInf.addContent(CdtrAgt);	
+				Element FinInstnId=new Element("FinInstnId",ns);	
+				CdtrAgt.addContent(FinInstnId);	
+					FinInstnId.addContent(buildNodeText("BIC",bicAcreedor,ns));
+		
+		//DATOS ADEUDO INDIVIDUAL				
+			ArrayList<HashMap<String, String>> registrosObligatorios = new ArrayList<HashMap<String, String>>();
+			Iterator itr=datosVencimientos.values().iterator();
+			while(itr.hasNext()){
+			ArrayList vencimiento=(ArrayList)itr.next();
+			String codeVenc=((String)vencimiento.get(7)).replaceAll("#","\\.");
+			String codeCli=(String)vencimiento.get(0);
+			
+			Element DrctDbtTxInf=new Element("DrctDbtTxInf",ns);
+			PmtInf.addContent(DrctDbtTxInf);	
+				Element PmtId=new Element("PmtId",ns);
+				DrctDbtTxInf.addContent(PmtId);	
+					//el item 7 seria el codigo de vencimiento, pero usare el codigo de cliente					
+					PmtId.addContent(buildNodeText("EndToEndId",codeVenc.length()>35? codeVenc.substring(0,35):codeVenc,ns));
+				Element InstdAmt=new Element("InstdAmt",ns);
+				DrctDbtTxInf.addContent(InstdAmt);	
+				//TODO incrustada moneda
+				InstdAmt.setAttribute("Ccy","EUR");					
+				InstdAmt.setText(nf_anglo.format(new Double((String)vencimiento.get(6))));
+				
+				//Nodo no obligatorio pero lo pide Banco Sabadell
+				Element DrctDbtTx=new Element("DrctDbtTx",ns);
+				DrctDbtTxInf.addContent(DrctDbtTx);	
+					Element MndtRltdInf=new Element("MndtRltdInf",ns);
+					DrctDbtTx.addContent(MndtRltdInf);	
+						MndtRltdInf.addContent(buildNodeText("MndtId",codeCli.length()>35? codeCli.substring(0,35):codeCli,ns));
+						MndtRltdInf.addContent(buildNodeText("DtOfSgntr",sdfDia.format(fechaHoy),ns));	
+					
+					Element CdtrSchmeId=new Element("CdtrSchmeId",ns);
+					DrctDbtTx.addContent(CdtrSchmeId);	
+						Element Id_ac2=new Element("Id",ns);
+						CdtrSchmeId.addContent(Id_ac2);
+							Element PrvtId=new Element("PrvtId",ns);
+							Id_ac2.addContent(PrvtId);
+								Element Othr2=new Element("Othr",ns);
+								PrvtId.addContent(Othr2);							
+									Othr2.addContent(buildNodeText("Id",Auxiliar.id_persona_SEPA(code_pais,nifOrd,sufijoOrd),ns));
+									Element SchmeNm=new Element("SchmeNm",ns);
+									Othr2.addContent(SchmeNm);	
+										SchmeNm.addContent(buildNodeText("Prtry","SEPA",ns));		
+																					
+				Element DbtrAgt=new Element("DbtrAgt",ns);
+				DrctDbtTxInf.addContent(DbtrAgt);
+					Element FinInstnId_deu=new Element("FinInstnId",ns);	
+					DbtrAgt.addContent(FinInstnId_deu);	
+					FinInstnId_deu.addContent(buildNodeText("BIC",(String)vencimiento.get(8),ns));
+				Element Dbtr=new Element("Dbtr",ns);
+				DrctDbtTxInf.addContent(Dbtr);
+					Dbtr.addContent(buildNodeText("Nm",(String)vencimiento.get(1),ns));
+				Element DbtrAcct=new Element("DbtrAcct",ns);
+				DrctDbtTxInf.addContent(DbtrAcct);	
+					Element Id_deu=new Element("Id",ns);
+					DbtrAcct.addContent(Id_deu);
+						String localCodeDeu=(String)vencimiento.get(2)+(String)vencimiento.get(3)+(String)vencimiento.get(4)+(String)vencimiento.get(5);
+						Id_deu.addContent(buildNodeText("IBAN",Auxiliar.getIBAN(code_pais,localCodeDeu),ns));
+				//		
+				Element RmtInf=new Element("RmtInf",ns);
+				DrctDbtTxInf.addContent(RmtInf);	
+					Element Ustrd=new Element("Ustrd",ns);
+										
+					RmtInf.addContent(buildNodeText("Ustrd",codeVenc.length()>145? codeVenc.substring(0,145):codeVenc,ns));
+				//					
+					Double importe = Double.parseDouble((String)vencimiento.get(6));
+			totalRegistros++;			
+			importeAcumulado += Double.parseDouble((String)vencimiento.get(6));
+			totalDomiciliaciones++;
+			}
+				
+		//Creamos el fichero de salida:
+		rdnRemesa=rdnRemesa.replace('/','_');
+		rdnRemesa=rdnRemesa.replace("\\","_");
+		ruta += "\\Remesa_" + rdnRemesa + ".xml";	
+		dma.printRule("DBG PREVIO "+ruta);
+	
+		Element rootDoc=new Element("Document",ns);
+		// rootDoc.setAttribute("xmlns","urn:iso:std:iso:20022:tech:xsd:pain.008.001.02"); 
+		// rootDoc.setAttribute("xmlns:xsi","http://www.w3.org/2001/XMLSchema-instance");
+		Document doc = new Document(rootDoc);
+		rootDoc.addContent(rootAdeudo);
+				
+		try{
+			dma.printRule("PREVIO VOLCADO "+jdomParser.returnXML(rootDoc));
+			jdomParser.writeXML_ToFile(ruta,doc);
+		}catch(Exception e){
+			e.printStackTrace();
+		}
+		//escribirEnFichero(fichero, nuevoRegistro(mapa, Constants.CABECERA_PRESENTADOR));
+		totalRegistros++;
+		
+		//dma.showMessage("Exportación exitosa. El fichero lo puede encontrar en: \"" + ruta + "\"");	
+end
+
+rule "REMESAS:FILTRO: NO EXISTEN REMESAS CON VENCIMIENTOS DE EMPRESAS DISTINTAS"
+	agenda-group "rules" when
+	    
+	    FactHierarchy(clase:CLASS, CLASSSUP=="REMESA")
+		Individual(idRemesa:IDO, idtoRemesa:IDTO, CLASSNAME==clase)
+		eval( dma.preload(idRemesa, idtoRemesa) )
+		
+		//La empresa de un vencimiento
+		ObjValue(IDO==idRemesa, PROPNAME=="recibos", idVencimiento1:VALOR!=null, v1:OBJECTVALUE)
+		eval( dma.preload(v1) )
+		ObjValue(ID==idVencimiento1, PROPNAME=="mi_empresa", empresa1:OBJECTVALUE!=null)
+		
+		//La empresa de otro vencimiento de la misma remesa no puede ser diferente
+		ObjValue(IDO==idRemesa, PROPNAME=="recibos", idVencimiento2:VALOR!=null && !=idVencimiento1, v2:OBJECTVALUE)
+		eval( dma.preload(v2) )		
+		ObjValue(ID==idVencimiento2, PROPNAME=="mi_empresa", empresa2:OBJECTVALUE!=null)
+		eval( !empresa1.equals(empresa2) )
+	    
+	then
+		dma.printRule("REMESAS:FILTRO: NO EXISTEN REMESAS CON VENCIMIENTOS DE EMPRESAS DISTINTAS");	
+		throw new OperationNotPermitedException("No se puede generar remesas con vencimientos asociados a empresas diferenteces. Por favor, revise su selección.");	
+end

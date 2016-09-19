@@ -1,0 +1,671 @@
+package dynagent.ruleengine.src.ruler.ERPrules
+import dynagent.ruleengine.src.ruler.ERPrules.datarules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import java.util.Vector;
+import dynagent.common.properties.values.*;
+import dynagent.common.basicobjects.*;
+global DataModelAdapter dma;
+
+
+
+
+rule "AGREGAR AGREGADOS"
+//Dado que la instalacion de agregado no bloquea el articulo, puede suceder que se creen dos a la vez en distintas ventas
+//por tanto hay que sumar si se deteca
+agenda-group "rules" when
+	ObjValue(idoProducto:IDO,idtoProducto:IDTO,prop:PROP,PROPNAME=="agregados_empresa", idoAgregado1:IDOVALUE)
+	ObjValue(IDO==idoAgregado1,idtoAgregado:IDTO, PROPNAME=="mi_empresa",idoMiEmpresa:IDOVALUE)	
+	
+	ObjValue(IDO==idoProducto,PROPNAME=="agregados_empresa", idoAgregado2:IDOVALUE!=idoAgregado1,VALUECLS==idtoAgregado)
+	ObjValue(IDO==idoAgregado2,PROPNAME=="mi_empresa",IDOVALUE==idoMiEmpresa)
+	
+	not(Individual(IDO==idoProducto||==idoAgregado1||==idoAgregado2,STATE==Constants.INDIVIDUAL_STATE_DELETED))
+then
+	dma.printRule("=====AGREGAR AGREGADOS "+idoAgregado1+" "+idoAgregado2);
+	int idoABorrar=Math.min(idoAgregado1,idoAgregado2);				
+	dma.delValueNotLock(idoProducto,idtoProducto,prop,new ObjectValue(idoABorrar,idtoAgregado));
+	dma.deleteObject(idoABorrar,idtoAgregado);
+end
+
+rule "INSTALACION AGREGADO EMPRESA EN ARTÍCULO"
+agenda-group "rules" when
+    
+	FactHierarchy(clsmateria:CLASS, idto:IDTO,CLASSSUP=="ARTÍCULO")
+	Individual(IDTO==idto,idoProducto:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)	
+	Model(CLASSNAME==clsmateria,propAg:PROP,PROPNAME=="agregados_empresa",OP==Constants.OP_INTERSECTION,RANGENAME=="AGREGADO_EMPRESA")
+	Individual(CLASSNAME=="MI_EMPRESA",idoMiEmpresa:IDO!=null,idtoMiEmpresa:IDTO)
+	not(
+		(and
+			ObjValue(IDO==idoProducto,PROPNAME=="agregados_empresa", idoAgregado:IDOVALUE)
+			ObjValue(IDO==idoAgregado,PROPNAME=="mi_empresa",IDOVALUE==idoMiEmpresa)
+		)
+	)	
+	//stockTotal:Double() from accumulate(DatValue(IDO==idoProducto,PROPNAME=="stock_total",s:DOUBLEVALUE!=null), sum(s))
+	//hayOtrosAgregados:Long() from accumulate(ObjValue(IDO==idoProducto,PROPNAME=="agregados_empresa", idoAgregado:IDOVALUE), count(idoAgregado))			
+then
+	dma.printRule("\n\n =========INSTALACION AGREGADO EMPRESA EN ARTÍCULO "+idoProducto+" empresa "+idoMiEmpresa);
+	Domain agregado=dma.creaIndividualOfClass("AGREGADO_EMPRESA");
+	double stockInitial=0;
+	
+	//if(hayOtrosAgregados==0) stockInitial=stockTotal;
+	
+	dma.setValue(agregado, "stock_contable", new DoubleValue(0.0));
+	dma.setValue(agregado, "stock_total", new DoubleValue(0.0));	
+	dma.setValue(agregado, "mi_empresa",new ObjectValue(idoMiEmpresa,idtoMiEmpresa));
+	dma.addValueNotLock(idoProducto,idto,propAg,new ObjectValue(agregado));
+
+end
+
+rule "RDN AGREGADO EMPRESA"
+agenda-group "rules" when
+    
+   	FactHierarchy(idto:IDTO,CLASSSUP=="ARTÍCULO")
+	Individual(IDTO==idto,idoProducto:IDO,idProducto:ID,STATE==Constants.INDIVIDUAL_STATE_READY)
+	DatValue(IDO==idoProducto,PROPNAME=="rdn",  rdnProducto:VALOR!=null)	
+	ObjValue(ID==idProducto,PROPNAME=="agregados_empresa", idoAgregado:IDOVALUE)
+	ObjValue(IDO==idoAgregado,idtoAgregado:IDTO,PROPNAME=="mi_empresa", idoEmpresa:IDOVALUE!=null)
+   	DatValue(IDO==idoEmpresa,PROPNAME=="rdn",  rdnMiEmpresa:VALOR!=null)	
+then
+	String rdn=rdnMiEmpresa+"#"+rdnProducto;
+	dma.printRule(" =========> RDN AGREGADO EMPRESA:"+rdn);
+	dma.setDataValue(idoAgregado,idtoAgregado, "rdn",rdn);
+end
+
+rule "CALCULO STOCK CONTABLE DE ARTICULO"
+salience -200
+ agenda-group "rules" when 
+  	//PERFORMANCE hacer contributivo
+	FactHierarchy(idto:IDTO,CLASSSUP=="ARTÍCULO")
+	Individual(IDTO==idto,idProducto:ID,STATE==Constants.INDIVIDUAL_STATE_READY)
+	ObjValue(ID==idProducto,PROPNAME=="agregados_empresa", idoAgregado:IDOVALUE)
+	ObjValue(IDO==idoAgregado,idAgregado:ID,idtoAgregado:IDTO,PROPNAME=="mi_empresa", idEmpresa:VALUE!=null)
+	contributionStockInit: Double() 
+    	from accumulate((and	
+				    		ObjValue(idLinea:ID,PROPNAME=="producto", INITIALVALOR==idProducto)	
+    						ObjValue(idoDoc:IDO,docClass:CLASSNAME,PROPNAME=="línea",INITIALVALOR==idLinea)
+    						ObjValue(IDO==idoDoc,PROPNAME=="mi_empresa", INITIALVALOR==idEmpresa)
+					    	FactHierarchy(CLASS==docClass, classSup:CLASSSUP=="FACTURA_A_CLIENTE"||=="FACTURA_PROVEEDOR")
+					    	DatValue(ID==idLinea,PROPNAME=="cantidad", cantidadInitial:INITIALDOUBLE!=null)),
+                      
+                       		sum(	(classSup.equals( "FACTURA_A_CLIENTE" ) ? -1:1)*cantidadInitial))                    		            		
+                      
+	contributionStockCurr: Double() 
+    	from accumulate((and
+    	
+					    	ObjValue(idoLinea:IDO,PROPNAME=="producto", VALOR==idProducto)	
+    						ObjValue(idoDoc:IDO,docClass:CLASSNAME,PROPNAME=="línea",IDOVALUE==idoLinea)
+   							ObjValue(IDO==idoDoc,PROPNAME=="mi_empresa", VALUE==idEmpresa)
+					    	FactHierarchy(CLASS==docClass, classSup:CLASSSUP=="FACTURA_A_CLIENTE"||=="FACTURA_PROVEEDOR")
+    						not(exists(Individual(IDO==idoDoc,STATE==Constants.INDIVIDUAL_STATE_DELETED)))
+							DatValue(IDO==idoLinea,PROPNAME=="cantidad", cantidadCurrent:DOUBLEVALUE!=null)),
+								
+  							sum(		(classSup.equals( "FACTURA_A_CLIENTE" ) ? -1:1)*cantidadCurrent) )        
+    //(Ver regla "agregar agregados". Dado que puede a la vez crearse en distintos pc y ventas simultaneas 2 agregados empresa misma identidad, es necesario agregarlos y eliminar uno
+    //Para que el stock contable se actualice con la suma de ambos, es necesario acumular como descuadre el eliminado		
+    descuadre: Double() 
+    	from accumulate((and   	ObjValue(ID==idProducto,PROPNAME=="agregados_empresa", idAgregado2:INITIALVALOR!=idAgregado,INITIALVALUECLS==idtoAgregado)
+    							exists(Individual(ID==idAgregado2,STATE==Constants.INDIVIDUAL_STATE_DELETED))
+								ObjValue(ID==idAgregado2,PROPNAME=="mi_empresa",INITIALVALOR==idEmpresa)
+								DatValue(ID==idAgregado2,PROPNAME=="stock_contable", sc:INITIALDOUBLE!=null)),
+								sum(sc))          		            		
+             
+then
+	dma.printRule("\n\n ========= >> CALCULO STOCK CONTABLE DE ARTICULO: idProducto="+idProducto+"  contributionStockInit:"+contributionStockInit+"  contributionStockCurr:"+contributionStockCurr);
+	 	
+	dma.setIncrementalValue(idoAgregado,idtoAgregado,dma.getIdProperty("stock_contable"),descuadre+ contributionStockCurr-contributionStockInit,3);	 
+end
+
+rule "CALCULO STOCK TOTAL POR EMPRESA DE AGREGADO DE ARTICULO"
+salience -200
+ agenda-group "rules" when 
+  	
+	FactHierarchy(idto:IDTO,CLASSSUP=="MATERIA")
+	Individual(IDTO==idto,idProducto:ID,STATE==Constants.INDIVIDUAL_STATE_READY)
+	ObjValue(ID==idProducto,PROPNAME=="agregados_empresa", idoAgregado:IDOVALUE)
+	ObjValue(IDO==idoAgregado,idAgregado:ID,idtoAgregado:IDTO,PROPNAME=="mi_empresa", idEmpresa:VALUE!=null)
+	stInit: Double() 
+    	from accumulate((and	
+				    		ObjValue(PROPNAME=="producto", INITIALVALOR==idProducto,idoStock:IDO!=null,idtoStock:IDTO!=null)	
+					    	FactHierarchy(IDTO==idtoStock, CLASSSUP=="STOCK")				    		
+    						ObjValue(IDO==idoStock,PROPNAME=="almacén_stock",almacenStock:INITIALVALOR!=null)
+    						ObjValue(ID==almacenStock,PROPNAME=="empresa", INITIALVALOR==idEmpresa)
+					    	DatValue(IDO==idoStock,idStock:ID!=null,PROPNAME=="cantidad", cantidadInitial:INITIALDOUBLE!=null)),                
+                       		
+                       		sum(cantidadInitial))                       		            		
+                      
+	stCurr: Double() 
+    	from accumulate((and
+					    	ObjValue(PROPNAME=="producto", VALOR==idProducto,idoStock:IDO!=null,idtoStock:IDTO!=null)
+					    	FactHierarchy(IDTO==idtoStock, CLASSSUP=="STOCK")				    		
+    						ObjValue(IDO==idoStock,PROPNAME=="almacén_stock",almacenStock:VALOR!=null)
+							not(exists(Individual(IDO==idoStock,STATE==Constants.INDIVIDUAL_STATE_DELETED)))    						
+    						ObjValue(ID==almacenStock,PROPNAME=="empresa", VALOR==idEmpresa)
+					    	DatValue(IDO==idoStock,PROPNAME=="cantidad", cantidadCurrent:DOUBLEVALUE!=null)),
+                        
+                       		sum(cantidadCurrent))       
+    //(Ver regla "agregar agregados". Dado que puede a la vez crearse en distintos pc y ventas simultaneas 2 agregados empresa misma identidad, es necesario agregarlos y eliminar uno
+    //Para que el stock total se actualice con la suma de ambos, es necesario acumular como descuadre el eliminado		
+    descuadre: Double() 
+    	from accumulate((and   	ObjValue(ID==idProducto,PROPNAME=="agregados_empresa", idAgregado2:INITIALVALOR!=idAgregado,INITIALVALUECLS==idtoAgregado)
+    							exists(Individual(ID==idAgregado2,STATE==Constants.INDIVIDUAL_STATE_DELETED))
+								ObjValue(ID==idAgregado2,PROPNAME=="mi_empresa",INITIALVALOR==idEmpresa)
+								DatValue(ID==idAgregado2,PROPNAME=="stock_total", st:INITIALDOUBLE)),
+								sum(st))                        		         		                              
+then
+	dma.printRule("\n\n =========>>>>>CALCULO STOCK TOTAL POR EMPRESA DE AGREGADO DE ARTICULO: idProducto="+idProducto);
+	dma.setIncrementalValue(idoAgregado,idtoAgregado,dma.getIdProperty("stock_total"),descuadre+stCurr-stInit,3);	
+end
+
+
+rule "STOCK MALOGRADO ACUMULADO"
+salience -200
+ agenda-group "rules" when 
+ 	//Solo actua en albaranes, para evitar que porejemplo un abono de rapel sobre un producto, con una factura no albaranada, cuente como unidades entregadas
+ 	//Si son servicios, nada impide realizar albaran-factura para que conste la entrega del servicio
+  	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="ARTÍCULO")
+	Individual(IDTO==idto,idArt:ID,idoArt:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	Model(CLASSNAME==name,propT:PROP,PROPNAME=="stock_malogrado_acumulado",OP==Constants.OP_INTERSECTION)
+	
+	contributionInit:Double() 
+	    from accumulate((and	FactHierarchy(idtoLin:IDTO,CLASSSUP=="LÍNEA_REGULARIZACIÓN")	
+						    	ObjValue(IDTO==idtoLin,idoLineaReg:IDO,PROPNAME=="producto", INITIALVALOR==idArt)   	    									  													    									
+								DatValue(IDO==idoLineaReg,PROPNAME=="cantidad_antes_regularizar",cantidadRegPre:INITIALDOUBLE!=null)
+								DatValue(IDO==idoLineaReg,PROPNAME=="cantidad",cantidadRegPost:INITIALDOUBLE!=null)
+							),																	
+                      	sum( (cantidadRegPre>cantidadRegPost ? (cantidadRegPre-cantidadRegPost):0)))                      	    								
+
+	contributionCurr:Double() 
+	    from accumulate((and	FactHierarchy(idtoLin:IDTO,CLASSSUP=="LÍNEA_REGULARIZACIÓN")	
+						    	ObjValue(IDTO==idtoLin,idoLineaReg:IDO,PROPNAME=="producto", VALOR==idArt) 
+						    	not(Individual(IDO==idoLineaReg,STATE==Constants.INDIVIDUAL_STATE_DELETED))  	    									  													    									
+								DatValue(IDO==idoLineaReg,PROPNAME=="cantidad_antes_regularizar",cantidadRegPre:DOUBLEVALUE!=null)
+								DatValue(IDO==idoLineaReg,PROPNAME=="cantidad",cantidadRegPost:DOUBLEVALUE!=null)
+							),																	
+                      	sum( (cantidadRegPre>cantidadRegPost ? (cantidadRegPre-cantidadRegPost):0)))                                  
+                                        
+then
+	dma.printRule("\n\n ===========  STOCK MALOGRADO ACUMULADO idArt="+idArt);
+	 
+	Double contValueEnd= contributionCurr-contributionInit; 
+	    
+	dma.printRule("\n .. contribucion final="+ contValueEnd);	 
+	dma.setIncrementalValue(idoArt,idto,propT,contValueEnd,3);
+end
+
+
+rule "STOCK RECUPERADO ACUMULADO"
+salience -200
+ agenda-group "rules" when 
+ 	//Solo actua en albaranes, para evitar que porejemplo un abono de rapel sobre un producto, con una factura no albaranada, cuente como unidades entregadas
+ 	//Si son servicios, nada impide realizar albaran-factura para que conste la entrega del servicio
+  	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="ARTÍCULO")
+	Individual(IDTO==idto,idArt:ID,idoArt:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_READY)
+	Model(CLASSNAME==name,propT:PROP,PROPNAME=="stock_recuperado_acumulado",OP==Constants.OP_INTERSECTION)
+	
+	contributionInit:Double() 
+	    from accumulate((and	FactHierarchy(idtoLin:IDTO,CLASSSUP=="LÍNEA_REGULARIZACIÓN")	
+						    	ObjValue(IDTO==idtoLin,idoLineaReg:IDO,PROPNAME=="producto", INITIALVALOR==idArt)   	    									  													    									
+								DatValue(IDO==idoLineaReg,PROPNAME=="cantidad_antes_regularizar",cantidadRegPre:INITIALDOUBLE!=null)
+								DatValue(IDO==idoLineaReg,PROPNAME=="cantidad",cantidadRegPost:INITIALDOUBLE!=null)
+							),																	
+                      	sum( (cantidadRegPre<cantidadRegPost ? (cantidadRegPost-cantidadRegPre):0)))                      	    								
+
+	contributionCurr:Double() 
+	    from accumulate((and	FactHierarchy(idtoLin:IDTO,CLASSSUP=="LÍNEA_REGULARIZACIÓN")	
+						    	ObjValue(IDTO==idtoLin,idoLineaReg:IDO,PROPNAME=="producto", VALOR==idArt) 
+						    	not(Individual(IDO==idoLineaReg,STATE==Constants.INDIVIDUAL_STATE_DELETED))  	    									  													    									
+								DatValue(IDO==idoLineaReg,PROPNAME=="cantidad_antes_regularizar",cantidadRegPre:DOUBLEVALUE!=null)
+								DatValue(IDO==idoLineaReg,PROPNAME=="cantidad",cantidadRegPost:DOUBLEVALUE!=null)
+							),																	
+                      	sum( (cantidadRegPre<cantidadRegPost ? (cantidadRegPost-cantidadRegPre):0)))                                  
+                                        
+then
+	dma.printRule("\n\n ===========  STOCK RECUPERADO ACUMULADO idArt="+idArt);
+	 
+	Double contValueEnd= contributionCurr-contributionInit; 
+	    
+	dma.printRule("\n .. contribucion final="+ contValueEnd);	 
+	dma.setIncrementalValue(idoArt,idto,propT,contValueEnd,3);
+end
+
+rule "STOCK RECUPERADO PORCENTAJE"
+salience -200
+ agenda-group "rules" when   	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="ARTÍCULO")
+	Lock(IDTO==idto,idoArt:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	DatValue(IDO==idoArt,PROPNAME=="stock_recuperado_acumulado",recuperado:DOUBLEVALUE!=null)
+	DatValue(IDO==idoArt,PROPNAME=="total_aprovisionado",aprovisionado:DOUBLEVALUE!=null)	                                                                 
+then
+	dma.printRule("\n\n ===========  STOCK RECUPERADO PORCENTAJE idArt="+idoArt); 
+	dma.setValueNotLock(idoArt,idto,"porcentaje_stock_recuperado",new DoubleValue(Auxiliar.redondea(recuperado/aprovisionado*100,2)));
+end
+
+rule "STOCK MALOGRADO PORCENTAJE"
+salience -200
+ agenda-group "rules" when   	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="ARTÍCULO")
+	Lock(IDTO==idto,idoArt:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	DatValue(IDO==idoArt,PROPNAME=="stock_malogrado_acumulado",malogrado:DOUBLEVALUE!=null)
+	DatValue(IDO==idoArt,PROPNAME=="total_aprovisionado",aprovisionado:DOUBLEVALUE!=null)	                                                                 
+then
+	dma.printRule("\n\n ===========  STOCK MALOGRADO PORCENTAJE idArt="+idoArt); 
+	dma.setValueNotLock(idoArt,idto,"porcentaje_stock_malogrado",new DoubleValue(Auxiliar.redondea(malogrado/aprovisionado*100,2)));
+end
+
+
+rule "STOCK RESERVADO ARTICULO"
+//DE MOMENTO NO SOPORTAMOS CAMBIO EN TOTAL VENDIDO POR RECFICACIONES DE FACTURAS.
+//Es disponible en toda la red, por eso no tiene en cuenta pedido traspaso que reduce disponibilidad en un almacen pero la aumenta en otro
+salience 100 
+ agenda-group "rules" when 
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="ARTÍCULO")
+	Individual(IDTO==idto,idArt:ID,idoArt:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	Model(CLASSNAME==name,p:PROP,propiedadstock:PROPNAME=="stock_reservado",OP==Constants.OP_INTERSECTION)
+	Model(CLASSNAME=="LÍNEA_MATERIA",PROPNAME=="reservado",OP==Constants.OP_INTERSECTION)	
+													
+	//PERFORMANCE hacer contri
+	contributionInitCompra: Double() 
+    	from accumulate((and	    			
+    						//se supone que debemos correlar con lo mas especifico primero, la obj prop al articulo, pero si se hace asi va lentisimo con 400 lineas cuando se ejecuta traza documento, asi es rapido
+    						FactHierarchy(idtoDoc:IDTO,CLASSSUP=="PEDIDO_DE_CLIENTE"||=="PEDIDO_DISTRIBUIDOR")
+    						ObjValue(IDTO==idtoDoc,idoDoc:IDO,PROPNAME=="línea",idlinea:INITIALVALOR)
+					    	ObjValue(ID==idlinea, PROPNAME=="producto",INITIALVALOR==idArt)					    	
+							DatValue(ID==idlinea,PROPNAME=="reservado",INITIALVALOR=="true")																																									
+							DatValue(ID==idlinea, PROPNAME=="cantidad",cantidadInitial:INITIALDOUBLE!=null)
+						),                                     		            		
+                      sum(cantidadInitial))
+	contributionCurrCompra: Double() 
+    	from accumulate((and
+    						FactHierarchy(idtoDoc:IDTO,clssup:CLASSSUP=="PEDIDO_DE_CLIENTE"||=="PEDIDO_DISTRIBUIDOR")						    	
+							ObjValue(IDTO==idtoDoc,idoDoc:IDO,PROPNAME=="línea",idoLinea:IDOVALUE)
+					    	ObjValue(IDO==idoLinea,PROPNAME=="producto",IDOVALUE==idoArt)
+					    	DatValue(IDO==idoLinea,PROPNAME=="reservado",BOOLEANVALOR==true)							
+							Individual(IDO==idoDoc,STATE==Constants.INDIVIDUAL_STATE_READY)														
+							DatValue(IDO==idoLinea, PROPNAME=="cantidad",cantidadCurrent:DOUBLEVALUE!=null)							
+						),
+                      sum(cantidadCurrent))    
+     //TODO: falta ampliar regla traza doc de varios rules para que estado reservadod de linea contemple producciones
+     contributionProdInINIT: Double()
+    	from accumulate((and	  
+						    	ObjValue(idLineaIn:ID,PROPNAME=="producto", INITIALVALOR==idArt)						    							    	
+						    	FactHierarchy(idtoProdMaterial:IDTO,clase:CLASS,CLASSSUP=="PRODUCCIÓN")
+						    	ObjValue(IDTO==idtoProdMaterial,idTask:ID!=null,propLinea:PROPNAME=="consumo"||=="línea",INITIALVALOR==idLineaIn) 							    		
+
+						    	DatValue(ID==idTask,PROPNAME=="es_despiece",esDesp:INITIALVALOR!=null)
+						    	eval(esDesp.equals("false")&&propLinea.equals("consumo")||esDesp.equals("true")&&propLinea.equals("línea"))
+
+								ObjValue(ID==idTask,PROPNAME=="estado",idEstado:INITIALVALOR!=null)
+	 							DatValue(ID==idEstado,PROPNAME=="rdn",INITIALVALOR=="Planificado")						    							    	
+						    						    		
+								DatValue(ID==idLineaIn,PROPNAME=="cantidad",qIn:INITIALDOUBLE!=null)																
+								),
+						sum( qIn))                  
+    
+    contributionProdInCURR: Double()
+    	from accumulate((and	  
+						    	ObjValue(idoLineaIn:IDO,PROPNAME=="producto", IDOVALUE==idoArt)						    							    	
+						    	FactHierarchy(idtoProdMaterial:IDTO,clase:CLASS,CLASSSUP=="PRODUCCIÓN")
+						    	Individual(IDTO==idtoProdMaterial,idTask:ID,STATE==Constants.INDIVIDUAL_STATE_READY)
+						    	
+						    	ObjValue(ID==idTask,propLinea:PROPNAME=="consumo"||=="línea",IDOVALUE==idoLineaIn) 																	
+						    	DatValue(ID==idTask,PROPNAME=="es_despiece",esDesp:BOOLEANVALOR!=null)
+						    	eval(!(esDesp.booleanValue())&&propLinea.equals("consumo")||esDesp.booleanValue()&&propLinea.equals("línea"))
+						    
+								ObjValue(ID==idTask,PROPNAME=="estado",idEstado:VALOR!=null)
+	 							DatValue(ID==idEstado,PROPNAME=="rdn",VALOR=="Planificado")						    				 						    	
+					    										
+								DatValue(IDO==idoLineaIn,PROPNAME=="cantidad",qIn:QMIN!=null)
+								),
+						sum( qIn))
+	//contribucion de pedidos de traspaso solo en negocios con una central, se entiende que la disponibilidad es respecto al stock de la central
+	//si la central aparece en destino no contribuye porque se entiende no esta disponible todavia		
+	
+	contributionInitTraspaso: Double() 
+    	from accumulate((and	    						
+    						ObjValue(ID==idArt,PROPNAME=="empresa",idEmpArt:INITIALVALOR)	
+							ObjValue(ID==idEmpArt,PROPNAME=="delegacion_central",idDelCentral:INITIALVALOR!=null)							
+					    	ObjValue(INITIALVALOR==idArt,idlinea:ID,PROPNAME=="producto")
+					    	FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="PEDIDO_TRASPASO_ALMACENES")
+							ObjValue(CLASSNAME==classdoc,idoDoc:IDO,PROPNAME=="línea",INITIALVALOR==idlinea)	
+							ObjValue(IDO==idoDoc,PROPNAME=="origen",idAlmOrigen:INITIALVALOR)
+							ObjValue(ID==idAlmOrigen,PROPNAME=="delegación",INITIALVALOR==idDelCentral)																									
+							DatValue(ID==idlinea,PROPNAME=="reservado",INITIALVALOR=="true")
+							DatValue(ID==idlinea, PROPNAME=="cantidad",cantidadInitial:INITIALDOUBLE!=null)
+						),                                     		            		
+                      sum(cantidadInitial))
+	contributionCurrTraspaso: Double() 
+    	from accumulate((and    						
+    						ObjValue(IDO==idoArt,PROPNAME=="empresa",idoEmpArt:IDOVALUE)
+							ObjValue(IDO==idoEmpArt,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE!=null)
+							ObjValue(VALOR==idArt,idoLinea:IDO, PROPNAME=="producto")
+							FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="PEDIDO_TRASPASO_ALMACENES")
+							Individual(CLASSNAME==classdoc,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)													
+							ObjValue(IDO==idoDoc,PROPNAME=="línea",IDOVALUE==idoLinea)
+							ObjValue(IDO==idoDoc,PROPNAME=="origen",idoAlmOrigen:IDOVALUE)
+							ObjValue(IDO==idoAlmOrigen,PROPNAME=="delegación",IDOVALUE==idoDelCentral)								
+							DatValue(IDO==idoLinea,PROPNAME=="reservado",BOOLEANVALOR==true)
+							DatValue(IDO==idoLinea,PROPNAME=="cantidad",cantidadCurrent:DOUBLEVALUE!=null)						
+						),
+                      sum(cantidadCurrent))		
+     
+ then
+	
+	Double incr=contributionCurrCompra+contributionProdInCURR+contributionCurrTraspaso-contributionInitCompra-contributionProdInINIT-contributionInitTraspaso;
+	dma.printRule("\n\n ===========  STOCK RESERVADO ARTICULO idArt="+idArt+" "+incr);	
+
+	dma.setIncrementalValue(idoArt,idto,p,incr,null);
+end
+
+rule "CALCULO STOCK PENDIENTE_APROVISIONAR ARTICULO"
+//DE MOMENTO NO SOPORTAMOS CAMBIO EN TOTAL VENDIDO POR RECFICACIONES DE FACTURAS
+salience 100
+ agenda-group "rules" when 
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="ARTÍCULO")
+	Individual(IDTO==idto,idArt:ID,idoArt:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_READY)
+	Model(CLASSNAME==name,p:PROP,propiedadstock:PROPNAME=="stock_pendiente_aprovisionar",OP==Constants.OP_INTERSECTION)
+	
+	//PERFORMANCE hacer contributivo
+	contributionInitCompra: Double() 
+    	from accumulate((and	
+					    	FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="PEDIDO_A_PROVEEDOR")
+							ObjValue(CLASSNAME==classdoc,iddoc:ID!=null,PROPNAME=="línea",idlinea:INITIALVALOR!=null)
+							ObjValue(ID==idlinea, PROPNAME=="producto",INITIALVALOR==idArt)
+							DatValue(ID==idlinea, PROPNAME=="cantidad",cantidadInitial:INITIALDOUBLE!=null)
+							not((and
+								ObjValue(ID==idlinea, PROPNAME=="documento",doc:INITIALVALOR!=null,albaran:RANGENAME!=null)
+								FactHierarchy(CLASS==albaran,CLASSSUP=="ALBARÁN")								
+							))
+							
+						),                                          		            		
+                      sum(cantidadInitial))
+	contributionCurrCompra: Double() 
+    	from accumulate((and
+							FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="PEDIDO_A_PROVEEDOR")
+							Individual(CLASSNAME==classdoc,iddoc:ID,STATE==Constants.INDIVIDUAL_STATE_READY)
+							ObjValue(ID==iddoc,PROPNAME=="línea",idlinea:VALOR!=null)
+							
+							ObjValue(ID==idlinea, PROPNAME=="producto",VALOR==idArt)
+							DatValue(ID==idlinea, PROPNAME=="cantidad",cantidadCurrent:DOUBLEVALUE!=null)
+							not((and
+								ObjValue(ID==idlinea, PROPNAME=="documento",doc:VALOR!=null,albaran:RANGENAME!=null)
+								FactHierarchy(CLASS==albaran,CLASSSUP=="ALBARÁN")								
+							))
+							
+							
+						),
+                      	sum(cantidadCurrent))   
+  //Contribucion a producto generado (de salida), teniendo en cuenta rotura de stock dispoible de productos consumidos.
+   //Si no hay rotura de consumo, la contribucion es unicamente debido a la cantidad de salida.
+   //En caso de rotura, se reduce la contribucion proporcionalmente al porcentaje de rotura de consumo, manda el mínimo de todos los consumos.
+   // Dicho porcentaje lo acotamos como mucho al 100% 
+   //Para que sea modificable psoteriormente a su creacion, en la linea se almacena la foto de como era el stock disponible del producto consumido en ese momento
+   //asi, caso de que dicha materia prima se aprovisione (fuera de la sesion de produccion), cuando edite de nuevo la produccion, se actulizara el stock disponible de l
+   //linea, contribuyendo ese incremento   
+    contributionProdOutINIT: Double()
+    	from accumulate((and	  
+						    	ObjValue(idLineaOut:ID,PROPNAME=="producto", INITIALVALOR==idArt)						    							    	
+						    	FactHierarchy(idtoProdMaterial:IDTO,clase:CLASS,CLASSSUP=="PRODUCCIÓN")
+						    	ObjValue(IDTO==idtoProdMaterial,idTask:ID!=null,propLinea:PROPNAME=="consumo"||=="línea",INITIALVALOR==idLineaOut) 	
+
+						    	DatValue(ID==idTask,PROPNAME=="es_despiece",esDesp:INITIALVALOR!=null)
+						    	eval(esDesp.equals("false")&&propLinea.equals("línea")||esDesp.equals("true")&&propLinea.equals("consumo"))
+
+								ObjValue(ID==idTask,PROPNAME=="estado",idEstado:INITIALVALOR!=null,stCh:initialValuesChanged)
+	 							DatValue(ID==idEstado,PROPNAME=="rdn",INITIALVALOR=="Planificado")
+						    	
+						    	ObjValue(ID==idTask,PROPNAME!=propLinea,sentido:PROPNAME=="consumo"||=="línea",idLineaIn:INITIALVALOR!=null)
+						    	ObjValue(ID==idLineaIn,PROPNAME=="producto",idProIn:INITIALVALOR!=null,chPin:initialValuesChanged)  	
+					    		DatValue(ID==idProIn,PROPNAME=="stock_disponible",qDisponIn:INITIALDOUBLE!=null)
+						    						    		
+								DatValue(ID==idLineaOut,PROPNAME=="cantidad",qOut:INITIALDOUBLE!=null)
+								DatValue(ID==idLineaIn,PROPNAME=="cantidad",qIn:INITIALDOUBLE!=null, chQin:initialValuesChanged)
+								eval(stCh||chPin||chQin)
+								
+								),
+						min((qDisponIn<0 ? (1+Math.max(-qIn,qDisponIn)/qIn):1)*qOut))                      
+    //El cambio de una sesion anterior, a esta sesion, viene del cambio de cantidad de la linea o sobre todo del cambio de estado de la tarea. En cambio el stock disponible
+    //solo importa el valor actual.
+    
+    //notar que en init tiro de stock disponible foto de la linea, que refleja como fue, pero en current tiro de stock disponible  
+    contributionProdOutCURR: Double()
+    	from accumulate((and	  
+						    	ObjValue(idoLineaOut:IDO,PROPNAME=="producto", IDOVALUE==idoArt)						    							    	
+						    	FactHierarchy(idtoProdMaterial:IDTO,clase:CLASS,CLASSSUP=="PRODUCCIÓN")
+						    	ObjValue(IDTO==idtoProdMaterial,idTask:ID!=null,propLinea:PROPNAME=="consumo"||=="línea",IDOVALUE==idoLineaOut) 	
+								not(exists(Individual(ID==idTask,STATE==Constants.INDIVIDUAL_STATE_DELETED)))
+								
+						    	DatValue(ID==idTask,PROPNAME=="es_despiece",esDesp:BOOLEANVALOR!=null)
+						    	eval(!(esDesp.booleanValue())&&propLinea.equals("línea")||esDesp.booleanValue()&&propLinea.equals("consumo"))
+						    
+								ObjValue(ID==idTask,PROPNAME=="estado",idEstado:VALOR!=null,stCh:initialValuesChanged)
+	 							DatValue(ID==idEstado,PROPNAME=="rdn",VALOR=="Planificado")
+						    	
+						    	ObjValue(ID==idTask,PROPNAME!=propLinea,PROPNAME=="consumo"||=="línea",idoLineaIn:IDOVALUE!=null) 
+						    	ObjValue(IDO==idoLineaIn,PROPNAME=="producto",idoProIn:IDOVALUE!=null,chPin:initialValuesChanged)  								    	
+					    		DatValue(IDO==idoProIn,PROPNAME=="stock_disponible",qDisponIn:QMIN!=null,qInit:INITIALDOUBLE)
+					    		
+								DatValue(IDO==idoLineaOut,PROPNAME=="cantidad",qOut:QMIN!=null)
+								DatValue(IDO==idoLineaIn,PROPNAME=="cantidad",qIn:QMIN!=null, chQin:initialValuesChanged)
+								eval(stCh||chPin||chQin)
+								
+								),
+								//Si no ha cambiado el estado, solo quizas la cantidad de la linea, me quedo con el stock de la sesion original para que coincida. 
+								// de lo contrario, solo por editar, sin cambiar nada, no coincidiria el stock actual disponible y lo tomaria como una contribucion
+						min( (qDisponIn<0 ? (1+Math.max(-qIn,qDisponIn)/qIn):1)*qOut))                      	             										                      	    		                                
+	
+		
+then		
+	if(contributionProdOutCURR>=Double.MAX_VALUE) contributionProdOutCURR=0.0;
+	if(contributionProdOutINIT>=Double.MAX_VALUE) contributionProdOutINIT=0.0;
+	dma.printRule("\n\n ===========  CALCULO STOCK PENDIENTE_APROVISIONAR ARTICULO idArt="+idArt+" prod Init:"+contributionProdOutINIT+",curr:"+contributionProdOutCURR);
+		
+	Double incr=contributionCurrCompra+contributionProdOutCURR-contributionInitCompra-contributionProdOutINIT;
+	
+	dma.setIncrementalValue(idoArt,idto,p,incr,null);	
+	
+end
+
+
+rule "STOCK DISPONIBLE DE MATERIA"
+salience 100
+agenda-group "rules" when 
+	FactHierarchy(idtoArt:IDTO, idto:IDTO,CLASSSUP=="ARTÍCULO")
+	DatValue(IDTO==idtoArt,idoMateria:IDO!=null,PROPNAME=="stock_total",total:DOUBLEVALUE!=null,totalInit:INITIALDOUBLE,idtoMateria:IDTO,cht:initialValuesChanged)
+	DatValue(IDO==idoMateria,PROPNAME=="stock_reservado",reservado:DOUBLEVALUE!=null,resInit:INITIALDOUBLE,chr:initialValuesChanged)
+	//no actualizo stock disponible solo por arreglar datos ya que puede pasar en delegacion remota y provocaría ruido de replicas
+	(or exists(Lock(CLASSNAME=="REGULARIZACIÓN",STATE==Constants.INDIVIDUAL_STATE_LOCK))
+		eval(cht||chr)
+		//si se hace una regulariza que modifica el stock pero antes de aceptar regularizamos a misma cantida existente, no habría cambios de initialValuesChanged y quedaria mal
+		exists(DatValue(IDO==idoMateria,PROPNAME=="stock_disponible",hasCHANGED==true)))	
+		
+	del_central_mat:Integer() from accumulate((and 	ObjValue(IDO==idoMateria,PROPNAME=="empresa",idoEmpMat:IDOVALUE!=null)
+													ObjValue(IDO==idoEmpMat,PROPNAME=="delegacion_central",idoDelC:IDOVALUE!=null)),
+													init(Integer res=0;),
+													action(res=idoDelC;),
+													result(res))
+	ObjValue(CLASSNAME=="APLICACIÓN",idoAp:IDO,PROPNAME=="delegación",idoMiDeleg:IDOVALUE!=null)													
+then
+	dma.printRule("\n\n ============ STOCK DISPONIBLE DE MATERIA idoMateria:"+idoMateria+"  total:"+total+" reservado:"+reservado );
+	//si la empresa de producto no tiene delegacion central, no debe haber replicas
+	if(del_central_mat.intValue()==0 || del_central_mat.equals(idoMiDeleg)){//si es central
+		dma.setValueNotLock(idoMateria,idtoMateria,"stock_disponible",new DoubleValue(total-reservado));
+	}else{	
+		if(totalInit==null) totalInit=0.0;
+		if(resInit==null) resInit=0.0;
+		dma.setIncrementalValue(idoMateria,idtoMateria,dma.getIdProperty("stock_disponible"),total-reservado-(totalInit-resInit),null);
+	}	
+end
+
+
+rule "IMPORTE TOTAL APROVISIONADO DE ARTICULO"
+salience -200
+ agenda-group "rules" when 
+  	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="ARTÍCULO")
+	Individual(IDTO==idto,idArt:ID,idoArt:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_READY)
+	
+	contributionInit: Double() 
+    	from accumulate((and					
+    						FactHierarchy(idtoDoc:IDTO,CLASSSUP=="ALBARÁN_PROVEEDOR")
+    						ObjValue(IDTO==idtoDoc, PROPNAME=="línea",idLinea:INITIALVALOR!=null, idtoLinea:INITIALVALUECLS)    										        													
+							ObjValue(ID==idLinea,PROPNAME=="producto",INITIALVALOR==idArt, idtoArticulo:INITIALVALUECLS)																						
+							DatValue(ID==idLinea, PROPNAME=="importe",importeInitial:INITIALDOUBLE!=null)
+						),
+                       		sum(importeInitial))                       		            		
+                      
+	contributionCurr: Double() 
+    	from accumulate((and
+    	    				FactHierarchy(idtoDoc:IDTO,CLASSSUP=="ALBARÁN_PROVEEDOR")
+    						ObjValue(IDTO==idtoDoc, idoDoc:IDO,PROPNAME=="línea",idoLinea:IDOVALUE!=null, idtoLinea:VALUECLS)    						    										        						    						
+							ObjValue(IDO==idoLinea,PROPNAME=="producto",IDOVALUE==idoArt)								
+							not(Individual(IDO==idoDoc,STATE==Constants.INDIVIDUAL_STATE_DELETED))						
+																														
+							DatValue(IDO==idoLinea, PROPNAME=="importe",importeCurrent:DOUBLEVALUE!=null)
+						),                            
+           				sum(importeCurrent))     
+	Model(CLASSNAME==name,propT:PROP,PROPNAME=="importe_total_aprovisionado",OP==Constants.OP_INTERSECTION)                                        
+then
+	dma.printRule(" ===========  IMPORTE TOTAL APROVISIONADO DE ARTICULO idArt="+idArt);
+	 
+	Double contValueEnd= contributionCurr-contributionInit; 
+	    
+	dma.printRule("\n .. contribucion final="+ contValueEnd);	 
+	dma.setIncrementalValue(idoArt,idto,propT,contValueEnd,3);
+end
+
+
+rule "TOTAL_APROVISIONADO DE ARTICULO"
+salience -200
+ agenda-group "rules" when 
+ 	//Solo actua en albaranes, para evitar que porejemplo un abono de rapel sobre un producto, con una factura no albaranada, cuente como unidades entregadas
+ 	//Si son servicios, nada impide realizar albaran-factura para que conste la entrega del servicio
+  	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="ARTÍCULO")
+	Individual(IDTO==idto,idArt:ID,idoArt:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_READY)	
+	
+	contributionInit: Double() 
+    	from accumulate((and					
+    						FactHierarchy(idtoDoc:IDTO,CLASSSUP=="ALBARÁN_PROVEEDOR")
+    						ObjValue(IDTO==idtoDoc, PROPNAME=="línea",idLinea:INITIALVALOR!=null, idtoLinea:INITIALVALUECLS)							
+							ObjValue(ID==idLinea,PROPNAME=="producto",INITIALVALOR==idArt, idtoArticulo:INITIALVALUECLS)																						
+							DatValue(ID==idLinea, PROPNAME=="cantidad",cantidadInitial:INITIALDOUBLE!=null)
+						),
+                       		sum(cantidadInitial))                       		            		
+                      
+	contributionCurr: Double() 
+    	from accumulate((and
+    	    				FactHierarchy(idtoDoc:IDTO,CLASSSUP=="ALBARÁN_PROVEEDOR")
+    						ObjValue(IDTO==idtoDoc, idoDoc:IDO,PROPNAME=="línea",idoLinea:IDOVALUE!=null, idtoLinea:VALUECLS)    						    						
+							ObjValue(IDO==idoLinea,PROPNAME=="producto",IDOVALUE==idoArt)														
+							not(Individual(IDO==idoDoc,STATE==Constants.INDIVIDUAL_STATE_DELETED))
+																														
+							DatValue(IDO==idoLinea, PROPNAME=="cantidad",cantidadCurrent:DOUBLEVALUE!=null)
+						),                            
+           				sum(cantidadCurrent))          
+    Model(CLASSNAME==name,propT:PROP,PROPNAME=="total_aprovisionado",OP==Constants.OP_INTERSECTION)                                    
+then
+	dma.printRule("\n\n ===========  TOTAL_APROVISIONADO DE ARTICULO idArt="+idArt);
+	 
+	Double contValueEnd= contributionCurr-contributionInit; 
+	    
+	dma.printRule("\n .. contribucion final="+ contValueEnd);	 
+	dma.setIncrementalValue(idoArt,idto,propT,contValueEnd,3);
+end
+
+rule "PRECIO MEDIO VENTA DE ARTICULO"
+//DE MOMENTO NO SOPORTAMOS CAMBIO EN TOTAL VENDIDO POR RECTFICACIONES DE FACTURAS
+salience -200
+ agenda-group "rules" when 
+  	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="ARTÍCULO")
+	Individual(IDTO==idto,idArt:ID,idoArt:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	Model(CLASSNAME==name,PROPNAME=="precio_medio_venta",idProp:PROP,OP==Constants.OP_INTERSECTION)
+	DatValue(IDO==idoArt,PROPNAME=="total_vendido",totalVendido:DOUBLEVALUE!=null)
+	DatValue(IDO==idoArt,PROPNAME=="importe_total_vendido",importeTotalVendido:DOUBLEVALUE!=null)
+then
+	dma.printRule("========== PRECIO MEDIO VENTA DE ARTICULO");
+	dma.setDoubleValue(idoArt,idto,idProp,Auxiliar.redondea(importeTotalVendido/totalVendido,4),false);
+end
+
+rule "TOTAL VENDIDO DE ARTICULO"
+//DE MOMENTO NO SOPORTAMOS CAMBIO EN TOTAL VENDIDO POR RECFICACIONES DE FACTURAS
+salience -200
+ agenda-group "rules" when 
+  	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="ARTÍCULO")
+	Individual(IDTO==idto,idArt:ID,idoArt:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)		
+	contributionInit: Double() 
+    	from accumulate((and					
+    						FactHierarchy(idtoDoc:IDTO,CLASSSUP=="ALBARÁN_CLIENTE")
+    						ObjValue(IDTO==idtoDoc, PROPNAME=="línea",idLinea:INITIALVALOR!=null, idtoLinea:INITIALVALUECLS)							
+							ObjValue(ID==idLinea,PROPNAME=="producto",INITIALVALOR==idArt, idtoArticulo:INITIALVALUECLS)																						
+							DatValue(ID==idLinea, PROPNAME=="cantidad",cantidadInitial:INITIALDOUBLE!=null)
+						),
+                       		sum(cantidadInitial))                       		            		
+                      
+	contributionCurr: Double() 
+    	from accumulate((and
+    	    				FactHierarchy(idtoDoc:IDTO,CLASSSUP=="ALBARÁN_CLIENTE")
+    						ObjValue(IDTO==idtoDoc, idoDoc:IDO,PROPNAME=="línea",idoLinea:IDOVALUE!=null, idtoLinea:VALUECLS)    										
+							ObjValue(IDO==idoLinea,PROPNAME=="producto",IDOVALUE==idoArt)									
+							not(Individual(IDO==idoDoc,STATE==Constants.INDIVIDUAL_STATE_DELETED))    						
+																														
+							DatValue(IDO==idoLinea, PROPNAME=="cantidad",cantidadCurrent:DOUBLEVALUE!=null)
+						),                            
+           				sum(cantidadCurrent))         
+    Model(CLASSNAME==name,propT:PROP,PROPNAME=="total_vendido",OP==Constants.OP_INTERSECTION)                                   
+then
+	dma.printRule("===========  TOTAL VENDIDO DE ARTICULO idArt="+idArt);
+	 
+	Double contValueEnd= contributionCurr-contributionInit; 
+	    
+	dma.printRule("\n .. contribucion final="+ contValueEnd);	 
+	dma.setIncrementalValue(idoArt,idto,propT,contValueEnd,3);
+end
+
+rule "IMPORTE TOTAL VENDIDO DE ARTICULO"
+//DE MOMENTO NO SOPORTAMOS CAMBIO EN TOTAL VENDIDO POR RECFICACIONES DE FACTURAS
+salience -200
+ agenda-group "rules" when 
+  	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="ARTÍCULO")
+	Individual(IDTO==idto,idArt:ID,idoArt:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_READY)	
+	
+	contributionInit: Double() 
+    	from accumulate((and					
+    						FactHierarchy(idtoDoc:IDTO,CLASSSUP=="ALBARÁN_CLIENTE")
+    						ObjValue(IDTO==idtoDoc, PROPNAME=="línea",idLinea:INITIALVALOR!=null)    										        												
+							ObjValue(ID==idLinea,PROPNAME=="producto",INITIALVALOR==idArt, idtoArticulo:INITIALVALUECLS)																						
+							DatValue(ID==idLinea, PROPNAME=="importe",importeInitial:INITIALDOUBLE!=null)
+						),
+                       		sum(importeInitial))                       		            		
+                      
+	contributionCurr: Double() 
+    	from accumulate((and
+    	    				FactHierarchy(idtoDoc:IDTO,CLASSSUP=="ALBARÁN_CLIENTE")
+    						ObjValue(IDTO==idtoDoc, idoDoc:IDO,PROPNAME=="línea",idoLinea:IDOVALUE!=null)    						  										        						    					
+							ObjValue(IDO==idoLinea,PROPNAME=="producto",IDOVALUE==idoArt)				
+							not(Individual(IDO==idoDoc,STATE==Constants.INDIVIDUAL_STATE_DELETED))  										
+																														
+							DatValue(IDO==idoLinea, PROPNAME=="importe",importeCurrent:DOUBLEVALUE!=null)
+						),                            
+           				sum(importeCurrent))           
+    Model(CLASSNAME==name,propT:PROP,PROPNAME=="importe_total_vendido",OP==Constants.OP_INTERSECTION)                                    
+then
+	dma.printRule("===========IMPORTE  TOTAL VENDIDO DE ARTICULO idArt="+idArt);
+	 
+	Double contValueEnd= contributionCurr-contributionInit; 
+	    
+	dma.printRule("\n .. contribucion final="+ contValueEnd);	 
+	dma.setIncrementalValue(idoArt,idto,propT,contValueEnd,3);
+end

@@ -1,0 +1,732 @@
+package dynagent.ruleengine.src.ruler.ERPrules
+
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import java.io.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.*;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+
+global DataModelAdapter dma;
+
+
+/*
+	Busca recursivamente el importe de una partida, ya que se puede dar el caso de que haya referencias anidadas a 
+	importes (o porcentajes de importes) anteriores. 
+	
+	int orden: Es el orden de la partida en la que buscaremos el valor del importe
+	String tipo: Tipo de valor que buscamos: Importe o Base
+*/
+
+function DoubleValue getImporteReferencia(DataModelAdapter dma, int idoPredefinido, int orden, HashMap valoresVariables, String tipo){
+		Double importe;
+		ObjectValue valuePartida = null;		
+		Integer idoPartida = null;
+		Integer idtoPartida = null;
+			
+		LinkedList<Value> partidas = dma.getValues(idoPredefinido, dma.getIdClass(Constants.className_predefinido), Constants.prop_partidas);
+		Iterator it = partidas.iterator();
+		while(it.hasNext()){
+			valuePartida = (ObjectValue)it.next();
+			idoPartida = valuePartida.getValue();
+			idtoPartida = valuePartida.getValueCls();
+			dma.loadIndividualIfNotExists(idoPartida, idtoPartida);
+			Integer ordenPartida = ((IntValue)dma.getValue(idoPartida, idtoPartida, Constants.prop_orden)).getValueMin();
+			if(ordenPartida.equals(orden)){
+				break;
+			}
+		}	
+		
+		ObjectValue valueReferencia = null;
+		if(tipo.equals(Constants.prop_importe)){
+			valueReferencia = (ObjectValue)dma.getValue(idoPartida, idtoPartida, Constants.prop_importe_partida);
+		}else if(tipo.equals(Constants.prop_base)){
+			valueReferencia = (ObjectValue)dma.getValue(idoPartida, idtoPartida, Constants.prop_base_partida);
+		}
+		
+		Integer idoReferencia = valueReferencia.getValue();
+		Integer idtoReferencia = valueReferencia.getValueCls();
+		dma.loadIndividualIfNotExists(idoReferencia, idtoReferencia);
+		if(idtoReferencia.equals(dma.getIdClass(Constants.className_importe_fijo))){
+			return (DoubleValue)dma.getValue(idoReferencia, idtoReferencia, Constants.prop_importe);
+			
+		}else if(idtoReferencia.equals(dma.getIdClass(Constants.className_importe_variable))){
+			String nombreImporte = ((StringValue)dma.getValue(idoReferencia, idtoReferencia, Constants.prop_nombre)).getValue_s();
+			return (DoubleValue)valoresVariables.get(nombreImporte);
+		
+		}else if(idtoReferencia.equals(dma.getIdClass(Constants.className_importe_anterior))){
+			Integer ordenR = ((IntValue)dma.getValue(idoReferencia, idtoReferencia, Constants.prop_orden)).getValueMax();
+			return getImporteReferencia(dma, idoPredefinido, ordenR, valoresVariables, tipo);
+		
+		}else if(idtoReferencia.equals(dma.getIdClass(Constants.className_porcentaje_anterior))){
+			Integer ordenR = ((IntValue)dma.getValue(idoReferencia, idtoReferencia, Constants.prop_orden)).getValueMax();
+			Double porcentajeR = ((DoubleValue)dma.getValue(idoReferencia, idtoReferencia, Constants.prop_factor_de_multiplicacion)).getValueMax();
+			return new DoubleValue(porcentajeR / 100 * getImporteReferencia(dma, idoPredefinido, ordenR, valoresVariables, tipo).getValueMax());
+		}
+		
+		return new DoubleValue(new Double(0));
+}
+
+
+/*
+	Esta función se encarga de buscar y obtener todos los datos de un apunte determinado por su RDN y añadirlos al objeto de la clase
+	Apunte, que será luego el encargado de generar la línea compatible con FacturaPlus.
+*/
+/*function HashSet insertarLineasApuntesMotor(DataModelAdapter dma, Integer idoAsiento, DateFormat formatter, File ficheroSalida, int indice){
+	Integer idtoAsiento = dma.getIdClass(Constants.className_asiento); 
+	dma.loadIndividualIfNotExists(idoAsiento, idtoAsiento);	
+	HashSet<String> rdnCuentasContables = new HashSet<String>();
+
+	//Fecha del asiento, que será la de los apuntes
+	formatter = new SimpleDateFormat("yyyyMMdd");
+	Date fecha = ((TimeValue)dma.getValue(idoAsiento, idtoAsiento, Constants.prop_fecha)).getDate();
+	String fechaS = formatter.format(fecha);				
+
+	//Obtenemos todos los apuntes e iteramos por cada uno de ellos
+	LinkedList<Value> idosApuntes = dma.getValues(idoAsiento, idtoAsiento, Constants.prop_apuntes);
+	Iterator it = idosApuntes.iterator();
+	while(it.hasNext()){
+		//Lo cargamos para evitar nulos por no estar en motor
+		ObjectValue objApunte = (ObjectValue)it.next();
+		Integer idApunte = objApunte.getValue();
+		Integer idtoApunte = objApunte.getValueCls();
+		dma.loadIndividualIfNotExists(idApunte, idtoApunte);
+		
+		//Creamos el nuevo apunte 
+		Apunte ap = new Apunte(indice);
+		
+		//Fecha
+		ap.modificarCampo("fecha", formatter.format(fecha));
+		
+		//Subcuenta:
+		ObjectValue objSubCuenta = (ObjectValue)dma.getValue(idApunte, idtoApunte, Constants.prop_subcuenta);
+		Integer idoSubCuenta = objSubCuenta.getValue();
+		Integer idtoSubCuenta = objSubCuenta.getValueCls();
+		dma.loadIndividualIfNotExists(idoSubCuenta, idtoSubCuenta);
+		String codigoSubCuenta = ((StringValue)dma.getValue(idoSubCuenta, idtoSubCuenta, Constants.PROP_RDN)).getValue_s();
+		rdnCuentasContables.add(codigoSubCuenta);
+		String[] split = codigoSubCuenta.split("\\]");
+		codigoSubCuenta = split[1].replaceAll("\\.", "");
+		ap.modificarCampo("subCuenta", codigoSubCuenta);
+	
+		//Contrapartida
+		ObjectValue objContrapartida = (ObjectValue)dma.getValue(idApunte, idtoApunte, Constants.prop_contrapartida);
+		if(objContrapartida != null){
+			Integer idContrap = objContrapartida.getValue();
+			Integer idtoContrap = objContrapartida.getValueCls();
+			dma.loadIndividualIfNotExists(idContrap, idtoContrap);
+			String codigoContrapartida = ((StringValue)dma.getValue(idContrap, idtoContrap, Constants.PROP_RDN)).getValue_s();
+			rdnCuentasContables.add(codigoContrapartida);
+			split = codigoContrapartida.split("\\]");
+			codigoContrapartida = split[1].replaceAll("\\.", "");
+			ap.modificarCampo("contrapartida", codigoContrapartida);
+		}
+	
+		//Debe, Haber y Base
+		Double debe = ((DoubleValue)dma.getValue(idApunte, idtoApunte, Constants.prop_debe)).getValueMax();
+		ap.modificarCampo("importeDebeEuros", debe);
+		ap.modificarCampo("importeDebePts", debe*166.386);
+		Double haber = ((DoubleValue)dma.getValue(idApunte, idtoApunte, Constants.prop_haber)).getValueMax();
+		ap.modificarCampo("importeHaberEuros", haber);
+		ap.modificarCampo("importeHaberPts", haber*166.386);
+		Double base = ((DoubleValue)dma.getValue(idApunte, idtoApunte, Constants.prop_base)).getValueMax();
+		ap.modificarCampo("baseIVAEuros", base);
+		ap.modificarCampo("baseImponibleIVAPts", base*166.386);		
+
+		//Porcentaje IVA y Porcentaje RE en caso de existir	
+		if(idtoApunte.equals(dma.getIdClass(Constants.className_apunte_iva))){
+			ObjectValue objIVA = (ObjectValue)dma.getValue(idApunte, idtoApunte, Constants.prop_iva);
+			Double porcentajeIVA = ((DoubleValue)dma.getValue(objIVA.getValue(), objIVA.getValueCls(), Constants.prop_porcentaje_iva)).getValueMax();
+			ap.modificarCampo("porcentajeIVA", porcentajeIVA);
+			
+		}else if(idtoApunte.equals(dma.getIdClass(Constants.className_apunte_re))){
+			ObjectValue objIVA = (ObjectValue)dma.getValue(idApunte, idtoApunte, Constants.prop_iva);
+			Double porcentajeRE = ((DoubleValue)dma.getValue(objIVA.getValue(), objIVA.getValueCls(), Constants.prop_porcentaje_recargo)).getValueMax();
+			ap.modificarCampo("porcentajeRE", porcentajeRE);
+		}
+			
+		//Concepto
+		String concepto = ((StringValue)dma.getValue(idApunte, idtoApunte, Constants.prop_concepto)).getValue_s();
+		ap.modificarCampo("concepto", concepto);
+
+		//Moneda uso -> Euros
+		ap.modificarCampo("monedaUso", "2");
+
+		//Generamos la línea y la escribirmos en el fichero
+		escribirEnFichero(ficheroSalida, ap.generarLinea());
+		
+	}
+	
+	//Devolvemos la lista con las CC usadas.
+	return rdnCuentasContables;
+}*/
+
+
+rule "[AUTOCOMPLETADO] EL ORDEN DE LAS PARTIDAS ES SECUENCIAL"
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(classPredefinido:CLASS, CLASSSUP==Constants.className_predefinido)
+		Lock(idPredefinido:ID, STATE==Constants.INDIVIDUAL_STATE_LOCK, CLASSNAME==classPredefinido)
+		
+		numeroDePartidasActual: Integer()
+		from accumulate(
+				(and
+					ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_partidas, VALOR!=null)
+				),
+			init( Integer actual = new Integer(0); ),
+			action( actual++; ),
+			result( actual )
+		)
+		
+		ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_partidas, idPartida:VALOR!=null, idtoPartida:VALUECLS)
+	    not(DatValue(ID==idPartida, PROPNAME==Constants.prop_orden, VALOR!=null)) 
+		
+	then
+		dma.printRule("[CONTABILIDAD]=================[AUTOCOMPLETADO] EL ORDEN DE LAS PARTIDAS ES SECUENCIAL");
+		dma.setValue(Integer.parseInt(idPartida), idtoPartida, Constants.prop_orden, new IntValue(numeroDePartidasActual));
+end
+
+
+rule "[AUTOCOMPLETADO] NO EXISTE NINGUNA PARTIDA SIN CONCEPTO, EN CASO DE NO TENER, HEREDAN DEL PREDEFINIDO"
+	agenda-group "rules"
+	when 
+		
+	    FactHierarchy(classPredefinido:CLASS, CLASSSUP==Constants.className_predefinido)
+	    Individual(idPredefinido:ID, CLASSNAME==classPredefinido)
+   	    DatValue(ID==idPredefinido, PROPNAME==Constants.prop_concepto, conceptoPredefinido:DATAVALUE!=null)
+		ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_partidas, idPartida:VALOR!=null, idtoPartida:VALUECLS)
+	    not(DatValue(ID==idPartida, PROPNAME==Constants.prop_concepto, VALOR!=null)) 
+
+	then
+		dma.printRule("[CONTABILIDAD]=================[AUTOCOMPLETADO] NO EXISTE NINGUNA PARTIDA SIN CONCEPTO, EN CASO DE NO TENER, HEREDAN DEL PREDEFINIDO");
+		dma.setValue(idPartida, idtoPartida, Constants.prop_concepto, conceptoPredefinido);		
+end
+
+
+rule "[PREDEFINIDOS] GENERAR ASIENTO A PARTIR DE PREDEFINIDO"
+	agenda-group "rules"
+	when
+		
+	    ObjValue(typetask:CLASSNAME=="Generar_asiento_a_partir_de_predefinido", idUTask:ID!=null, idtoUTask:IDTO, PROPNAME==Constants.prop_source_class, typePredefinido:RANGENAME, idPredefinido:VALOR!=null)
+	    ObjValue(ID==idUTask, PROPNAME==Constants.prop_params, idParamsVariables:VALOR!=null)
+	    	    	    
+		//Datos del predefinido
+		DatValue(ID==idPredefinido, PROPNAME==Constants.prop_concepto, concepto:DATAVALUE!=null)
+		ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_mi_empresa, miEmpresa:OBJECTVALUE!=null)
+
+	then
+		dma.printRule("[CONTABILIDAD]=================[PREDEFINIDOS] GENERAR ASIENTO A PARTIR DE PREDEFINIDO");
+		Domain dominioAsiento = dma.creaIndividualOfClass(Constants.className_asiento);
+		dma.addValue(dominioAsiento, Constants.prop_concepto, concepto);
+		dma.addValue(dominioAsiento, Constants.prop_mi_empresa, miEmpresa);
+		dma.addValue(idUTask, idtoUTask, Constants.prop_target_class, new ObjectValue(dominioAsiento));
+end
+
+rule "[PREDEFINIDOS] NO SE PUEDEN INSERTAR PARTIDAS ANTES DE SELECCIONAR LA EMPRESA"
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(classPredefinido:CLASS, CLASSSUP==Constants.className_predefinido)
+	    Individual(idPredefinido:ID, CLASSNAME==classPredefinido)
+	    //NO se ha definido MI_EMPRESA en el predefinido
+	    not( ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_mi_empresa, VALOR!=null) )
+	    //Se quieren crear partidas
+		ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_partidas, idPartida:VALOR!=null)
+	then
+		throw new OperationNotPermitedException("No se pueden añadir partidas antes de seleccionar la empresa asociada.");
+end
+
+
+/*
+rule "[FILTRADO] SOLO SE PUEDEN ENCONTRAR PREDEFINIDOS DE MI_EMPRESA"
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(classPredefinido:CLASS, CLASSSUP==Constants.className_predefinido)
+	    Individual(idPredefinido:ID, CLASSNAME==classPredefinido)
+	    ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_mi_empresa, idMiEmpresa:VALOR!=null)
+	    RangeFilter(ID==idPredefinido, PROPNAME==Constants.prop_partidas, idFiltroPartidas:VALUE!=null)
+	    //Filtros de la subcuenta y la contrapartida
+	    RangeFilter(ID==idFiltroPartidas, PROPNAME==Constants.prop_subcuenta, idFiltroSubCuenta:VALUE!=null)
+	    RangeFilter(ID==idFiltroPartidas, PROPNAME==Constants.prop_contrapartida, idFiltroContrap:VALUE!=null)
+	then
+		dma.printRule("\n\n[CONTABILIDAD]===========>>SOLO SE PUEDEN ENCONTRAR PREDEFINIDOS DE MI_EMPRESA");
+		dma.setValue(idFiltroSubCuenta, Constants.prop_mi_empresa, idMiEmpresa);
+		dma.setValue(idFiltroContrap, Constants.prop_mi_empresa, idMiEmpresa);
+end
+*/
+
+rule "[FILTRADO] LIMITAR LAS CUENTA CONTABLES A LA DE LA EMPRESA EN PREDEFINIDOS"
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(classPredefinido:CLASS, CLASSSUP==Constants.className_predefinido)
+	    Individual(idPredefinido:ID, CLASSNAME==classPredefinido)
+	    ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_mi_empresa, idMiEmpresa:OBJECTVALUE!=null)
+	    ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_partidas, idPartida:VALUE!=null)
+	    //Filtros de la subcuenta y la contrapartida
+	    RangeFilter( ID==idPartida, PROPNAME==Constants.prop_subcuenta, idFiltroSubCuenta:VALUE!=null, idtoFiltroS:VALUECLS)
+	    RangeFilter(ID==idPartida, PROPNAME==Constants.prop_contrapartida, idFiltroContrap:VALUE!=null, idtoFiltroC:VALUECLS)
+	then
+		dma.printRule("[CONTABILIDAD]=================[FILTRADO] LIMITAR LAS CUENTA CONTABLES A LA DE LA EMPRESA EN PREDEFINIDOS");
+		dma.setValue(idFiltroSubCuenta, idtoFiltroS, Constants.prop_mi_empresa, idMiEmpresa);
+		dma.setValue(idFiltroContrap, idtoFiltroC, Constants.prop_mi_empresa, idMiEmpresa);
+end
+
+rule "[FILTRADO] LIMITAR LAS CUENTA CONTABLES A LA DE LA EMPRESA EN APUNTES"
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(classApunte:CLASS, CLASSSUP==Constants.className_apunte)
+	    Lock(idApunte:ID, CLASSNAME==classApunte, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	    ObjValue(ID==idApunte, PROPNAME==Constants.prop_mi_empresa, idMiEmpresa:OBJECTVALUE!=null)
+	    //Filtros de la subcuenta y la contrapartida
+	    RangeFilter(ID==idApunte, PROPNAME==Constants.prop_subcuenta, idFiltroSubCuenta:VALUE!=null, idtoFiltroS:VALUECLS)
+	    RangeFilter(ID==idApunte, PROPNAME==Constants.prop_contrapartida, idFiltroContrap:VALUE!=null, idtoFiltroC:VALUECLS)
+	then
+		dma.printRule("[CONTABILIDAD]=================[FILTRADO] LIMITAR LAS CUENTA CONTABLES A LA DE LA EMPRESA EN APUNTES");
+		dma.setValue(idFiltroSubCuenta, idtoFiltroS, Constants.prop_mi_empresa, idMiEmpresa);
+		dma.setValue(idFiltroContrap, idtoFiltroC, Constants.prop_mi_empresa, idMiEmpresa);
+end
+
+rule "[AUTOCOMPLETADO] NOMBRE DE LOS VALORES VARIABLES DE UN PREDEFINIDO EN LOS PARAMETROS"
+	agenda-group "rules"
+	when
+		
+	    ObjValue(typetask:CLASSNAME=="Generar_asiento_a_partir_de_predefinido", idUTask:ID!=null, PROPNAME==Constants.prop_source_class, typePredefinido:RANGENAME, idPredefinido:VALOR!=null)
+	    ObjValue(ID==idUTask, PROPNAME==Constants.prop_params, idAuxParamsPredef:VALOR!=null, idtoAuxParamsPredef:VALUECLS)
+	    
+	    //Recogemos los valores variables de las partidas del predefinido
+		nombresImportesVariables: ArrayList() 
+		from accumulate(
+				(and
+					ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_partidas, idPartida:VALOR!=null)
+					ObjValue(ID==idPartida, PROPNAME==Constants.prop_importe_partida, RANGENAME=="IMPORTE_VARIABLE", idReferencia:VALOR!=null, idtoRef:VALUECLS)
+					eval(dma.preload(Integer.parseInt(idReferencia), idtoRef))
+					DatValue(ID==idReferencia, PROPNAME==Constants.prop_nombre, nombre:VALOR!=null)
+				),
+			init( ArrayList<String> nombres = new ArrayList<String>(); ),
+			action( nombres.add(nombre); ),
+			result( nombres )
+		)
+		
+		//Valores variables para base de importe
+		nombresBasesVariables: ArrayList() 
+		from accumulate(
+				(and
+					ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_partidas, idPartida:VALOR!=null)
+					ObjValue(ID==idPartida, PROPNAME==Constants.prop_base_partida, RANGENAME=="IMPORTE_VARIABLE", idReferencia:VALOR!=null, idtoRef:VALUECLS)
+					eval(dma.preload(Integer.parseInt(idReferencia), idtoRef))
+					DatValue(ID==idReferencia, PROPNAME==Constants.prop_nombre, nombre:VALOR!=null)
+				),
+			init( ArrayList<String> nombres = new ArrayList<String>(); ),
+			action( nombres.add(nombre); ),
+			result( nombres )
+		)
+		
+		//Nos aseguramos de que haya algun valor a rellenar
+		eval(nombresImportesVariables.size() > 0 || nombresBasesVariables.size() > 0)
+	then
+		dma.printRule("[CONTABILIDAD]=================[AUTOCOMPLETADO] NOMBRE DE LOS VALORES VARIABLES DE UN PREDEFINIDO EN LOS PARAMETROS");
+		
+		Iterator it = nombresImportesVariables.iterator();
+		while(it.hasNext()){
+			StringValue nombre = new StringValue((String) it.next());
+			Domain dReferenciaImporteNombre = dma.creaIndividualOfClass("REFERENCIA_IMPORTE_NOMBRE");
+			dma.addValue(dReferenciaImporteNombre, Constants.prop_nombre, nombre);
+			dma.addValue(dReferenciaImporteNombre, Constants.prop_importe, new DoubleValue(new Double(0)));
+			dma.addValue(Integer.parseInt(idAuxParamsPredef), idtoAuxParamsPredef, Constants.prop_valores_variables, new ObjectValue(dReferenciaImporteNombre));
+		}
+		
+		it = nombresBasesVariables.iterator();
+		while(it.hasNext()){
+			StringValue nombre = new StringValue((String) it.next());
+			Domain dReferenciaImporteNombre = dma.creaIndividualOfClass("REFERENCIA_IMPORTE_NOMBRE");
+			dma.addValue(dReferenciaImporteNombre, Constants.prop_nombre, nombre);
+			dma.addValue(dReferenciaImporteNombre, Constants.prop_importe, new DoubleValue(new Double(0)));
+			dma.addValue(Integer.parseInt(idAuxParamsPredef), idtoAuxParamsPredef, Constants.prop_valores_variables, new ObjectValue(dReferenciaImporteNombre));
+		}
+end
+
+rule "[PREDEFINIDOS] GENERAR APUNTES A PARTIR DE UN PREDEFINIDO"
+	agenda-group "rules"
+	when
+		
+	    ObjValue(typetask:CLASSNAME=="Generar_asiento_a_partir_de_predefinido", idUTask:ID!=null, PROPNAME==Constants.prop_estado_realizacion, idEstado:VALOR!=null)
+	    DatValue(ID==idEstado,PROPNAME==Constants.PROP_RDN, VALOR==Constants.INDIVIDUAL_INFORMADO)	
+	    ObjValue(ID==idUTask, PROPNAME==Constants.prop_params, idParamsVariables:VALOR!=null)
+	    ObjValue(ID==idUTask, PROPNAME==Constants.prop_target_class, idAsiento:VALOR!=null, idtoAsiento:VALUECLS)
+
+	    //Predefinido y una partida
+   		ObjValue(ID==idUTask, PROPNAME==Constants.prop_source_class, idPredefinido:VALOR!=null)
+   		ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_partidas, tipoPartida:RANGENAME, idPartida:VALOR!=null, idtoPartida:VALUECLS)
+   		eval(dma.preload(Integer.parseInt(idPartida), idtoPartida))
+   		DatValue(ID==idPartida, PROPNAME==Constants.prop_orden, orden:INTVALUE!=null)
+   		DatValue(ID==idPartida, PROPNAME==Constants.prop_concepto, concepto:DATAVALUE!=null)
+		ObjValue(ID==idPartida, PROPNAME==Constants.prop_subcuenta, subcuenta:OBJECTVALUE!=null)
+		ObjValue(ID==idPartida, PROPNAME==Constants.prop_importe_partida, tipoImporte:RANGENAME!=Constants.className_cuadrar_asiento, objImporte:OBJECTVALUE!=null)
+		ObjValue(ID==idPartida, PROPNAME==Constants.prop_base_partida, tipoBase:RANGENAME, idBase:VALOR!=null, idtoBase:VALUECLS)
+
+   	    //Valores variables ya creados para consulta en caso de hacer falta
+	    valoresVariables: HashMap() 
+		from accumulate(
+				(and
+					ObjValue(ID==idParamsVariables, PROPNAME==Constants.prop_valores_variables, idReferencia:VALOR!=null)   
+					DatValue(ID==idReferencia, PROPNAME==Constants.prop_nombre, nombre:VALOR!=null)
+					DatValue(ID==idReferencia, PROPNAME==Constants.prop_importe, importe:DATAVALUE!=null) 
+				),
+			init( HashMap<String, Value> valores = new HashMap<String, Value>(); ),
+			action( valores.put(nombre, importe); ),
+			result( valores )
+		)
+	    
+	then
+		dma.printRule("[CONTABILIDAD]=================[PREDEFINIDOS] GENERAR APUNTES A PARTIR DE UN PREDEFINIDO");
+
+		//Importe: FIJO, VARIABLE
+		DoubleValue importe = new DoubleValue(new Double(0));
+		Domain dominioImporte = new Domain(objImporte);
+		if(tipoImporte.equals(Constants.className_importe_fijo)){
+			importe = (DoubleValue)dma.getValue(dominioImporte, Constants.prop_importe);
+		}else if(tipoImporte.equals(Constants.className_importe_variable)){
+			String nombre = ((StringValue)dma.getValue(dominioImporte, Constants.prop_nombre)).getValue_s();
+			importe = (DoubleValue)valoresVariables.get(nombre);
+		}else if(tipoImporte.equals(Constants.className_importe_anterior)){
+			Integer ordenReferencia = ((IntValue)dma.getValue(dominioImporte, Constants.prop_orden)).getValueMax();
+			importe = getImporteReferencia(dma, Integer.parseInt(idPredefinido), ordenReferencia, valoresVariables, Constants.prop_importe);
+		}else if(tipoImporte.equals(Constants.className_porcentaje_anterior)){
+			Integer ordenReferencia = ((IntValue)dma.getValue(dominioImporte, Constants.prop_orden)).getValueMax();
+			Double porcentaje = ((DoubleValue)dma.getValue(dominioImporte, Constants.prop_factor_de_multiplicacion)).getValueMax();
+			importe = new DoubleValue(getImporteReferencia(dma, Integer.parseInt(idPredefinido), ordenReferencia, valoresVariables, Constants.prop_importe).getValueMax() * porcentaje / 100);		
+		}else if(tipoImporte.equals(Constants.className_suma_de_ordenes)){
+			LinkedList<Value> ordenes = dma.getValues(dominioImporte.getIdo(), dominioImporte.getIdto(), Constants.prop_ordenes); //ido de los objetos tipo ORDEN
+			Double sumaParcial = new Double(0);
+			Iterator it = ordenes.iterator();
+			while(it.hasNext()){
+				ObjectValue objOrden = (ObjectValue)it.next();
+				Integer ordenReferencia = ((IntValue)dma.getValue(objOrden.getValue(), objOrden.getValueCls(), Constants.prop_orden)).getValueMax();
+				sumaParcial += getImporteReferencia(dma, Integer.parseInt(idPredefinido), ordenReferencia, valoresVariables, Constants.prop_importe).getValueMax();		
+			}
+			importe = new DoubleValue(sumaParcial);
+		}
+
+		//Redondeamos a 2 decimales.
+		importe = new DoubleValue(Auxiliar.redondea(importe.getValueMax(), 2));
+		DoubleValue valorCero = new DoubleValue(new Double(0));
+		
+		Domain dominioApunte = null;
+		//Datos Específicos: Importe		
+		if(tipoPartida.equals(Constants.className_partida_al_haber)){
+			dominioApunte = dma.creaIndividualOfClass(Constants.className_apunte_abono);
+			dma.addValue(dominioApunte, Constants.prop_haber, importe);
+		}else if(tipoPartida.equals(Constants.className_partida_al_debe)){
+			dominioApunte = dma.creaIndividualOfClass(Constants.className_apunte_cargo);
+			dma.addValue(dominioApunte, Constants.prop_debe, importe);
+		}else{
+			if(tipoPartida.equals(Constants.className_partida_iva)){
+				dominioApunte = dma.creaIndividualOfClass(Constants.className_apunte_iva);
+			}else if(tipoPartida.equals(Constants.className_partida_re)){
+				dominioApunte = dma.creaIndividualOfClass(Constants.className_apunte_re);
+			}
+			
+			Boolean importeDebe = ((BooleanValue)dma.getValue(Integer.parseInt(idPartida), idtoPartida, "importe_al_debe")).getBvalue();
+			if(importeDebe){
+				dma.addValue(dominioApunte, Constants.prop_debe, importe);
+				dma.addValue(dominioApunte, Constants.prop_haber, valorCero);
+			}else{
+				dma.addValue(dominioApunte, Constants.prop_haber, importe);
+				dma.addValue(dominioApunte, Constants.prop_debe, valorCero);
+			}		
+		}
+		
+
+		//Datos especificos: Base
+		Integer idoBase = Integer.parseInt(idBase);
+		DoubleValue base = new DoubleValue(new Double(0));
+		if(tipoBase.equals(Constants.className_importe_fijo)){
+			base = (DoubleValue)dma.getValue(idoBase, idtoBase, Constants.prop_importe);
+		}else if(tipoBase.equals(Constants.className_importe_variable)){
+			String nombre = ((StringValue)dma.getValue(idoBase, idtoBase, Constants.prop_nombre)).getValue_s();
+			base = (DoubleValue)valoresVariables.get(nombre);
+		}else if(tipoBase.equals(Constants.className_importe_anterior)){
+			Integer ordenReferencia = ((IntValue)dma.getValue(idoBase, idtoBase, Constants.prop_orden)).getValueMax();
+			base = getImporteReferencia(dma, Integer.parseInt(idPredefinido), ordenReferencia, valoresVariables, Constants.prop_base);
+		}else if(tipoBase.equals(Constants.className_porcentaje_anterior)){
+			Integer ordenReferencia = ((IntValue)dma.getValue(idoBase, idtoBase, Constants.prop_orden)).getValueMax();
+			Double porcentaje = ((DoubleValue)dma.getValue(idoBase, idtoBase, Constants.prop_factor_de_multiplicacion)).getValueMax();
+			base = new DoubleValue(getImporteReferencia(dma, Integer.parseInt(idPredefinido), ordenReferencia, valoresVariables, Constants.prop_base).getValueMax() * porcentaje / 100);		
+		}else if(tipoBase.equals(Constants.className_suma_de_ordenes)){
+			Double sumaParcial = new Double(0);
+			LinkedList<Value> ordenes = dma.getValues(idoBase, idtoBase, Constants.prop_ordenes);
+			Iterator it = ordenes.iterator();
+			while(it.hasNext()){
+				ObjectValue objOrden = (ObjectValue)it.next();
+				Integer ordenReferencia = ((IntValue)dma.getValue(objOrden.getValue(), objOrden.getValueCls(), Constants.prop_orden)).getValueMax();
+				sumaParcial += getImporteReferencia(dma, Integer.parseInt(idPredefinido), ordenReferencia, valoresVariables, Constants.prop_base).getValueMax();		
+			}
+			base = new DoubleValue(sumaParcial);
+		}
+		
+		//Redondeamos y añadimos al apunte
+		base = new DoubleValue(Auxiliar.redondea(base.getValueMax(), 2));
+		dma.addValue(dominioApunte.getIdo(), dominioApunte.getIdto(), Constants.prop_base, base);
+
+		//Datos especificos: IVA
+		if(tipoPartida.equals(Constants.className_partida_iva) || tipoPartida.equals(Constants.className_partida_re)){
+			ObjectValue objIVA = (ObjectValue)dma.getValue(Integer.parseInt(idPartida), idtoPartida, Constants.prop_iva);
+			dma.addValue(dominioApunte.getIdo(), dominioApunte.getIdto(), Constants.prop_iva, objIVA);
+		}
+		
+		//Datos Comunes:
+		dma.addValue(dominioApunte.getIdo(), dominioApunte.getIdto(), Constants.prop_concepto, concepto);
+
+		//Contrapartida y subcuenta
+		dma.addValue(dominioApunte.getIdo(), dominioApunte.getIdto(), Constants.prop_subcuenta, subcuenta);
+		ObjectValue objContrapartidaS = (ObjectValue)dma.getValue(Integer.parseInt(idPartida), idtoPartida, Constants.prop_contrapartida);
+		if(objContrapartidaS != null){
+			dma.addValue(dominioApunte.getIdo(), dominioApunte.getIdto(), Constants.prop_contrapartida, objContrapartidaS);
+		}
+
+		//Enlazamos al asiento
+		dma.addValue(idAsiento, idtoAsiento, Constants.prop_apuntes, new ObjectValue(dominioApunte)); 
+end
+
+/*
+	El antecedente comparte disparon con la regla GENERAR APUNTES A PARTIR DE UN PREDEFINIDO, pero se le añade
+	un retraso para que la partida de CUADRAR_ASIENTO (en caso de existir) se dispare la ultima.
+*/
+rule "[PREDEFINIDOS] GENERAR APUNTE PARA CUADRAR ASIENTO A PARTIR DE UN PREDEFINIDO"
+	salience -50
+	agenda-group "rules"
+	when
+		
+	    ObjValue(typetask:CLASSNAME=="Generar_asiento_a_partir_de_predefinido", idUTask:ID!=null, PROPNAME==Constants.prop_estado_realizacion, idEstado:VALOR!=null)
+	    DatValue(ID==idEstado,PROPNAME==Constants.PROP_RDN, VALOR==Constants.INDIVIDUAL_INFORMADO)	
+	    ObjValue(ID==idUTask, PROPNAME==Constants.prop_target_class, idAsiento:VALOR!=null, idtoAsiento:VALUECLS) 
+
+	    //Predefinido y una partida
+   		ObjValue(ID==idUTask, PROPNAME==Constants.prop_source_class, idPredefinido:VALOR!=null)
+   		ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_partidas, tipoPartida:RANGENAME, idPartida:VALOR!=null, idtoPartida:VALUECLS)
+   		eval(dma.preload(Integer.parseInt(idPartida), idtoPartida))
+		ObjValue(ID==idPartida, PROPNAME==Constants.prop_importe_partida, tipoImporte:RANGENAME==Constants.className_cuadrar_asiento, idImporte:VALOR!=null)
+   		DatValue(ID==idPartida, PROPNAME==Constants.prop_concepto, concepto:DATAVALUE!=null)
+		ObjValue(ID==idPartida, PROPNAME==Constants.prop_subcuenta, subcuenta:OBJECTVALUE!=null)
+		ObjValue(ID==idPartida, PROPNAME==Constants.prop_base_partida, tipoBase:RANGENAME, idBase:VALOR!=null)
+		
+	then
+		dma.printRule("[CONTABILIDAD]=================[PREDEFINIDOS] GENERAR APUNTE PARA CUADRAR ASIENTO A PARTIR DE UN PREDEFINIDO");
+		Domain dominioApunte;
+				
+		//Importe
+		if(tipoPartida.equals(Constants.className_partida_al_haber)){
+			dominioApunte = dma.creaIndividualOfClass(Constants.className_apunte_abono);
+		}else if(tipoPartida.equals(Constants.className_partida_al_debe)){
+			dominioApunte = dma.creaIndividualOfClass(Constants.className_apunte_cargo);
+		}else{
+			throw new OperationNotPermitedException("No se puede asignar la order 'CUADRAR APUNTE' en una partida que no sea al debe o al haber");
+		}
+		
+		
+		//Base la dejamos a null para poder encontrarlo en la proxima regla
+		dma.addValue(dominioApunte, Constants.prop_base, new DoubleValue(Double.MIN_VALUE));
+			
+		//Concepto
+		dma.addValue(dominioApunte, Constants.prop_concepto, concepto);
+	
+		//Contrapartida y subcuenta
+		dma.addValue(dominioApunte, Constants.prop_subcuenta, subcuenta);
+		ObjectValue objContrapartidaS = (ObjectValue)dma.getValue(Integer.parseInt(idPartida), idtoPartida, Constants.prop_contrapartida);
+		if(objContrapartidaS != null){
+			dma.addValue(dominioApunte, Constants.prop_contrapartida, objContrapartidaS);
+		}
+	
+		//Enlazamos al asiento
+		dma.addValue(Integer.parseInt(idAsiento), idtoAsiento, Constants.prop_apuntes, new ObjectValue(dominioApunte));
+		
+end
+
+rule "[PREDEFINIDOS] ACTUALIZAR APUNTE PARA CUADRAR ASIENTO A PARTIR DE UN PREDEFINIDO"
+	salience -100
+	agenda-group "rules"
+	when
+		
+	    ObjValue(typetask:CLASSNAME=="Generar_asiento_a_partir_de_predefinido", idUTask:ID!=null)
+	    ObjValue(ID==idUTask, PROPNAME==Constants.prop_target_class, idAsiento:VALOR!=null) 
+	    
+   		ObjValue(ID==idAsiento, PROPNAME==Constants.prop_apuntes, tipoApunte:RANGENAME, idApunteCuadrar:VALOR!=null, idtoApunteCuadrar:VALUECLS)
+		DatValue(ID==idApunteCuadrar, PROPNAME==Constants.prop_base, b:DOUBLEVALUE!=null)
+		eval(b==Double.MIN_VALUE)
+   		
+   		
+   	    //Suma de los importes al debe
+	    importeDebe: Double()
+		from accumulate(
+				(and
+					ObjValue(ID==idAsiento, PROPNAME==Constants.prop_apuntes, idApunte:VALOR!=null)
+					eval(idApunte != idApunteCuadrar)
+					DatValue(ID==idApunte, PROPNAME==Constants.prop_debe, d:DOUBLEVALUE!= null)
+				),
+			init( Double debe = new Double(0); ),
+			action( debe += d; ),
+			result( debe )
+		)
+		
+		//Suma de los improtes al haber
+		importeHaber: Double()
+		from accumulate(
+				(and
+					ObjValue(ID==idAsiento, PROPNAME==Constants.prop_apuntes, idApunte:VALOR!=null)
+					eval(idApunte != idApunteCuadrar)
+					DatValue(ID==idApunte, PROPNAME==Constants.prop_haber, h:DOUBLEVALUE!=null)
+				),
+			init( Double haber = new Double(0); ),
+			action( haber += h; ),
+			result( haber )
+		)
+
+	then
+		dma.printRule("[CONTABILIDAD]=================[PREDEFINIDOS] ACTUALIZAR APUNTE PARA CUADRAR ASIENTO A PARTIR DE UN PREDEFINIDO");
+		Integer idoApunte;
+		DoubleValue importe = new DoubleValue(new Double(0));
+
+		dma.setValue(Integer.parseInt(idApunteCuadrar), idtoApunteCuadrar, Constants.prop_base, new DoubleValue(new Double(0)));
+		
+		if(tipoApunte.equals(Constants.className_apunte_abono)){
+			importe = new DoubleValue(Auxiliar.redondea((importeDebe - importeHaber), 2));
+			dma.setValue(Integer.parseInt(idApunteCuadrar), idtoApunteCuadrar, Constants.prop_haber, importe);
+		}else if(tipoApunte.equals(Constants.className_apunte_cargo)){
+			importe = new DoubleValue(Auxiliar.redondea((importeHaber - importeDebe), 2));
+			dma.setValue(Integer.parseInt(idApunteCuadrar), idtoApunteCuadrar, Constants.prop_debe, importe);
+		}
+		
+end
+
+
+rule "[PREDEFINIDOS] CONTROL DE REFERENCIAS EN PARTIDAS CON SUMAS DE IMPORTES"
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(classPredefinido:CLASS, CLASSSUP==Constants.className_predefinido)
+	    Individual(idPredefinido:ID, CLASSNAME==classPredefinido)
+		ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_partidas, idPartida:VALOR!=null)
+		DatValue(ID==idPartida, PROPNAME==Constants.prop_orden, ordenPartida:INTVALUE!=null)
+		ObjValue(ID==idPartida, PROPNAME==Constants.prop_importe_partida||==Constants.prop_base_partida, RANGENAME==Constants.className_suma_de_ordenes, idReferencia:VALOR!=null)
+		ObjValue(ID==idReferencia, PROPNAME==Constants.prop_ordenes, ordenR:VALOR!=null)
+		DatValue(ID==ordenR, PROPNAME==Constants.prop_orden, ordenReferencia:INTVALUE!=null)
+		eval(ordenPartida <= 1 || ordenReferencia <= 0 || ordenReferencia >= ordenPartida)
+		
+	then
+		dma.printRule("[CONTABILIDAD]=================[PREDEFINIDOS] CONTROL DE REFERENCIAS EN PARTIDAS CON SUMAS DE IMPORTES");
+		String mensaje = "";
+		
+		if(ordenPartida == 1){
+			mensaje = "No se puede hacer referencia a otros valores en la primera partida.";
+		}else if(ordenPartida > 1 && (ordenReferencia > ordenPartida)){
+			mensaje = "No se puede hacer referencia a valores posteriores.";
+		}else if(ordenPartida > 1 && (ordenReferencia == ordenPartida)){
+			mensaje = "No se puede hacer referencia a valores de la misma partida.";
+		}else if(ordenReferencia <= 0){
+			mensaje = "No se puede hacer referencia a una partida que no existe.";
+		}
+		
+		if(!mensaje.isEmpty()){
+			throw new OperationNotPermitedException(mensaje);
+		}
+end
+
+rule "[PREDEFINIDOS] CONTROL DE REFERENCIAS EN PARTIDAS"
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(classPredefinido:CLASS, CLASSSUP==Constants.className_predefinido)
+	    Individual(idPredefinido:ID, CLASSNAME==classPredefinido)
+		ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_partidas, idPartida:VALOR!=null)
+		DatValue(ID==idPartida, PROPNAME==Constants.prop_orden, ordenPartida:INTVALUE!=null)
+		ObjValue(ID==idPartida, PROPNAME==Constants.prop_importe_partida||==Constants.prop_base_partida, RANGENAME=="IMPORTE_ANTERIOR"||=="PORCENTAJE_IMPORTE_ANTERIOR", idReferencia:VALOR!=null)
+		DatValue(ID==idReferencia, PROPNAME==Constants.prop_orden, ordenReferencia:INTVALUE!=null)
+		eval(ordenPartida <= 1 || ordenReferencia <= 0 || ordenReferencia >= ordenPartida)
+		
+	then
+		dma.printRule("[CONTABILIDAD]=================[PREDEFINIDOS] CONTROL DE REFERENCIAS EN PARTIDAS");
+		String mensaje = "";
+		
+		if(ordenPartida == 1){
+			mensaje = "No se puede hacer referencia a otros valores en la primera partida.";
+		}else if(ordenPartida > 1 && (ordenReferencia > ordenPartida)){
+			mensaje = "No se puede hacer referencia a valores posteriores.";
+		}else if(ordenPartida > 1 && (ordenReferencia == ordenPartida)){
+			mensaje = "No se puede hacer referencia a valores de la misma partida.";
+		}else if(ordenReferencia <= 0){
+			mensaje = "No se puede hacer referencia a una partida que no existe.";
+		}
+		
+		if(!mensaje.isEmpty()){
+			throw new OperationNotPermitedException(mensaje);
+		}
+end
+
+rule "[PREDEFINIDOS] NO PUEDE HABER 2 PARTIDAS DE CUADRAR ASIENTO"
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(classPredefinido:CLASS, CLASSSUP==Constants.className_predefinido)
+	    Individual(idPredefinido:ID, CLASSNAME==classPredefinido)
+		ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_partidas, idPartida:VALOR!=null)
+		ObjValue(ID==idPartida, PROPNAME==Constants.prop_importe_partida, RANGENAME==Constants.className_cuadrar_asiento, idReferencia:VALOR!=null)
+		
+		//BUscamos otra partida en el asiento que sea de cuadrar asiento
+		numeroDePartidasCuadrarAsiento: Integer()
+		from accumulate(
+				(and
+					ObjValue(ID==idPredefinido, PROPNAME==Constants.prop_partidas, idPartida2:VALOR!=idPartida)
+					ObjValue(ID==idPartida2, PROPNAME==Constants.prop_importe_partida, RANGENAME==Constants.className_cuadrar_asiento, VALOR!=null)
+				),
+			init( Integer numero = new Integer(0); ),
+			action( numero++; ),
+			result( numero )
+		)
+		eval(numeroDePartidasCuadrarAsiento > 0)
+		
+	then
+		dma.printRule("[CONTABILIDAD]=================[PREDEFINIDOS] NO PUEDE HABER 2 PARTIDAS DE CUADRAR ASIENTO");
+		
+		String mensaje = "No puede haber 2 partidas para cuadrar el asiento.";
+		throw new OperationNotPermitedException(mensaje);
+end
+
+/* exportar a facturaplius */
+/*rule "[EXPORTACION] EXPORTAR CONTAPLUS"
+	agenda-group "rules"
+	when
+		
+	   	ObjValue(typetask:CLASSNAME=="Exportar_contaplus", idUTask:ID ,PROPNAME==Constants.prop_estado_realizacion,idEstado:VALOR!=null)
+	    DatValue(ID==idEstado,PROPNAME==Constants.PROP_RDN,VALOR==Constants.INDIVIDUAL_INFORMADO)
+		ObjValue(ID==idUTask, PROPNAME==Constants.prop_params,idparams:VALUE!=null)
+		DatValue(ID==idparams, PROPNAME==Constants.prop_fichero,fichero:VALOR!=null)
+		ObjValue(ID==idUTask, PROPNAME==Constants.prop_source_class, idAsiento:VALOR!=null)
+		//Hacemos que la empresa a la que está asociado el asiento sea la misma que se quiere exportar.
+		ObjValue(ID==idAsiento, PROPNAME==Constants.prop_mi_empresa, idMiEmpresa:VALOR!=null)
+	    DatValue(ID==idMiEmpresa, PROPNAME==Constants.prop_nombre, nombreMiEmpresa:VALOR!=null)
+	    		
+	then
+		dma.printRule("[CONTABILIDAD]=================[EXPORTACION] EXPORTAR CONTAPLUS");
+		File ficheroSalida = crearFicheroDestino(dma, fichero, " ["+nombreMiEmpresa+"]");
+		DateFormat formatter = new SimpleDateFormat("dd-MM-yyyy");
+		Integer idoAsiento = Integer.parseInt(idAsiento);
+		//idoAsiento representa un asiento y no un apunte
+		HashSet<String> rdnCCAsientos = insertarLineasApuntesMotor(dma, idoAsiento, formatter, ficheroSalida, idoAsiento);
+		
+		//Escribimos en el fichero de subcuentas y comentarios.
+		String ruta = ficheroSalida.getAbsolutePath();
+		crearFicheroSubCuentas(dma, rdnCCAsientos, ruta, "");
+		crearFicheroComentarios(dma, ruta, "");
+end*/
+

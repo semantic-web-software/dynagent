@@ -1,0 +1,24 @@
+package dynagent.ruleengine.src.parser.xmi.temp;
+
+import java.io.FileWriter;
+import java.io.IOException;
+import com.hp.hpl.jena.ontology.OntModel;
+import com.hp.hpl.jena.ontology.OntModelSpec;
+import com.hp.hpl.jena.rdf.model.ModelFactory;
+
+/***
+ * JenaTemplate.java
+ * @author Ildefonso Montero Pérez - monteroperez@us.es
+ */
+public class JenaTemplate extends dynagent.ruleengine.src.parser.xmi.Template {
+
+	public void run(){
+		
+		OntModel m = ModelFactory.createOntologyModel(OntModelSpec.OWL_LITE_MEM);
+
+		String prefijoMeta = "http://dynagent/meta#";
+		String prefijoRol = "http://dynagent/rol#";
+		String prefijoProcess = "http://dynagent/process#";
+		String prefijoProp = "http://dynagent/properties#";		
+		m.setNsPrefix("",prefijoMeta);
+		

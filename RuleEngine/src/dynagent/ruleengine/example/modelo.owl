@@ -1,0 +1,85 @@
+<?xml version="1.0"?>
+<rdf:RDF
+    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    xmlns="http://dynagent/meta#"
+    xmlns:p1="http://dynagent/rol#"
+    xmlns:owl="http://www.w3.org/2002/07/owl#"
+    xmlns:p2="http://dynagent/properties#"
+    xmlns:daml="http://www.daml.org/2001/03/daml+oil#"
+    xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+    xmlns:p3="http://dynagent/process#"
+  xml:base="http://dynagent/meta">
+  <owl:Ontology rdf:about=""/>
+  <owl:Class rdf:about="http://dynagent/rol#ProductoGenerado"/>
+  <owl:Class rdf:about="http://dynagent/rol#LugarEntrega">
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="http://dynagent/rol#Lugar"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:about="http://dynagent/rol#Proveedor">
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="http://dynagent/rol#Gestor"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:ID="Dependencia"/>
+  <owl:Class rdf:about="http://dynagent/process#GestionComercial"/>
+  <owl:Class rdf:ID="PersonaFisica">
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="Persona"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:about="http://dynagent/rol#ArticuloMedible">
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="http://dynagent/rol#Articulo"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:ID="Producto"/>
+  <owl:Class rdf:about="http://dynagent/rol#ArticuloManufacturable">
+    <rdfs:subClassOf rdf:resource="http://dynagent/rol#Articulo"/>
+  </owl:Class>
+  <owl:Class rdf:about="http://dynagent/rol#LugarRecepcion">
+    <rdfs:subClassOf rdf:resource="http://dynagent/rol#Lugar"/>
+  </owl:Class>
+  <owl:Class rdf:about="http://dynagent/rol#Cliente"/>
+  <rdf:Property rdf:about="http://dynagent/properties#playProveedor">
+    <rdfs:range rdf:resource="#PersonaFisica"/>
+    <rdfs:domain rdf:resource="http://dynagent/rol#Proveedor"/>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://dynagent/properties#playArticuloMedible">
+    <rdfs:domain rdf:resource="http://dynagent/rol#ArticuloMedible"/>
+    <rdfs:range rdf:resource="#Producto"/>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://dynagent/properties#playProductoGenerado">
+    <rdfs:range rdf:resource="#Producto"/>
+    <rdfs:domain rdf:resource="http://dynagent/rol#ProductoGenerado"/>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://dynagent/properties#playLugarEntrega">
+    <rdfs:domain rdf:resource="http://dynagent/rol#LugarEntrega"/>
+    <rdfs:range rdf:resource="#Dependencia"/>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://dynagent/properties#rolGestor">
+    <rdfs:range rdf:resource="http://dynagent/rol#Gestor"/>
+    <rdfs:range rdf:resource="http://dynagent/rol#Cliente"/>
+    <rdfs:range rdf:resource="http://dynagent/rol#Articulo"/>
+    <rdfs:range rdf:resource="http://dynagent/rol#Lugar"/>
+    <rdfs:range rdf:resource="http://dynagent/rol#ProductoGenerado"/>
+    <rdfs:domain rdf:resource="http://dynagent/process#GestionComercial"/>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://dynagent/properties#playCliente">
+    <rdfs:range rdf:resource="#PersonaFisica"/>
+    <rdfs:domain rdf:resource="http://dynagent/rol#Cliente"/>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://dynagent/properties#playLugarRecepcion">
+    <rdfs:range rdf:resource="#Dependencia"/>
+    <rdfs:domain rdf:resource="http://dynagent/rol#LugarRecepcion"/>
+  </rdf:Property>
+  <rdf:Property rdf:about="http://dynagent/properties#playArticuloManufacturable">
+    <rdfs:range rdf:resource="#Producto"/>
+    <rdfs:domain rdf:resource="http://dynagent/rol#ArticuloManufacturable"/>
+  </rdf:Property>
+  <p1:Cliente rdf:ID="IldefonsoRole">
+    <p2:playCliente>
+      <PersonaFisica rdf:ID="Ildefonso"/>
+    </p2:playCliente>
+  </p1:Cliente>
+</rdf:RDF>

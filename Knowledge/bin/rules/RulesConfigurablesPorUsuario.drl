@@ -1,0 +1,54 @@
+//created on: 01-dic-2008
+package dynagent.ruleengine.src.ruler.ERPrules
+
+import dynagent.ruleengine.src.ruler.ERPrules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import  dynagent.common.basicobjects.*;
+
+global DataModelAdapter dma;
+
+rule "ARTICULOS_TIENEN CATALOGO COMPRAS SI ESTA SELECCIONADA LA REGLA ARTICULOS_SON_DE_COMPRAS_Y_VENTAS"
+ agenda-group "rules" when 
+   	
+   	FactHierarchy(tipoproducto:CLASS,CLASSSUP=="ARTÍCULO")
+   	Lock(CLASSNAME==tipoproducto,idtoarticulo:IDTO,idoarticulo:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK,LEVEL==Constants.LEVEL_PROTOTYPE)
+   	not(FactHierarchy(CLASS==tipoproducto,CLASSSUP=="COMISIÓN"))
+   	DatValue(CLASSNAME=="CATÁLOGO", idcatalogo:ID,idoCatalogo:IDO!=null,idtoCat:IDTO,PROPNAME=="rdn",catalogo:VALOR=="Catálogo_Compras")
+   	not(ObjValue(IDO==idoarticulo, PROPNAME=="catálogo",VALOR==idcatalogo))
+	not(ObjValue(IDO==idoarticulo, PROPNAME=="catálogo",VALOR==null))   	
+   	ObjValue(CLASSNAME=="MI_EMPRESA"||=="APLICACIÓN",idMiEmp:ID!=null,PROPNAME=="regla_específica",regla:VALOR!=null)
+   	DatValue(ID==regla,PROPNAME=="rdn",VALOR=="ARTICULOS_SON_DE_COMPRAS_Y_VENTAS")
+   	not(exists(ObjValue(CLASSNAME=="Task_Artículos_catálogo_gastos",IDOVALUE==idoarticulo)))
+   	exists(IndividualValue(IDO==idoarticulo,PROPNAME=="descripción",VALOR!=null))
+then
+	dma.printRule("\n\n ==========Especif.Rule: ARTICULOS_TIENEN CATALOGO COMPRAS SI ESTA SELECCIONADA LA REGLA ARTICULOS_SON_DE_COMPRAS_Y_VENTAS");
+	dma.addValue(idoarticulo,idtoarticulo,"catálogo",new ObjectValue(idoCatalogo,idtoCat));
+end
+
+rule "ARTICULOS_TIENEN CATALOGO VENTAS SI ESTA SELECCIONADA LA REGLA ARTICULOS_SON_DE_COMPRAS_Y_VENTAS"
+ agenda-group "rules" when 
+   	
+   	FactHierarchy(tipoproducto:CLASS,CLASSSUP=="ARTÍCULO")
+   	Lock(CLASSNAME==tipoproducto,idoarticulo:IDO!=null,idtoarticulo:IDTO,STATE==Constants.INDIVIDUAL_STATE_LOCK,LEVEL==Constants.LEVEL_PROTOTYPE)
+   	not(FactHierarchy(CLASS==tipoproducto,CLASSSUP=="COMISIÓN"))
+   	DatValue(CLASSNAME=="CATÁLOGO", idcatalogo:ID,idoCatalogo:IDO!=null,idtoCat:IDTO,PROPNAME=="rdn",catalogo:VALOR=="Catálogo_Ventas")   	
+   	not(ObjValue(IDO==idoarticulo, PROPNAME=="catálogo",VALOR==idcatalogo))
+	not(ObjValue(IDO==idoarticulo, PROPNAME=="catálogo",VALOR==null))   	
+   	ObjValue(CLASSNAME=="MI_EMPRESA"||=="APLICACIÓN",idMiEmp:ID!=null,PROPNAME=="regla_específica",regla:VALOR!=null)
+   	DatValue(ID==regla,PROPNAME=="rdn",VALOR=="ARTICULOS_SON_DE_COMPRAS_Y_VENTAS")
+   	not(exists(ObjValue(CLASSNAME=="Task_Artículos_catálogo_gastos",IDOVALUE==idoarticulo)))
+   	exists(IndividualValue(IDO==idoarticulo,PROPNAME=="descripción",VALOR!=null))
+then
+	dma.printRule("\n\n ==========Especif.Rule: ARTICULOS_TIENEN CATALOGO VENTAS SI ESTA SELECCIONADA LA REGLA ARTICULOS_SON_DE_COMPRAS_Y_VENTAS");
+	dma.addValue(idoarticulo,idtoarticulo,"catálogo",new ObjectValue(idoCatalogo,idtoCat));
+end
+ 	

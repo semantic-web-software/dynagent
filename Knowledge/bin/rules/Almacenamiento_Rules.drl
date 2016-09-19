@@ -1,0 +1,2638 @@
+
+package dynagent.ruleengine.src.ruler.ERPrules
+import dynagent.ruleengine.src.ruler.ERPrules.datarules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import java.util.Vector;
+import dynagent.common.properties.values.*;
+import dynagent.common.basicobjects.*;
+import dynagent.common.utils.QueryConstants;
+
+global DataModelAdapter dma;
+
+/*rule "VERSION REGLAS"
+salience 100
+agenda-group "rules" when 
+	
+	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="TICKET_VENTA")
+	Lock(IDTO==idtoDoc,nameDoc:CLASSNAME,idoDoc:IDO!=null,st:STATE==Constants.INDIVIDUAL_STATE_LOCK)	
+	then
+	dma.printRule("====================== VERSION REGLAS");
+	dma.setValue(idoDoc,idtoDoc,"observaciones_internas",new StringValue("V1"));	
+end*/
+
+rule "ALBARANAR: INSTALACION"
+salience 200
+agenda-group "rules" when
+    
+    ObjValue(CLASSNAME=="Albaranar_Documentos_Venta"||=="Albaranar_Documentos_Compra"||=="Albaranar_Pedidos_Distribuidor"||=="Generar_traspaso_almacenes_a_partir_pedido", idoUTask:IDO,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoPedido:IDOVALUE,idtoPedido:VALUECLS)
+    
+    DatValue(IDO==idoPedido, PROPNAME=="fecha",fechaPedidoSc:QMIN!=null)
+	
+	//PEFORMANCE
+	//Integer(intValue<=100) from accumulate((and	FactHierarchy(CLASSSUP=="LÍNEA_ARTÍCULOS",idtoLinea:IDTO)
+	//												Lock(IDTO==idtoLinea,ido:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK)), count(ido))
+															
+    ObjValue(classPed:CLASSNAME,IDO==idoPedido,PROPNAME=="línea", idLinea:IDOVALUE!=null,linea:OBJECTVALUE)
+    ObjValue(IDO==idLinea,PROPNAME=="producto", idoProducto:IDOVALUE!=null,idtoProducto:VALUECLS)
+
+	not((and	FactHierarchy(CLASSSUP=="FLUJO_ARTÍCULOS",idtoRangoDoc:IDTO)	
+				ObjValue(IDO==idLinea,PROPNAME=="documento", VALUECLS==idtoRangoDoc,IDOVALUE!=idoPedido)
+				))
+			
+	idAlbaran:Domain() from accumulate( (and	ObjValue(IDO==idoUTask, PROPNAME=="targetClass",idAlbaranTmp:IDOVALUE,idtoAlbaran:VALUECLS)
+												forall(	ObjValue(IDO==idoPedido,propSujeto:PROPNAME=="cliente"||=="proveedor"||=="distribuidor", idSujeto:IDOVALUE!=null)
+														ObjValue(IDO==idAlbaranTmp, PROPNAME==propSujeto,IDOVALUE==idSujeto))
+												forall(	ObjValue(IDO==idoPedido,propDestPost:PROPNAME=="destino_posterior", idoDesPos:IDOVALUE!=null)
+														ObjValue(IDO==idAlbaranTmp, PROPNAME==propDestPost,IDOVALUE==idoDesPos))
+												forall(	ObjValue(IDO==idAlbaranTmp,propDestPost:PROPNAME=="destino_posterior", idoDesPos:IDOVALUE!=null)
+														ObjValue(IDO==idoPedido, PROPNAME==propDestPost,IDOVALUE==idoDesPos))														
+										), 
+											init( Domain resId= new Domain(0,0)),
+											action( resId= new Domain(idAlbaranTmp,idtoAlbaran);),
+											result(resId))	
+											
+	modeloDiasEntrega:ArrayList() from collect(Model(CLASSNAME=="GÉNERO",PROPNAME=="dias_entrega_proveedor",OP==Constants.OP_INTERSECTION))
+	diasEntregaOld:Double() from accumulate(DatValue(IDO==idoProducto,PROPNAME=="dias_entrega_proveedor",dias:QMIN!=null),sum(dias))
+then
+	dma.printRule("\n\n =========> RULE V2 ALBARANAR: INSTALACION linea "+idLinea+", documento "+idoPedido+", albaran "+idAlbaran.getIdo());
+	Domain domAlbaran=idAlbaran;
+	if(domAlbaran.getIdo()==0){
+		String albaranClass=null;		
+		String excluproperties="línea#fecha#emitido#almacén#cobro_anticipo#archivos#cargos#estado";		
+		
+		//primero miro si es de distribuidor por ser mas especifico que cliente a secas, si no siempre tira de cliente
+		//deberia ser configurable generar un albaran distribuidor si el cliente es distribuidor, pero tendria que soportarlo el valuce cls del modelo
+		///||dma.isSpecialized(sujeto.getValueCls(),dma.getIdClass("DISTRIBUIDOR")
+		if(classPed.equals("PEDIDO_DISTRIBUIDOR")){
+						albaranClass="ALBARÁN_DISTRIBUIDOR";
+		}else if(classPed.equals("PEDIDO_DE_CLIENTE")||classPed.equals("FACTURA_A_CLIENTE")||dma.isSpecialized(classPed,"FACTURA_A_CLIENTE")){
+						albaranClass="ALBARÁN_CLIENTE";
+		}
+		else if(classPed.equals("PEDIDO_A_PROVEEDOR")||classPed.equals("FACTURA_PROVEEDOR")||dma.isSpecialized(classPed,"FACTURA_PROVEEDOR")){
+						albaranClass="ALBARÁN_PROVEEDOR";
+		}else if(classPed.equals("PEDIDO_TRASPASO_ALMACENES")){
+						albaranClass="TRASPASO_ALMACENES";
+						excluproperties+="#delegación";
+		}		
+		else{	
+			System.err.println("////////////////////////WARNING!!: RULE ALBARANAR PEDIDOS CON TIPO PEDIDO  NO CONTEMPLADO: "+classPed);
+		}
+
+		
+		domAlbaran=dma.cloneIndividual(idoPedido,idtoPedido, dma.getIdClass(albaranClass), excluproperties);	
+		dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(domAlbaran));
+		
+		dma.consumirEventoCambio(domAlbaran.getIdo(),"cliente");
+		dma.consumirEventoCambio(domAlbaran.getIdo(),"proveedor");
+		dma.consumirEventoCambio(domAlbaran.getIdo(),"distribuidor");
+		dma.consumirEventoCambio(domAlbaran.getIdo(),"mi_empresa");
+	}
+	dma.addValue(domAlbaran, "línea", linea);
+	if(modeloDiasEntrega.size()>0){
+		long timeCurr = Calendar.getInstance().getTimeInMillis();
+		double diasEntrega=(timeCurr/Constants.TIMEMILLIS-fechaPedidoSc)/86400.0;
+		if(diasEntrega>0.0){
+			if(diasEntregaOld.doubleValue()>0.0) diasEntrega=(diasEntrega+diasEntregaOld)/2;			
+		 	dma.setValue(idoProducto,idtoProducto,"dias_entrega_proveedor",new DoubleValue(Auxiliar.redondea(diasEntrega,1)));
+		 }	
+	}
+	dma.consumirEventoCambio(domAlbaran.getIdo(),"línea",linea.getValue(),linea.getValueCls());
+end
+
+
+rule "ALBARANAR PEDIDOS: CARGOS"
+salience -150 //No debe dispararse hasta estar creadas todas las facturas y enganchadas las lineas
+//Si un mismo albaran se segrega en varias empresas/facturas, se distribuyen aleatoriamente sin duplicarse
+//No pongo -100 para que se dispare tras las reglas de evolucion propiedades dependientes
+agenda-group "rules" when
+    
+    ObjValue(CLASSNAME=="Albaranar_Documentos_Venta"||=="Albaranar_Documentos_Compra"||=="Albaranar_Pedidos_Distribuidor", idoUTask:IDO,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+	ObjValue(IDO==idoUTask,	PROPNAME=="sourceClass",idPedido:IDOVALUE)
+	ObjValue(IDO==idPedido,PROPNAME=="cliente"||PROPNAME=="proveedor"||=="distribuidor", idSujeto:IDOVALUE!=null)	
+	
+	ObjValue(IDO==idPedido,PROPNAME=="cargos",idCargo:IDOVALUE,cargo:OBJECTVALUE)													
+    ObjValue(IDO==idCargo,	PROPNAME=="tipo_cargo",idTipoCargo:IDOVALUE!=null)
+    ObjValue(IDO==idCargo,	PROPNAME=="iva",idIVACargo:IDOVALUE!=null)
+
+
+	importeCargosPedido:Double(doubleValue!=0) from accumulate( (and	ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idAlb:IDOVALUE)
+															ObjValue(IDO==idAlb, PROPNAME=="cliente"||=="proveedor",IDOVALUE==idSujeto)	
+															ObjValue(IDO==idAlb, PROPNAME=="cargos",idCargoAlb:IDOVALUE)											
+													    	ObjValue(IDO==idCargoAlb,PROPNAME=="tipo_cargo",IDOVALUE==idTipoCargo)
+													    	forall(	DatValue(IDO==idCargo,PROPNAME=="descripción",desc:VALOR!=null)
+													    			DatValue(IDO==idCargoAlb,PROPNAME=="descripción",VALOR==desc))													    	
+													    	ObjValue(IDO==idCargoAlb,PROPNAME=="iva",IDOVALUE==idIVACargo)
+															DatValue(IDO==idCargoAlb,PROPNAME=="importe",importeAlb:DOUBLEVALUE!=null)),
+																					 
+															sum(importeAlb))	
+				
+	ObjValue(IDO==idoUTask, PROPNAME=="targetClass",idAlbaran:IDOVALUE, albaran:OBJECTVALUE)
+	ObjValue(IDO==idAlbaran, PROPNAME=="cliente"||=="proveedor"||=="distribuidor",IDOVALUE==idSujeto)
+	
+	cargoAlbaran:Domain() from accumulate( (and	
+													ObjValue(IDO==idAlbaran, PROPNAME=="cargos",idCargoTmp:IDOVALUE)											
+											    	ObjValue(IDO==idCargoTmp,idtoCargoTmp:IDTO,PROPNAME=="tipo_cargo",IDOVALUE==idTipoCargo)
+											    	forall(	DatValue(IDO==idCargo,PROPNAME=="descripción",desc:VALOR!=null)
+															DatValue(IDO==idCargoTmp,PROPNAME=="descripción",VALOR==desc))											    	
+											    	ObjValue(IDO==idCargoTmp,PROPNAME=="iva",IDOVALUE==idIVACargo)), 
+													init( Domain resId= new Domain(0,0);),
+													action( resId= new Domain(idCargoTmp,idtoCargoTmp);),
+													result(resId))																																											
+											
+										
+then
+	dma.printRule("\n\n =============> ALBARANAR PEDIDOS: CARGOS importe pedidos "+importeCargosPedido+" cargoAlbaran:"+cargoAlbaran);
+	 
+	if(cargoAlbaran.getIdo()==0){
+		cargoAlbaran= dma.cloneIndividual(cargo.getValue(),
+											cargo.getValueCls(),
+											cargo.getValueCls(),
+											null);
+										
+		dma.addValue(albaran.getValue(),albaran.getValueCls(),"cargos",new ObjectValue(cargoAlbaran));
+		dma.consumirEventoCambio(albaran.getValue(),"cargos");
+		dma.consumirEventoCambio(cargoAlbaran.getIdo(),"tipo_cargo"); 
+	}
+	dma.setDataValue(cargoAlbaran,"importe",new Double(importeCargosPedido).toString());
+
+end
+
+rule "PRECARGA STOCK ESPECIFICA" 
+// ampliaciones en propiedades de identidad de stock o linea, requieren 
+//- ampliar clase identidad Stock, 
+//- La creacion de stock al final de la regla, donde hace los setvalue a la  nueva propiedad
+salience -100 
+no-loop true
+agenda-group "rules" when 
+	
+	FactHierarchy(classRoot:CLASS, clsSup:CLASSSUP=="FLUJO_ARTÍCULOS"||=="REGULARIZACIÓN"||=="PRODUCCIÓN_MATERIAL"||=="ALBARÁN_VENTA") 
+	//!NO SE PUEDE PONER LOCK PQ ENTONCES EDICIÓN DE LINEAS DE ALBARAN DESDE OTRO DOCUMENTO (EJEMPLO DESDE ACCION MODIFICAR_ALBARAN_FACTURA) NO MODIFICARIA STOCK!			
+	ObjValue(idoRoot:IDO,CLASSNAME==classRoot,propAlmacen:PROPNAME=="almacén"||=="origen"||=="destino"||=="centro_trabajo",idoCentro:IDOVALUE!=null,idtoCentroRoot:VALUECLS,ovAlmacen:OBJECTVALUE,LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL)	
+
+	forall( FactHierarchy(CLASSSUP=="PRODUCCIÓN",CLASS==classRoot)
+	 		ObjValue(IDO==idoRoot,PROPNAME=="estado",idoEstado:IDOVALUE!=null)
+	 		DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR=="Programado"||=="Realizado"))	
+	
+	Individual(idoAlmacen:IDO>0,idtoAlmacen:IDTO) //tambien en deleted debe precargar
+	exists(FactHierarchy(IDTO==idtoAlmacen, CLASSSUP=="ALMACÉN"))
+
+	forall(	FactHierarchy(IDTO==idtoCentroRoot, CLASSSUP=="CENTRO_TRABAJO") 
+			ObjValue(IDO==idoAlmacen,PROPNAME=="centro_trabajo",IDOVALUE==idoCentro))		
+			
+	forall(	FactHierarchy(IDTO==idtoCentroRoot, CLASSSUP=="ALMACÉN") 
+			Individual(IDO==idoAlmacen,IDO==idoCentro))
+			
+	DatValue(IDO==idoAlmacen,PROPNAME=="rdn", rdnAlmacen:VALOR!=null)
+	
+	asignaSalid:ArrayList() from collect(DatValue(CLASSNAME=="APLICACIÓN", PROPNAME=="asignar_stocks_salidas", BOOLEANVALOR==true))
+	asignaCons:ArrayList() from collect(DatValue(CLASSNAME=="APLICACIÓN", PROPNAME=="asignar_stocks_consumo", BOOLEANVALOR==true))
+	esDespiece:Double() from accumulate(DatValue(IDO==idoRoot, PROPNAME=="es_despiece", q:QMIN!=null) sum(q))
+		
+	mapaLineasConLote:HashSet()	
+	from accumulate(
+	 	(and 		 								
+			ObjValue(IDO==idoRoot,propLinea:PROPNAME=="línea"||=="consumo",idoLinea:IDOVALUE!=null,idtoLinea:VALUECLS)
+			//el cambio de linea comprende tambien la eliminacion de linea, que es vital
+	 		//eval( stateRoot==Constants.INDIVIDUAL_STATE_DELETED||chAlmRoot||linSt.equals(Constants.INDIVIDUAL_STATE_LOCK)||chLinea)
+	 		//eval(dma.printRule("PERFOR1 "+idoLinea))	 		
+			DatValue(IDO==idoLinea,PROPNAME=="clave_producto",key:VALOR!=null)			
+			ObjValue(IDO==idoLinea,PROPNAME=="lote",idoLote:IDOVALUE>0)					
+			DatValue(IDO==idoLote,PROPNAME=="rdn",rdnLote:VALOR!=null)
+			//eval(dma.printRule("PERFOR2 "+idoLinea))			
+			not(QueryValue(QUERYKEY=="STOCK.rdn",VALUE==(rdnAlmacen+"#"+rdnLote+"#"+key)))			 	
+		),								
+		init( HashSet mapa=new HashSet(); ),									
+	  	action(	  	
+	  			if(key.indexOf('&')<0){
+  					String keyAcum=rdnAlmacen+"#"+rdnLote+"#"+key;	  		  			
+					mapa.add(keyAcum);
+				}	  				  		  				
+	  	),
+	  	/* no funciona en drools 4 reverse(
+	  		mapa.remove(rdnAlmacen+"#"+rdnLote+"#"+key);
+	  	),*/
+	  	result(mapa))	
+	  	
+	mapaLineasSinLote:HashSet()	
+	from accumulate(
+	 	(and 		 								
+			ObjValue(IDO==idoRoot,propLinea:PROPNAME=="línea"||=="consumo",idoLinea:IDOVALUE!=null,idtoLinea:VALUECLS)
+			ObjValue(IDO==idoLinea,PROPNAME=="producto",idoProducto:IDOVALUE!=null)
+			not(DatValue(IDO==idoProducto,PROPNAME=="requiere_lote",BOOLEANVALOR==true))
+			DatValue(IDO==idoLinea,PROPNAME=="clave_producto",key:VALOR!=null)				
+			not(ObjValue(IDO==idoLinea,PROPNAME=="lote",IDOVALUE!=null))	
+			not(QueryValue(QUERYKEY=="STOCK.rdn",VALUE==(rdnAlmacen+"#"+key)))												 	
+		),	
+							
+		init( HashSet mapa=new HashSet(); ),									
+	  	action(	  	
+	  			if(key.indexOf('&')<0){
+	  				String keyAcum=rdnAlmacen+"#"+key;	  		  			
+					mapa.add(keyAcum);				
+				}	  				  		  				
+	  	),
+	  /*	reverse(
+	  		mapa.remove(key);
+	  	),*/
+	  	result(mapa))	  	
+	mapaLineasAsignacionLote:HashSet()	
+	from accumulate(
+	 	(and 		 								
+			ObjValue(IDO==idoRoot,propLinea:PROPNAME=="línea"||=="consumo",idoLinea:IDOVALUE!=null,idtoLinea:VALUECLS)
+			eval(	asignaCons.size()>0 && (	propLinea.equals("consumo")&& esDespiece.equals(0.0)||propLinea.equals("línea")&& (esDespiece.doubleValue()>0.0)) ||
+			
+					asignaSalid.size()>0 &&	(	propAlmacen.equals("origen")&&dma.isSpecialized(classRoot,"TRASPASO_ALMACENES") || dma.isSpecialized(classRoot,"ALBARÁN_VENTA")|| 
+												clsSup.equals("PRODUCCIÓN_MATERIAL")&& (esDespiece.equals(0.0) && propLinea.equals("línea") || 
+																						esDespiece.doubleValue()>0.0&&propLinea.equals("consumo"))
+											)  
+			)	
+			ObjValue(IDO==idoLinea,PROPNAME=="producto",idoProducto:IDOVALUE!=null)
+			DatValue(IDO==idoProducto,PROPNAME=="requiere_lote",BOOLEANVALOR==true)
+			DatValue(IDO==idoLinea,PROPNAME=="clave_producto",key:VALOR!=null)				
+			not(ObjValue(IDO==idoLinea,PROPNAME=="lote",IDOVALUE!=null))	
+			not(QueryValue(QUERYKEY=="STOCK.clave_producto",VALUE==key))															 	
+		),					
+			
+		init( HashSet mapa=new HashSet(); ),									
+	  	action(	  	
+	  			if(key.indexOf('&')<0){
+	  				String keyAcum=key;	  		  			
+					mapa.add(keyAcum);				
+				}	  				  		  				
+	  	),
+	  	result(mapa))	
+	  		  		  	
+	  	//TODO 	mapaLineasAsignacionAlmacen:ArrayList() origen o destino es centro de trabajo y no requiere lote
+	then
+		dma.printRule("\n\n ====================== PRECARGA STOCK ESPECIFICA conlote_:"+mapaLineasConLote.size()+" sin lote:"+mapaLineasSinLote.size()+" asign:"+mapaLineasAsignacionLote.size());
+		//dma.printRule("\n\n ====================== PRECARGA STOCK ESPECIFICA ");
+		HashSet mapaRdn= new HashSet();
+		mapaRdn.addAll(mapaLineasConLote);
+		mapaRdn.addAll(mapaLineasSinLote);		
+		
+		buscarStock(dma,mapaRdn,"rdn",ovAlmacen);
+						
+		dma.printRule("buscar por asignacion");
+		buscarStock(dma,mapaLineasAsignacionLote,"clave_producto",ovAlmacen);
+
+end
+
+rule "PRECARGA STOCK EN ELIMINACION O ANULACION GENERO OFF" 
+salience -100 
+agenda-group "rules" when 
+		mapaOFFproductos:HashSet()	from accumulate((and 	
+	 															FactHierarchy(idtoGen:IDTO, CLASSSUP=="GÉNERO") 								
+																DatValue(IDTO==idtoGen,PROPNAME=="rdn",hasCHANGED==true,idoGen:IDO>0,rdnProducto:VALOR!=null,rdnInit:INITIALVALOR!=null)	
+																Individual(IDO==idoGen,st:STATE!=Constants.INDIVIDUAL_STATE_DELETED)																
+															),								
+															init( HashSet mapa=new HashSet(); ),									
+	  														action(	mapa.add(new ObjectValue(idoGen,idtoGen));),
+	  														result(mapa))
+		mapaOFFcolor:HashSet()	from accumulate((and 	
+	 															FactHierarchy(idto:IDTO, CLASSSUP=="COLOR") 								
+																DatValue(IDTO==idto,PROPNAME=="rdn",hasCHANGED==true,ido:IDO>0,rdn:VALOR!=null,rdnInit:INITIALVALOR!=null)	
+																Individual(IDO==ido,st:STATE!=Constants.INDIVIDUAL_STATE_DELETED)																
+															),								
+															init( HashSet mapa=new HashSet(); ),									
+	  														action(	mapa.add(new ObjectValue(ido,idto));),
+	  														result(mapa))	  														
+	  then
+	  	dma.printRule("PRECARGA STOCK EN ELIMINACION O ANULACION GENERO OFF");
+	  	if(mapaOFFproductos.size()>0){
+			HashSet mapaAsignacion= new HashSet();
+			mapaAsignacion.addAll(mapaOFFproductos);
+			buscarStock(dma,mapaAsignacion,"producto",null);
+		}
+		if(mapaOFFcolor.size()>0){
+			HashSet mapaAsignacion= new HashSet();
+			mapaAsignacion.addAll(mapaOFFcolor);
+			buscarStock(dma,mapaAsignacion,"color",null);
+		}	  
+end
+
+rule "STOCK EN ANULACION GENERO OFF" 
+salience -100 
+agenda-group "rules" when 
+		FactHierarchy(idtoGen:IDTO, CLASSSUP=="GÉNERO")
+		DatValue(IDTO==idtoGen,PROPNAME=="rdn",hasCHANGED==true,idoGen:IDO>0,rdnProducto:VALOR!=null,rdnInit:INITIALVALOR!=null)			
+		eval(rdnProducto.startsWith("$OFF:"))
+		Lock(IDO==idoGen,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+		ObjValue(CLASSNAME=="STOCK",idoStock:IDO,idtoStock:IDTO,PROPNAME=="producto",IDOVALUE==idoGen)
+		DatValue(IDO==idoStock,PROPNAME=="rdn",rdnStock:VALOR!=null)
+		eval(!rdnStock.startsWith("$OFF:"))
+		DatValue(IDO==idoStock,PROPNAME=="clave_producto",keyStock:VALOR!=null)
+	  then
+	  	dma.printRule("STOCK EN ANULACION GENERO OFF");
+	  	dma.setValueNotLock(idoStock,idtoStock,"rdn",new StringValue("$OFF:"+rdnStock));
+	  	dma.setValueNotLock(idoStock,idtoStock,"clave_producto",new StringValue("$OFF:"+keyStock));  
+end
+
+rule "NO PERMITIR EDITAR RDN CLASES SINCRONIZAN STOCK"
+agenda-group "rules" when  
+	FactHierarchy(idto:IDTO,CLASSSUP=="ALMACÉN"||=="GÉNERO"||=="TALLA"||=="COLOR"||=="LOTE")
+	DatValue(IDTO==idto, idoTarget:IDO>0, PROPNAME=="rdn",rdn:VALOR!=null,hasCHANGED==true)
+	eval(!rdn.startsWith("$OFF:"))
+	exists((and Individual(CLASSNAME=="STOCK",idoStock:IDO>0,STATE==Constants.INDIVIDUAL_STATE_READY)	
+				ObjValue(IDO==idoStock,PROPNAME=="producto"||=="talla"||=="color",IDOVALUE==idoTarget)
+				DatValue(IDO==idoStock,PROPNAME=="rdn",rdnStock:VALOR!=null)
+				eval(!rdnStock.contains("$OFF:"))
+			)
+		   )
+				
+then
+	dma.printRule("==========NO PERMITIR EDITAR RDN CLASES SINCRONIZAN STOCK");
+	throw new OperationNotPermitedException("No puede modificarse la referencia "+rdn +" por existir algún stock vinculado a ella");
+end
+
+function void buscarStock(DataModelAdapter dma,HashSet map, String keyProp,ObjectValue ovAlmacen){
+		ArrayList mapaEnd=new ArrayList();
+		int idProp=dma.getIdProperty(keyProp);
+		Iterator valoresItr=map.iterator();
+		while(valoresItr.hasNext()){			
+			if(keyProp.equals("producto")||keyProp.equals("color")||keyProp.equals("talla")){			
+				mapaEnd.add((ObjectValue)valoresItr.next());
+			}else{
+				String s=(String)valoresItr.next();	
+				mapaEnd.add(new StringValue(s));
+				dma.logQueryValue("STOCK."+keyProp,s);	
+			}													
+		}				
+		if(mapaEnd.size()>0){										
+			HashMap<String, ArrayList<Value>> rdnsStockXpropStock=new HashMap<String, ArrayList<Value>>();
+			rdnsStockXpropStock.put(keyProp,mapaEnd);		
+			if(ovAlmacen!=null){
+				ArrayList<Value> almacenes=new ArrayList<Value> ();
+				almacenes.add(ovAlmacen);					
+				rdnsStockXpropStock.put("almacén_stock",almacenes);
+			}	
+			dma.printRule(">>>> rdnStockX.... -> "+rdnsStockXpropStock.toString());
+			instance  filerstock=dma.buildInstanceWith("STOCK",null,rdnsStockXpropStock,null,null);
+			HashSet<IDIndividual> idosStockEncontrados=dma.loadIndividualsWithSatisficedFilter(filerstock);
+
+			dma.printRule("\n...NUMERO DE STOCK ENCONTRADOS : "+idosStockEncontrados.size());
+		}	
+}
+
+rule "INSTALACION STOCK PARA MOVIMIENTOS Y PLANIFICACION" 
+salience -150 
+no-loop true
+agenda-group "rules" when 
+  	  		
+  	
+	//!NO SE PUEDE PONER LOCK PQ ENTONCES EDICIÓN DE LINEAS DE ALBARAN DESDE OTRO DOCUMENTO (EJEMPLO DESDE ACCION MODIFICAR_ALBARAN_FACTURA) NO MODIFICARIA STOCK!				
+	FactHierarchy(classRoot:CLASS, CLASSSUP=="SALIDA_ARTÍCULOS"||=="ENTRADA_ARTÍCULOS"||=="REGULARIZACIÓN"||=="PRODUCCIÓN")
+	//La instalacion puede atender a eliminaciones, por si el stock correspondiente habia sido eliminado, por eso correlamos por init y curren idovalue de linea
+	ObjValue(idoRoot:IDO,CLASSNAME==classRoot,PROPNAME=="línea"||=="consumo",idLinea:VALOR,idoLinea:IDOVALUE,idtoLinea:VALUECLS,LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL)
+	
+	//Hay una precarga especifica para planificar		
+	forall( FactHierarchy(CLASSSUP=="PRODUCCIÓN",CLASS==classRoot)
+	 		ObjValue(IDO==idoRoot,PROPNAME=="estado",idoEstado:IDOVALUE!=null)
+	 		DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR=="Programado"||=="Realizado"))			
+	
+	//eval( stateRoot==Constants.INDIVIDUAL_STATE_DELETED||chRootAlm||linSt.equals(Constants.INDIVIDUAL_STATE_LOCK)||chLinea)
+	 			 						
+	DatValue(IDO==idoLinea,PROPNAME=="cantidad",chQ:hasCHANGED)
+
+	forall(//esta condicion es porque interfaz grafico, cuando creas lote desde linea, crea y asocia lote a linea y hace un run, antes de hacer set de rdn lote, disparandose esta regla sin rdn lote
+		ObjValue(IDO==idoLinea,PROPNAME=="lote",idoLote:IDOVALUE!=null)
+		DatValue(IDO==idoLote,PROPNAME=="rdn",rdn:VALOR!=null)
+	)
+	
+	rdnLote:String() from accumulate((and ObjValue(IDO==idoLinea,PROPNAME=="lote",idoLote:IDOVALUE!=null)
+										  DatValue(IDO==idoLote,PROPNAME=="rdn",rdn:VALOR!=null)),
+										  init(String res="";),
+										  action(res=rdn;),
+										  result(res))
+					 							
+ 	ObjValue(IDO==idoLinea||==idoRoot,PROPNAME=="almacén_origen"||=="almacén_destino"||=="almacén"||=="origen"||=="destino"||=="centro_trabajo",idoAlmacen:IDOVALUE!=null,idtoAlmacen:VALUECLS)				 															 																 															 			
+	exists(FactHierarchy(CLASSSUP=="ALMACÉN",IDTO==idtoAlmacen))	
+	
+	DatValue(IDO==idoLinea,PROPNAME=="clave_producto", key:VALOR!=null,chKey:hasCHANGED)
+	
+	
+	//eval(chQ||chLinea||chKey||chAlm||stateRoot==Constants.INDIVIDUAL_STATE_DELETED||(lote.size()>0?((ObjValue)lote.get(0)).hasCHANGED():false))
+		
+	
+	forall(
+		IndividualCardinality(IDO==idoLinea,propLineaReq:PROPNAME=="lote"||=="talla"||=="color",QMIN>=1)
+		IndividualValue(IDO==idoLinea,PROPNAME==propLineaReq,VALOR!=null)
+	)
+		
+	ObjValue(IDO==idoLinea,PROPNAME=="producto",idoProducto:IDOVALUE!=null,idtoProducto:VALUECLS)
+									   																	
+	//Buscaremos a que clase pertenece el stock que apunta a la clase de productos asociada a esta linea
+	FactHierarchy(idtoDomainStock:IDTO, CLASSSUP=="STOCK")
+	not(FactHierarchy(IDTOSUP==idtoDomainStock,IDTO!=idtoDomainStock))//No hay una clase stock mas especializada
+	Model(IDTO==idtoDomainStock,PROPNAME=="producto",idtoProductoStock:VALUECLS,OP==Constants.OP_INTERSECTION)		
+	exists(FactHierarchy(IDTO==idtoProducto, IDTOSUP==idtoProductoStock))
+	DatValue(IDO==idoProducto,PROPNAME=="rdn", rdnProducto:VALOR!=null)
+								 					
+	ignorarDetalle:Long() from accumulate((and	DatValue(CLASSNAME=="PARAMETRO_VERDADERO",idoParam:IDO,PROPNAME=="rdn",igno:VALOR!=null)
+												eval(igno.startsWith("ignorar_detalle_stock") && !(igno.contains("#") && !rdnProducto.matches(igno.split("#")[1])))
+												DatValue(IDO==idoParam,PROPNAME=="activo",VALOR=="true")),count(idoParam))
+													
+																				 								
+	domStockNoDetallado:Domain() from accumulate((and eval(ignorarDetalle.longValue()>0)
+													ObjValue(IDTO==idtoDomainStock,idoStock:IDO,PROPNAME=="producto", IDOVALUE==idoProducto)
+													Individual(IDO==idoStock,STATE==Constants.INDIVIDUAL_STATE_READY)
+													ObjValue(IDO==idoStock,PROPNAME=="almacén_stock", IDOVALUE==idoAlmacen)
+													forall(	ObjValue(ido1:IDO==idoLinea||==idoStock,pd:PROPNAME=="lote", idoLote:IDOVALUE!=null)
+															ObjValue(IDO==idoLinea||==idoStock,IDO!=ido1,PROPNAME==pd, IDOVALUE==idoLote))												
+												//Lote y almacen casar por referencia, no por rdn (por ejemplo con rdn stock), por tanto si cambia rdn de lote o almacen (cuando son proto)
+												//debo actualizar el rdn del stock. No es necesariocon la clave pues tira de rdn y por tanto queda stock a nulo si era de clave anterior o se actualiza								  																													
+										),
+										init(Domain res=new Domain(0,0);),
+										action(res=new Domain(idoStock,idtoDomainStock);),
+										result(res))				
+															
+	domStockDetallado:Domain() from accumulate((and eval(ignorarDetalle.longValue()==0)												
+													ObjValue(IDTO==idtoDomainStock,idoStock:IDO,PROPNAME=="producto", IDOVALUE==idoProducto)
+													Individual(IDO==idoStock,STATE==Constants.INDIVIDUAL_STATE_READY)
+													//no es posible tirar de clave de stock aqui, puesto que al crear un nuevo producto desde un documento, antes de que de tiempo a 
+													//a poner su codigo, ya se crea un stock en base a rdn temporal, que no casa con stock en base a rdn de usuario, y queda como basura
+													// de mismo producto, pero ya la basura no se desinstala porque daba problemas de rollaback
+													ObjValue(IDO==idoStock,PROPNAME=="almacén_stock", IDOVALUE==idoAlmacen)
+													forall(	IndividualValue(ido1:IDO==idoLinea||==idoStock,pd:PROPNAME=="lote"||=="talla"||=="color"||=="medida1"||=="medida2", detalle:VALOR!=null)
+															IndividualValue(IDO==idoLinea||==idoStock,IDO!=ido1,PROPNAME==pd, VALOR==detalle))												
+												//Lote y almacen casar por referencia, no por rdn (por ejemplo con rdn stock), por tanto si cambia rdn de lote o almacen (cuando son proto, en cuyo caso el stock tb debe serlo)
+												//debo actualizar el rdn del stock. No es necesariocon la clave pues la clave tira de rdns y por tanto cambia tambien, quedando stock a nulo si era de clave anterior o se actualiza								  																													
+										),
+										init(Domain res=new Domain(0,0);),
+										action(res=new Domain(idoStock,idtoDomainStock);),
+										result(res))
+																									
+	ids:ArrayList()	from collect(IndividualValue(IDO==idoLinea,PROPNAME=="lote"||=="medida1"||=="medida2"||=="talla"||=="color",VALOR!=null))			
+					
+	modeloClave:ArrayList() from collect(Model(PROPNAME=="clave_producto"))		
+	
+	DatValue(IDO==idoAlmacen,PROPNAME=="rdn",rdnAlmacen:VALOR!=null)		
+	
+	eval(!rdnProducto.startsWith("$OFF:"))
+	 												 				
+	then
+		dma.printRule("\n ====================== INSTALACION STOCK PARA MOVIMIENTOS Y PLANIFICACION "+rdnLote.length()+" "+rdnLote);	
+
+		Domain domStock=domStockDetallado;
+		if(domStockNoDetallado.getIdo()!=0) domStock=domStockNoDetallado;
+		
+		boolean crearStock=domStock.getIdo().intValue()==0;
+		StringValue rdnStock=new StringValue(rdnAlmacen+(rdnLote.length()>0?"#"+rdnLote:"")+"#"+key);
+		
+		if(crearStock){
+			dma.printRule(" CREANDO STOCK ");		
+			domStock=dma.creaIndividualOfClass(idtoDomainStock);							
+			for(int i=0;i<ids.size();i++){
+				IndividualValue propAdic=(IndividualValue)ids.get(i);
+				dma.setValue(domStock,propAdic.getPROPNAME(),propAdic.getCVALUE());	
+				dma.printRule("IDENTIDAD STOCK "+	propAdic.getPROPNAME()+" "+	propAdic.getCVALUE());	
+			}
+			dma.setValue(domStock,"cantidad",		new DoubleValue(0.0,0.0));
+			dma.setValue(domStock,"producto",		new ObjectValue(idoProducto,idtoProducto));		
+			dma.setValue(domStock,"almacén_stock",	new ObjectValue(idoAlmacen,idtoAlmacen));				
+		}else{	
+			String oldRdn=dma.getStringValue(domStock,"rdn");
+			dma.printRule(" ..... ya existia stock con RDN  "+oldRdn +" ido "+domStock.getIdo());
+					//actualizo aunque no lo cree por si ha cambiado un rdn de detalle acumularo por referencia (lote, almacen,color,talla, ver nota arriba en acumulate)
+			if(domStock.getIdo()<0 && !Auxiliar.equals(oldRdn,rdnStock)){
+				dma.setValue(domStock,"rdn",rdnStock);
+				dma.printRule("\n ..... RDN asignado a stock:"+rdnStock);
+			}		
+		}
+
+		
+		if(modeloClave.size()>0){
+			StringValue claveLinea=(StringValue)dma.getValue(idoLinea,idtoLinea,"clave_producto");
+			if(claveLinea!=null){
+				dma.setValue(domStock,"clave_producto",claveLinea);
+				dma.printRule(" CLAVE STOCK "+domStock.getIdo()+" "+claveLinea);	
+			}
+		}									
+		//asignamos almacen al stock al final, para que solo acumule en actualiza stock cuando tenga el máximo detalle, de lo contrario 
+		//falla el reverse													
+end
+
+function String rdnFromIdo(int ido){
+	return ido>0 ? ""+ido:"&id"+ido+"&";
+}
+
+
+rule "ACTUALIZACIÓN STOCK POR MOVIMIENTO DE MERCANCIA CON LOTE" 
+salience 150
+ agenda-group "rules" when 
+  	
+  	//Como utilizaremos patron de contibucion, no puedo atender a Individual que lleva implicito bloqueos,
+  	// que con dicho partron evitamos, sino caería en bucle
+  	FactHierarchy(CLASSSUP=="STOCK",idtostock:IDTO)
+	ObjValue(idStock:ID,idoStock:IDO,IDTO==idtostock,PROPNAME=="producto",idProducto:VALOR!=null)
+	ObjValue(ID==idStock,PROPNAME=="lote",idoLote:IDOVALUE!=null,idLote:VALOR!=null)
+			
+	DatValue(ID==idStock,PROPNAME=="clave_producto",keyStock:VALOR!=null)
+	DatValue(ID==idProducto,PROPNAME=="rdn",rdnProducto:VALOR!=null)	
+	eval(!rdnProducto.startsWith("$OFF:"))
+
+	ObjValue(ID==idStock,PROPNAME=="almacén_stock",idAlmacen:VALOR!=null)
+	DatValue(ID==idAlmacen,PROPNAME=="rdn",rdnAlmacen:VALOR!=null)
+	
+	Individual(ID==idStock,STATE==Constants.INDIVIDUAL_STATE_READY)
+	//TODO: hacer las contribuciones por regular y consumo gnéricas suponiendo puedan ser editadas a posteriori (contribuyendo por valores iniciales también)
+	//No compensa las cantidades iniciales porque no se puede editar la regularización
+	//CAMBIADO ALFONSO2: añado foto INIT a regulariza
+	
+	modeloConFechaModif:ArrayList() from collect(Model(OP==Constants.OP_INTERSECTION,IDTO==idtostock,PROPNAME=="fecha_modificación",PROP!=null))	
+																		
+	contributionRegularizacionInit:Double() 
+	    from accumulate((and	
+						    DatValue(idLineaReg:ID!=null,PROPNAME=="clave_producto", INITIALVALOR==keyStock)   	    					
+						    ObjValue(CLASSNAME=="REGULARIZACIÓN", idReg:ID,PROPNAME=="almacén", INITIALVALOR==idAlmacen)
+							ObjValue(ID==idReg,PROPNAME=="línea", INITIALVALOR==idLineaReg)
+							ObjValue(ID==idLineaReg,PROPNAME=="lote",INITIALVALOR==idLote)//cuando referencia algo de lo que actualizo (el stock) me refiero a valores actuales													    									
+							DatValue(ID==idLineaReg,PROPNAME=="cantidad_antes_regularizar",cantidadRegPre:INITIALDOUBLE!=null)
+							DatValue(ID==idLineaReg,PROPNAME=="cantidad",cantidadRegPost:INITIALDOUBLE!=null)
+							ObjValue(ID==idLineaReg,PROPNAME=="producto",INITIALVALOR==idProducto)																																																	
+						),											
+						sum(cantidadRegPost-cantidadRegPre))					
+
+	contributionRegularizacionCurr:Double() 
+	    from accumulate((and	
+							    DatValue(idLineaReg:ID,PROPNAME=="clave_producto", VALOR==keyStock)
+							    Individual(CLASSNAME=="REGULARIZACIÓN",idReg:ID,STATE==Constants.INDIVIDUAL_STATE_READY)//Si se elimina no contribuye			
+								ObjValue(ID==idReg,PROPNAME=="línea", VALOR==idLineaReg)
+	  							ObjValue(ID==idLineaReg,PROPNAME=="lote",IDOVALUE==idoLote)
+	  							ObjValue(ID==idReg,PROPNAME=="almacén", VALOR==idAlmacen)   	    																				
+								DatValue(ID==idLineaReg,PROPNAME=="cantidad_antes_regularizar",cantidadRegPre:DOUBLEVALUE!=null)
+								DatValue(ID==idLineaReg,PROPNAME=="cantidad",cantidadRegPost:DOUBLEVALUE!=null)	
+								ObjValue(ID==idLineaReg,PROPNAME=="producto",VALOR==idProducto)								
+								),
+						//cambiar contvalue memorizando idos y con getCurrValue=suma..                                  
+                      						
+                      	sum(  cantidadRegPost-cantidadRegPre))	     		  
+	//origen es donde descuenta. Si es despiece es la linea la que descuenta y en origen                                                                 
+	contributionProdINIT: Double() //No contemplo la contrib inicial, no se almacenar trabajos sin confirmar
+    	from accumulate((and	
+						    	DatValue(idoLinea:IDO,idtoLinea:IDTO,idLineaFeed:ID!=idStock,PROPNAME=="clave_producto", INITIALVALOR==keyStock)						    							    	
+						    	FactHierarchy(idtoProdMaterial:IDTO,clase:CLASS,CLASSSUP=="PRODUCCIÓN")
+						    	ObjValue(IDTO==idtoProdMaterial,idTask:ID!=null,propLinea:PROPNAME=="consumo"||=="línea",INITIALVALOR==idLineaFeed) 	
+						    	ObjValue(ID==idLineaFeed,PROPNAME=="lote",INITIALVALOR==idLote)
+								ObjValue(ID==idTask,PROPNAME=="estado",idEstado:INITIALVALOR!=null)
+	 							DatValue(ID==idEstado,PROPNAME=="rdn",VALOR=="Programado"||=="Realizado")
+						    	
+					    		ObjValue(propAlmacen:PROPNAME=="almacén_origen"||=="almacén_destino"||=="origen"||=="destino",ID==idLineaFeed||==idTask,INITIALVALOR==idAlmacen, idtoAlmacen:INITIALVALUECLS) 
+								exists(FactHierarchy(CLASSSUP=="ALMACÉN",IDTO==idtoAlmacen))													    																							
+								
+								DatValue(ID==idTask,PROPNAME=="es_despiece",esDesp:INITIALVALOR!=null)
+								DatValue(ID==idLineaFeed,PROPNAME=="cantidad",cantidadFeed:INITIALDOUBLE!=null)
+								ObjValue(ID==idLineaFeed,PROPNAME=="producto",INITIALVALOR==idProducto)
+							),											                                		
+						
+                      	sum(((propAlmacen.contains( "origen" )==propLinea.equals(esDesp.equals("true") ? "línea":"consumo")) ? 1:0)*(propAlmacen.contains( "origen" ) ? -1:1)*cantidadFeed))	   		  
+                      	                               
+	
+	contributionProdCURR: Double() //No contemplo la contrib inicial, no se almacenar trabajos sin confirmar
+    	from accumulate((and	    			 			 		
+								DatValue(idLineaFeed:ID!=idStock,PROPNAME=="clave_producto", VALOR==keyStock)					    																					
+								FactHierarchy(clase:CLASS,idtoDoc:IDTO,CLASSSUP=="PRODUCCIÓN")		
+								Individual(IDTO==idtoDoc,idTask:ID,STATE==Constants.INDIVIDUAL_STATE_READY)
+								ObjValue(ID==idTask,propLinea:PROPNAME=="consumo"||=="línea",VALOR==idLineaFeed) 					
+								ObjValue(ID==idLineaFeed,PROPNAME=="lote",IDOVALUE==idoLote)														
+								ObjValue(ID==idTask,PROPNAME=="estado",idoEstado:IDOVALUE!=null)
+	 							DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR=="Programado"||=="Realizado")
+	 																
+								ObjValue(ID==idLineaFeed||==idTask, idtoAlmacen:VALUECLS,propAlmacen:PROPNAME=="almacén_origen"||=="almacén_destino"||=="origen"||=="destino",VALOR==idAlmacen)							
+								exists(FactHierarchy(CLASSSUP=="ALMACÉN",IDTO==idtoAlmacen))																								
+								DatValue(ID==idLineaFeed,PROPNAME=="cantidad",cantidadFeed:DOUBLEVALUE!=null)		
+																
+								DatValue(ID==idTask,PROPNAME=="es_despiece",esDesp:BOOLEANVALOR!=null)		
+								ObjValue(ID==idLineaFeed,PROPNAME=="producto",VALOR==idProducto)						
+						),
+						//origen es donde descuenta. Si es despiece es la linea la que descuenta y en origen																	     		  																		
+                      	sum(((propAlmacen.contains( "origen" )==propLinea.equals(esDesp ? "línea":"consumo")) ? 1:0)*(propAlmacen.contains( "origen" ) ? -1:1)*cantidadFeed))	     		                        	 							                                                        	
+	
+   contributionConsumoINIT: Double() //No contemplo la contrib inicial, no se almacenar trabajos sin confirmar
+    	from accumulate((and	
+    							FactHierarchy(CLASSSUP=="LÍNEA",idtoLinea:IDTO)
+						    	DatValue(IDTO==idtoLinea,idoLinea:IDO,idLineaFeed:ID,PROPNAME=="clave_producto", INITIALVALOR==keyStock)	
+						    	ObjValue(ID==idLineaFeed,PROPNAME=="lote",INITIALVALOR==idLote)					    							    	
+						    	FactHierarchy(CLASSSUP=="FLUJO_ARTÍCULOS",idtoProdMaterial:IDTO)
+						    	not(Model(IDTO==idtoProdMaterial,PROPNAME=="recibido",OP==Constants.OP_INTERSECTION))
+						    	
+						    	ObjValue(IDTO==idtoProdMaterial,idTask:ID!=null,propLinea:PROPNAME=="consumo"||=="línea",INITIALVALOR==idLineaFeed) 							    							    							    	
+					    		ObjValue(propAlmacen:PROPNAME=="almacén_origen"||=="almacén_destino"||=="origen"||=="destino",INITIALVALOR==idAlmacen,ID==idLineaFeed||==idTask, idtoAlmacen:INITIALVALUECLS)					    							    		
+					    									    					
+								exists(FactHierarchy(CLASSSUP=="ALMACÉN",IDTO==idtoAlmacen))																													    	
+								DatValue(ID==idLineaFeed,PROPNAME=="cantidad",cantidadFeed:INITIALDOUBLE!=null)								
+								ObjValue(ID==idLineaFeed,PROPNAME=="producto",INITIALVALOR==idProducto)
+								),											                                	
+  					  sum( (propAlmacen.contains( "origen" ) ? -1:1)*cantidadFeed))            
+
+	contributionConsumoCURR: Double() //No contemplo la contrib inicial, no se almacenar trabajos sin confirmar
+    	from accumulate((and	
+    							FactHierarchy(CLASSSUP=="LÍNEA",idtoLinea:IDTO)
+						    	DatValue(IDTO==idtoLinea,idoLinea:IDO,idLineaFeed:ID,PROPNAME=="clave_producto", VALOR==keyStock)
+								ObjValue(ID==idLineaFeed,PROPNAME=="lote",IDOVALUE==idoLote)						    	
+								FactHierarchy(CLASSSUP=="FLUJO_ARTÍCULOS",idtoDoc:IDTO)					    
+								not(Model(IDTO==idtoDoc,PROPNAME=="recibido",OP==Constants.OP_INTERSECTION))
+								
+								Individual(IDTO==idtoDoc,idTask:ID,STATE==Constants.INDIVIDUAL_STATE_READY)																					
+								ObjValue(ID==idTask,propLinea:PROPNAME=="consumo"||=="línea",VALOR==idLineaFeed) 																						
+								ObjValue(propAlmacen:PROPNAME=="almacén_origen"||=="almacén_destino"||=="origen"||=="destino",VALOR==idAlmacen,ID==idLineaFeed||==idTask, idtoAlmacen:VALUECLS)													    						    		
+					    						    												
+								exists(FactHierarchy(CLASSSUP=="ALMACÉN",IDTO==idtoAlmacen))																																															
+								DatValue(ID==idLineaFeed,PROPNAME=="cantidad",cantidadFeed:DOUBLEVALUE!=null)
+								ObjValue(ID==idLineaFeed,PROPNAME=="producto",VALOR==idProducto)
+								),											    		 
+                      sum( (propAlmacen.contains( "origen" ) ? -1:1)*cantidadFeed))          
+	contributionTraspasoINIT: Double() //No contemplo la contrib inicial, no se almacenar trabajos sin confirmar
+    	from accumulate((and	
+    							FactHierarchy(CLASSSUP=="LÍNEA",idtoLinea:IDTO)
+						    	DatValue(IDTO==idtoLinea,idoLinea:IDO,idLineaFeed:ID,PROPNAME=="clave_producto", INITIALVALOR==keyStock)		
+						    	ObjValue(ID==idLineaFeed,PROPNAME=="lote",INITIALVALOR==idLote)				    							    	
+						    	FactHierarchy(CLASSSUP=="FLUJO_ARTÍCULOS",idtoProdMaterial:IDTO)
+						    	ObjValue(IDTO==idtoProdMaterial,idTask:ID!=null,propLinea:PROPNAME=="consumo"||=="línea",INITIALVALOR==idLineaFeed) 							    						
+						    	DatValue(ID==idTask,PROPNAME=="recibido",recInit:INITIALVALOR!=null)
+					    		ObjValue(propAlmacen:PROPNAME=="almacén_origen"||=="almacén_destino"||=="origen"||=="destino",INITIALVALOR==idAlmacen,ID==idLineaFeed||==idTask, idtoAlmacen:INITIALVALUECLS)					    						
+					    		DatValue(ID==idTask,PROPNAME=="stock_requiere_recepcion_en_destino",reqRDInit:INITIALVALOR!=null)					    							    		
+					    		eval(!( propAlmacen.contains("destino")&& reqRDInit.equals("true") && recInit.equals("false") ))
+					    				    					
+								exists(FactHierarchy(CLASSSUP=="ALMACÉN",IDTO==idtoAlmacen))																													    	
+								DatValue(ID==idLineaFeed,PROPNAME=="cantidad",cantidadFeed:INITIALDOUBLE!=null)								
+								ObjValue(ID==idLineaFeed,PROPNAME=="producto",INITIALVALOR==idProducto)
+								),											                                	
+  					  sum( (propAlmacen.contains( "origen" ) ? -1:1)*cantidadFeed))            
+
+	contributionTraspasoCURR: Double() //No contemplo la contrib inicial, no se almacenar trabajos sin confirmar
+    	from accumulate((and	
+    							FactHierarchy(CLASSSUP=="LÍNEA",idtoLinea:IDTO)
+						    	DatValue(IDTO==idtoLinea,idoLinea:IDO,idLineaFeed:ID,PROPNAME=="clave_producto", VALOR==keyStock)
+						    	ObjValue(ID==idLineaFeed,PROPNAME=="lote",IDOVALUE==idoLote)
+								FactHierarchy(CLASSSUP=="FLUJO_ARTÍCULOS",idtoDoc:IDTO)					    
+								Individual(IDTO==idtoDoc,idTask:ID,STATE==Constants.INDIVIDUAL_STATE_READY)																					
+								DatValue(ID==idTask,PROPNAME=="recibido",rec:BOOLEANVALOR!=null)	
+								ObjValue(ID==idTask,propLinea:PROPNAME=="consumo"||=="línea",VALOR==idLineaFeed) 																						
+								ObjValue(propAlmacen:PROPNAME=="almacén_origen"||=="almacén_destino"||=="origen"||=="destino",VALOR==idAlmacen,ID==idLineaFeed||==idTask, idtoAlmacen:VALUECLS)													    						    		
+								DatValue(ID==idTask,PROPNAME=="stock_requiere_recepcion_en_destino",reqRD:BOOLEANVALOR!=null)														    						    		
+					    		eval(!( propAlmacen.contains("destino")&& reqRD && !rec.booleanValue() ))						    												
+								exists(FactHierarchy(CLASSSUP=="ALMACÉN",IDTO==idtoAlmacen))																																															
+								DatValue(ID==idLineaFeed,PROPNAME=="cantidad",cantidadFeed:DOUBLEVALUE!=null)
+								ObjValue(ID==idLineaFeed,PROPNAME=="producto",VALOR==idProducto)
+								),											    		 
+                      sum( (propAlmacen.contains( "origen" ) ? -1:1)*cantidadFeed))        
+    fusionado:Double() from accumulate((and Individual(CLASSNAME=="STOCK",idoStock2:IDO>0,STATE==Constants.INDIVIDUAL_STATE_DELETED)	
+											ObjValue(IDO==idoStock2,PROPNAME=="lote",INITIALVALOR==idLote)	//debe ser todo initial por si estaba corrupto no sume al haberse arreglado
+											DatValue(IDO==idoStock2,PROPNAME=="clave_producto", INITIALVALOR==keyStock)
+											ObjValue(IDO==idoStock2,PROPNAME=="almacén_stock",INITIALVALOR==idAlmacen)
+											DatValue(IDO==idoStock2,PROPNAME=="cantidad", q:INITIALDOUBLE!=null)
+											), sum(q))														
+	
+    corrupto:Double() from accumulate((and 	exists(IndividualValue(IDO==idoStock,IDO>0,PROPNAME=="producto"||=="almacén_stock"||=="talla"||=="color"||=="lote"||=="medida1"||=="medida2",initialValuesChanged==true))																									
+											DatValue(IDO==idoStock,PROPNAME=="cantidad", q:INITIALDOUBLE!=null)
+											), init(Double res =0.0;),action(res+=q;),result(res))
+														
+	DatValue(IDO==idoLote,PROPNAME=="rdn",rdnLote:VALOR!=null)                                                                                  	                                            
+then
+	dma.printRule("\n\n =====ACTUALIZACIÓN STOCK POR MOVIMIENTO DE MERCANCIA CON LOTE:   rdnAlmacen="+rdnAlmacen+" rdnProducto:"+rdnProducto+" lote:"+rdnLote+" idstock="+idStock +" fusion:"+fusionado+ " corrup:"+ corrupto);		 
+	Double incr= fusionado-corrupto+contributionRegularizacionCurr+contributionConsumoCURR+contributionProdCURR+contributionTraspasoCURR-(contributionRegularizacionInit+contributionConsumoINIT+contributionProdINIT+contributionTraspasoINIT);			
+	
+	//incr=Auxiliar.redondea(incr,8); 	
+	 	System.err.println("\n .. se va añadir contribucion final="+ contributionConsumoCURR+" "+contributionConsumoINIT+" "+incr);	 
+	 	dma.setIncrementalValue(idoStock,idtostock,dma.getIdProperty("cantidad"),incr,null);	 	
+	 	if(modeloConFechaModif.size()>0 && incr.doubleValue()!=0.0){
+	 		dma.setValueNotLock(idoStock,idtostock,"fecha_modificación",new TimeValue(Calendar.getInstance().getTime()));
+	 	}
+end
+
+rule "ACTUALIZACIÓN STOCK POR MOVIMIENTO DE MERCANCIA  SIN LOTE" 
+//No puedo usar una unica regla con "NOT lote distinto" porque los acumulate con funcion reverse o funcion agregado (suma, etc que se implementa con reverse) no funcionan bien
+// con not, o forall
+salience 150
+no-loop true
+agenda-group "rules" when 
+  	
+  	//Como utilizaremos patron de contibucion, no puedo atender a Individual que lleva implicito bloqueos,
+  	// que con dicho partron evitamos, sino caería en bucle
+  	FactHierarchy(CLASSSUP=="STOCK",idtostock:IDTO)
+	ObjValue(idStock:ID,idoStock:IDO,IDTO==idtostock,PROPNAME=="producto",idProducto:VALOR!=null)
+	
+	not(ObjValue(ID==idStock,PROPNAME=="lote"))		
+	DatValue(ID==idStock,PROPNAME=="clave_producto",keyStock:VALOR!=null)
+	DatValue(ID==idProducto,PROPNAME=="rdn",rdnProducto:VALOR!=null)	
+	eval(!rdnProducto.startsWith("$OFF:"))
+
+	ObjValue(ID==idStock,PROPNAME=="almacén_stock",idAlmacen:VALOR!=null)
+	DatValue(ID==idAlmacen,PROPNAME=="rdn",rdnAlmacen:VALOR!=null)
+
+	Individual(ID==idStock,STATE==Constants.INDIVIDUAL_STATE_READY)
+	//TODO: hacer las contribuciones por regular y consumo gnéricas suponiendo puedan ser editadas a posteriori (contribuyendo por valores iniciales también)
+	//No compensa las cantidades iniciales porque no se puede editar la regularización
+	//CAMBIADO ALFONSO2: añado foto INIT a regulariza
+
+	modeloConFechaModif:ArrayList() from collect(Model(OP==Constants.OP_INTERSECTION,IDTO==idtostock,PROPNAME=="fecha_modificación",PROP!=null))	
+													
+	
+	contributionRegularizacionInit:Double() 
+	    from accumulate((and	
+	    					FactHierarchy(CLASSSUP=="LÍNEA_REGULARIZACIÓN",idtoLin:IDTO)
+						    DatValue(IDTO==idtoLin,idLineaReg:ID!=null,PROPNAME=="clave_producto", INITIALVALOR==keyStock)   	    					
+						    ObjValue(CLASSNAME=="REGULARIZACIÓN", idReg:ID,PROPNAME=="almacén", INITIALVALOR==idAlmacen)
+							ObjValue(ID==idReg,PROPNAME=="línea", INITIALVALOR==idLineaReg)																			    									
+							DatValue(ID==idLineaReg,PROPNAME=="cantidad_antes_regularizar",cantidadRegPre:INITIALDOUBLE!=null)
+							DatValue(ID==idLineaReg,PROPNAME=="cantidad",cantidadRegPost:INITIALDOUBLE!=null)
+							ObjValue(ID==idLineaReg,PROPNAME=="producto",INITIALVALOR==idProducto)																																																	
+						),											
+						sum(cantidadRegPost-cantidadRegPre))					
+
+	contributionRegularizacionCurr:Double() 
+	    from accumulate((and	
+	    						FactHierarchy(CLASSSUP=="LÍNEA_REGULARIZACIÓN",idtoLin:IDTO)
+						    	DatValue(IDTO==idtoLin,idLineaReg:ID,PROPNAME=="clave_producto", VALOR==keyStock)
+						    	Individual(CLASSNAME=="REGULARIZACIÓN",idReg:ID,STATE==Constants.INDIVIDUAL_STATE_READY)//Si se elimina no contribuye	
+								ObjValue(ID==idReg,PROPNAME=="línea", VALOR==idLineaReg)	  							
+	  							ObjValue(ID==idReg,PROPNAME=="almacén", VALOR==idAlmacen)   	    																					
+								DatValue(ID==idLineaReg,PROPNAME=="cantidad_antes_regularizar",cantidadRegPre:DOUBLEVALUE!=null)
+								DatValue(ID==idLineaReg,PROPNAME=="cantidad",cantidadRegPost:DOUBLEVALUE!=null)		
+								ObjValue(ID==idLineaReg,PROPNAME=="producto",VALOR==idProducto)							
+								),
+						//cambiar contvalue memorizando idos y con getCurrValue=suma..                                  
+                      						
+                      	sum(  cantidadRegPost-cantidadRegPre))	     		  
+                                                                     
+	contributionProdINIT: Double() //No contemplo la contrib inicial, no se almacenar trabajos sin confirmar
+    	from accumulate((and	
+    							FactHierarchy(CLASSSUP=="LÍNEA",idtoLinea:IDTO)
+						    	DatValue(IDTO==idtoLinea,idoLinea:IDO,idLineaFeed:ID,PROPNAME=="clave_producto", INITIALVALOR==keyStock)						    							    	
+						    	FactHierarchy(idtoProdMaterial:IDTO,clase:CLASS,CLASSSUP=="PRODUCCIÓN")
+						    	ObjValue(IDTO==idtoProdMaterial,idTask:ID!=null,propLinea:PROPNAME=="consumo"||=="línea",INITIALVALOR==idLineaFeed) 							    	
+								ObjValue(ID==idTask,PROPNAME=="estado",idEstado:INITIALVALOR!=null)
+	 							DatValue(ID==idEstado,PROPNAME=="rdn",VALOR=="Programado"||=="Realizado")
+						    	
+					    		ObjValue(propAlmacen:PROPNAME=="almacén_origen"||=="almacén_destino"||=="origen"||=="destino",ID==idLineaFeed||==idTask,INITIALVALOR==idAlmacen, idtoAlmacen:INITIALVALUECLS) 
+								exists(FactHierarchy(CLASSSUP=="ALMACÉN",IDTO==idtoAlmacen))													    																							
+								
+								DatValue(ID==idTask,PROPNAME=="es_despiece",esDesp:INITIALVALOR!=null)
+								DatValue(ID==idLineaFeed,PROPNAME=="cantidad",cantidadFeed:INITIALDOUBLE!=null)
+								ObjValue(ID==idLineaFeed,PROPNAME=="producto",INITIALVALOR==idProducto)
+							),			
+							//origen casa con consumo, y destino con linea. Pero si es despiece descuenta o suma al reves. Si es despiece el agregado resta en destino, por tanto destino es almacen de agregado								                                								                      	
+                      	    sum(((propAlmacen.contains( "origen" )==propLinea.equals(esDesp.equals("true") ? "línea":"consumo")) ? 1:0)*(propAlmacen.contains( "origen" ) ? -1:1)*cantidadFeed))		  
+                      	                               
+
+	contributionProdCURR: Double() //No contemplo la contrib inicial, no se almacenar trabajos sin confirmar
+    	from accumulate((and	    			 			 		
+    							FactHierarchy(CLASSSUP=="LÍNEA",idtoLinea:IDTO)
+						    	DatValue(IDTO==idtoLinea,idoLinea:IDO,idLineaFeed:ID,PROPNAME=="clave_producto", VALOR==keyStock)					    																					
+								FactHierarchy(clase:CLASS,idtoDoc:IDTO,CLASSSUP=="PRODUCCIÓN")	
+								Individual(IDTO==idtoDoc,idTask:ID,STATE==Constants.INDIVIDUAL_STATE_READY)	
+								ObjValue(ID==idTask,propLinea:PROPNAME=="consumo"||=="línea",VALOR==idLineaFeed) 																								
+								ObjValue(ID==idTask,PROPNAME=="estado",idoEstado:IDOVALUE!=null)
+	 							DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR=="Programado"||=="Realizado")
+	 																
+								ObjValue(ID==idLineaFeed||==idTask, idtoAlmacen:VALUECLS,propAlmacen:PROPNAME=="almacén_origen"||=="almacén_destino"||=="origen"||=="destino",VALOR==idAlmacen)							
+								exists(FactHierarchy(CLASSSUP=="ALMACÉN",IDTO==idtoAlmacen))																								
+								DatValue(ID==idLineaFeed,PROPNAME=="cantidad",cantidadFeed:DOUBLEVALUE!=null)		
+																
+								DatValue(ID==idTask,PROPNAME=="es_despiece",esDesp:BOOLEANVALOR!=null)
+								ObjValue(ID==idLineaFeed,PROPNAME=="producto",VALOR==idProducto)
+						),
+						//origen es donde descuenta. Si es despiece es la linea la que descuenta y en origen																	     		  																		
+                      	sum(((propAlmacen.contains( "origen" )==propLinea.equals(esDesp ? "línea":"consumo")) ? 1:0)*(propAlmacen.contains( "origen" ) ? -1:1)*cantidadFeed))	     		                   																	     		  																				  
+                      	 
+							 
+	contributionConsumoINIT: Double() //No contemplo la contrib inicial, no se almacenar trabajos sin confirmar
+    	from accumulate((and	
+    							FactHierarchy(CLASSSUP=="LÍNEA",idtoLinea:IDTO)
+						    	DatValue(IDTO==idtoLinea,idLineaFeed:ID,PROPNAME=="clave_producto", INITIALVALOR==keyStock)						    							    	
+						    	FactHierarchy(CLASSSUP=="FLUJO_ARTÍCULOS",idtoProdMaterial:IDTO)
+						    	not(Model(IDTO==idtoProdMaterial,PROPNAME=="recibido",OP==Constants.OP_INTERSECTION))
+						    	
+						    	ObjValue(IDTO==idtoProdMaterial,idTask:ID!=null,propLinea:PROPNAME=="consumo"||=="línea",INITIALVALOR==idLineaFeed) 							    							    							    	
+					    		ObjValue(propAlmacen:PROPNAME=="almacén_origen"||=="almacén_destino"||=="origen"||=="destino",INITIALVALOR==idAlmacen,ID==idLineaFeed||==idTask, idtoAlmacen:INITIALVALUECLS)					    							    		
+					    									    					
+								exists(FactHierarchy(CLASSSUP=="ALMACÉN",IDTO==idtoAlmacen))																													    	
+								DatValue(ID==idLineaFeed,PROPNAME=="cantidad",cantidadFeed:INITIALDOUBLE!=null)								
+								ObjValue(ID==idLineaFeed,PROPNAME=="producto",INITIALVALOR==idProducto)//evita se graben stock corruptos donde no coincide clave con producto
+								),											                                	
+  					  sum( (propAlmacen.contains( "origen" ) ? -1:1)*cantidadFeed))            
+
+	contributionConsumoCURR: Double() //No contemplo la contrib inicial, no se almacenar trabajos sin confirmar
+    	from accumulate((and	
+    							FactHierarchy(CLASSSUP=="LÍNEA",idtoLinea:IDTO)
+						    	DatValue(IDTO==idtoLinea,idoLinea:IDO,idLineaFeed:ID,PROPNAME=="clave_producto", VALOR==keyStock)
+								FactHierarchy(CLASSSUP=="FLUJO_ARTÍCULOS",idtoDoc:IDTO)					    
+								not(Model(IDTO==idtoDoc,PROPNAME=="recibido",OP==Constants.OP_INTERSECTION))
+								
+								Individual(IDTO==idtoDoc,idTask:ID,STATE==Constants.INDIVIDUAL_STATE_READY)																					
+								ObjValue(ID==idTask,propLinea:PROPNAME=="consumo"||=="línea",VALOR==idLineaFeed) 																						
+								ObjValue(propAlmacen:PROPNAME=="almacén_origen"||=="almacén_destino"||=="origen"||=="destino",VALOR==idAlmacen,ID==idLineaFeed||==idTask, idtoAlmacen:VALUECLS)													    		
+					    						    												
+								exists(FactHierarchy(CLASSSUP=="ALMACÉN",IDTO==idtoAlmacen))																																															
+								DatValue(ID==idLineaFeed,PROPNAME=="cantidad",cantidadFeed:DOUBLEVALUE!=null)
+								ObjValue(ID==idLineaFeed,PROPNAME=="producto",VALOR==idProducto)
+								),											    		 
+                      sum( (propAlmacen.contains( "origen" ) ? -1:1)*cantidadFeed))          
+	contributionTraspasoINIT: Double() //No contemplo la contrib inicial, no se almacenar trabajos sin confirmar
+    	from accumulate((and	
+    							FactHierarchy(CLASSSUP=="LÍNEA",idtoLinea:IDTO)
+						    	DatValue(IDTO==idtoLinea,idoLinea:IDO,idLineaFeed:ID,PROPNAME=="clave_producto", INITIALVALOR==keyStock)						    							    	
+						    	FactHierarchy(CLASSSUP=="FLUJO_ARTÍCULOS",idtoProdMaterial:IDTO)
+						    	ObjValue(IDTO==idtoProdMaterial,idTask:ID!=null,propLinea:PROPNAME=="consumo"||=="línea",INITIALVALOR==idLineaFeed) 							    						
+						    	DatValue(ID==idTask,PROPNAME=="recibido",recInit:INITIALVALOR!=null)
+					    		ObjValue(propAlmacen:PROPNAME=="almacén_origen"||=="almacén_destino"||=="origen"||=="destino",INITIALVALOR==idAlmacen,ID==idLineaFeed||==idTask, idtoAlmacen:INITIALVALUECLS)
+					    		DatValue(ID==idTask,PROPNAME=="stock_requiere_recepcion_en_destino",reqRDInit:INITIALVALOR!=null)					    							    		
+					    		eval(!( propAlmacen.contains("destino")&& reqRDInit.equals("true") && recInit.equals("false") ))							    					
+								exists(FactHierarchy(CLASSSUP=="ALMACÉN",IDTO==idtoAlmacen))																													    	
+								DatValue(ID==idLineaFeed,PROPNAME=="cantidad",cantidadFeed:INITIALDOUBLE!=null)								
+								ObjValue(ID==idLineaFeed,PROPNAME=="producto",INITIALVALOR==idProducto)
+								),											                                	
+  					  sum( (propAlmacen.contains( "origen" ) ? -1:1)*cantidadFeed))            
+
+	contributionTraspasoCURR: Double() //No contemplo la contrib inicial, no se almacenar trabajos sin confirmar
+    	from accumulate((and	
+    							FactHierarchy(CLASSSUP=="LÍNEA",idtoLinea:IDTO)
+						    	DatValue(IDTO==idtoLinea,idoLinea:IDO,idLineaFeed:ID,PROPNAME=="clave_producto", VALOR==keyStock)
+								FactHierarchy(CLASSSUP=="FLUJO_ARTÍCULOS",idtoDoc:IDTO)					    
+								Individual(IDTO==idtoDoc,idTask:ID,STATE==Constants.INDIVIDUAL_STATE_READY)																					
+								DatValue(ID==idTask,PROPNAME=="recibido",rec:BOOLEANVALOR!=null)	
+								ObjValue(ID==idTask,propLinea:PROPNAME=="consumo"||=="línea",VALOR==idLineaFeed) 																						
+								ObjValue(propAlmacen:PROPNAME=="almacén_origen"||=="almacén_destino"||=="origen"||=="destino",VALOR==idAlmacen,ID==idLineaFeed||==idTask, idtoAlmacen:VALUECLS)	
+								DatValue(ID==idTask,PROPNAME=="stock_requiere_recepcion_en_destino",reqRD:BOOLEANVALOR!=null)														    						    		
+					    		eval(!( propAlmacen.contains("destino")&& reqRD && !rec.booleanValue() ))						    												
+								exists(FactHierarchy(CLASSSUP=="ALMACÉN",IDTO==idtoAlmacen))																																															
+								DatValue(ID==idLineaFeed,PROPNAME=="cantidad",cantidadFeed:DOUBLEVALUE!=null)
+								ObjValue(ID==idLineaFeed,PROPNAME=="producto",VALOR==idProducto)
+								),											    		 
+                      sum( (propAlmacen.contains( "origen" ) ? -1:1)*cantidadFeed))        
+                      
+    fusionado:Double() from accumulate((and Individual(CLASSNAME=="STOCK",idoStock2:IDO>0,STATE==Constants.INDIVIDUAL_STATE_DELETED)												
+											DatValue(IDO==idoStock2,PROPNAME=="clave_producto", INITIALVALOR==keyStock)
+											ObjValue(IDO==idoStock2,PROPNAME=="almacén_stock",INITIALVALOR==idAlmacen)
+											DatValue(IDO==idoStock2,PROPNAME=="cantidad", q:INITIALDOUBLE!=null)
+											), sum(q))	    
+    corrupto:Double() from accumulate((and 	exists(IndividualValue(IDO==idoStock,IDO>0,PROPNAME=="producto"||=="almacén_stock"||=="talla"||=="color"||=="lote"||=="medida1"||=="medida2",initialValuesChanged==true))																									
+											DatValue(IDO==idoStock,PROPNAME=="cantidad", q:INITIALDOUBLE!=null)
+											), init(Double res =0.0;),action(res+=q;),result(res))											                                                                              	                                            
+then
+	dma.printRule("========ACTUALIZACIÓN STOCK POR MOVIMIENTO DE MERCANCIA SIN LOTE v2:   rdnAlmacen="+rdnAlmacen+" rdnProducto:"+rdnProducto+"  idstock="+idStock );	 
+	Double incr= fusionado-corrupto+contributionRegularizacionCurr+contributionConsumoCURR+contributionProdCURR+contributionTraspasoCURR-(contributionRegularizacionInit+contributionConsumoINIT+contributionProdINIT+contributionTraspasoINIT);
+	
+	System.err.println("\n .. se va añadir contribucion final="+ contributionConsumoCURR+" "+contributionConsumoINIT+" "+incr);	 
+	dma.setIncrementalValue(idoStock,idtostock,dma.getIdProperty("cantidad"),incr,null);	
+	
+	if(modeloConFechaModif.size()>0 && incr.doubleValue()!=0.0){	
+		Long newT=Calendar.getInstance().getTimeInMillis()/Constants.TIMEMILLIS;
+		dma.setTimeValue(	idoStock,idtostock, dma.getIdProperty("fecha_modificación"),newT,false);
+	}
+end
+
+rule "CLAVE DE STOCK EN LINEA" 
+salience 100 
+no-loop true
+agenda-group "rules" when 
+  	  		
+  	
+	FactHierarchy(idtoRoot:IDTO, CLASSSUP=="DOCUMENTO"||=="PRODUCCIÓN"||=="ROTACION"||=="ESCANDALLO")
+	//Hay una precarga especifica para planificar		 			
+	ObjValue(IDTO==idtoRoot,idoRoot:IDO,PROPNAME=="línea"||=="linea_rotacion"||=="consumo"||=="componente"||=="salida"||=="programación",idtoLinea:VALUECLS,idoLinea:IDOVALUE!=null,LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL)
+
+	//Deberia atender tambien a un posible cambio del rdn del detalle de producto, pero actualmente solo puede cambiarse dicho detalle en un individuo nuevo
+	//en cuyo caso la object property hasta el detalle tambien ha cambiado (al menos miramos initial para que un consumo de evento no anule un hasCHANGED), y al cambiar rdn detalle 
+	//se reevalua debido al acumulador ids 				 										 							
+	exists(IndividualValue(IDO==idoLinea,PROPNAME=="producto"||=="medida1"||=="medida2"||=="talla"||=="color",initialValuesChanged==true))
+	//exists( IndividualValue(IDO==idoLinea,hasCHANGED==true) )//se podria quitar si todo lo bloqueado por el sistema se desbloquea al final del run por una regla minima prioridad	
+					 						 		
+	ObjValue(IDO==idoLinea,PROPNAME=="producto",idoProducto:IDOVALUE!=null,idtoProducto:VALUECLS)
+	DatValue(IDO==idoProducto,PROPNAME=="rdn",rdnProducto:VALOR!=null)	   																	 										 								
+
+	ignorarDetalle:Long() from accumulate((and 	DatValue(CLASSNAME=="PARAMETRO_VERDADERO",idoParam:IDO,PROPNAME=="rdn",igno:VALOR!=null)
+											   	eval(igno.startsWith("ignorar_detalle_stock") && !(igno.contains("#") && !rdnProducto.matches(igno.split("#")[1])))
+												DatValue(IDO==idoParam,PROPNAME=="activo",VALOR=="true")),count(idoParam))
+													
+	ids:identidadStock()	
+	from accumulate(
+	 	(and 
+	 		iv:ObjValue(IDO==idoLinea,propName:PROPNAME=="medida1"||=="medida2"||=="talla"||=="color",idoDetalle:IDOVALUE!=null)
+	 		   DatValue(IDO==idoDetalle,PROPNAME=="rdn",rdnDetalle:VALOR!=null)
+	 		),
+			
+		init(	identidadStock id=new identidadStock();
+				//id.setIdtoStock(idtoDomainStock);
+	  			id.setProducto(rdnProducto);),										  			
+	  	action( 	  			  		
+  			if(ignorarDetalle.longValue()==0) id.setProperty(propName,rdnDetalle);  		
+	  	),	  		  			
+				  			
+		result(id))
+
+	medidas:ArrayList()	from collect(DatValue(IDO==idoLinea,propName:PROPNAME=="medida1"||=="medida2",VALOR!=null))		
+		
+	modeloClave:ArrayList() from collect(Model(PROPNAME=="clave_producto"))	
+
+	then				
+		if(medidas.size()>0){
+			for(int i=0;i<medidas.size();i++){
+				DatValue m=(DatValue)medidas.get(i);
+				ids.setProperty(m.getPROPNAME(),m.getVALOR());
+			}
+		}
+		String claveStock=ids.toString();
+		dma.printRule("====================== CLAVE DE STOCK EN LINEA "+claveStock+" "+ids.getClaveProducto()+" ignorar detalle:"+ignorarDetalle);
+		
+		if(modeloClave.size()>0) dma.setDataValue(idoLinea,idtoLinea,"clave_producto",ids.getClaveProducto());
+		
+		dma.printRule("\n ..... clave stock asignada:linea "+idoLinea+" "+claveStock+" clave producto:"+ids.getClaveProducto());
+						
+end
+
+
+//Para fusionar no es necesario que documentos de fases anteriores estén enlazados con fases posteriores a traves de 
+//líneas, basta que se cumpla las condiciones de ser mismo cliente/proveedor, y partida de producto
+//Algunos clientes quieren controlar la mercancía es acorde a la cantidad pedida, con la pistola, 
+//de manera que si hay 3 cajas de un mismo producto, se efectuan 3 lecturas que van sumando uno. 
+//Para que esto sea posible debe poder albaranarse un pedido..creando el albaran vacio, es decir,
+//en lugar de proponer que todo se envía, se propone que nada se envía hasta que se vayan creando las lineas manualmente.
+//Si se hace así, no hay lineas que enlacen con el pedido, pero si hay un pedido en motor que satisface las condiciones para enlazar
+rule "FUSIÓN DE LÍNEAS"
+	salience -100
+	agenda-group "rules"
+	when
+		//Dadas dos líneas que tienen el mismo cliente y el mismo producto
+								
+		FactHierarchy(nameEvo:CLASS,classEvolucionado:IDTO,evoSupClass:CLASSSUP=="ALBARÁN_COMERCIAL"||=="FACTURA") //La nueva línea será un albarán (si no lo es la menos ev.) o una factura
+		
+		ObjValue(idDocumento2:ID,IDTO==classEvolucionado,PROPNAME=="línea",idoLinea2:IDOVALUE!=null,changedLinea2:hasCHANGED)		
+		ObjValue(IDO==idoLinea2, PROPNAME=="producto", idProducto:VALOR!=null) //El producto el el mismo en ambos casos
+		DatValue(IDO==idoLinea2, PROPNAME=="rdn", rdnLinea2:VALOR!=null,changedKey2:hasCHANGED)
+		cantidadNuevaVariable:DatValue(IDO==idoLinea2, PROPNAME=="cantidad", cantidadNueva:DOUBLEVALUE!=null,changedQ2:hasCHANGED)
+		
+		eval(changedLinea2||changedKey2||changedQ2)
+		
+		//Una línea (la menos evolucionada)
+		FactHierarchy(nameNoEvo:CLASS,classNOEvolucionado:IDTO ,CLASSSUP=="ALBARÁN_COMERCIAL"||=="PEDIDO_COMERCIAL",CLASSSUP!=evoSupClass) //La línea menos evolucionada es un albarán o un pedido
+		ObjValue(idDocumento1:ID!=idDocumento2,IDTO==classNOEvolucionado,PROPNAME=="línea",idoLinea1:IDOVALUE!=null&&!=idoLinea2)
+		not(FactHierarchy(IDTO==classNOEvolucionado ,CLASSSUP=="TICKET"))
+		not( ObjValue(ID==idDocumento2, IDOVALUE==idoLinea1) )
+		
+		ObjValue(IDO==idoLinea1,valueClsLinea:IDTO, PROPNAME=="producto", VALOR==idProducto) 			
+				 				
+		//La otra línea (la nueva)		
+		
+		not( ObjValue(IDO==idoLinea2, PROPNAME==Constants.prop_documento, VALOR==idDocumento1) ) //Evitamos que la línea nueva ya esté anclada al doc menos evolucionado.		
+				
+		not(FactHierarchy(IDTO==classEvolucionado,CLASSSUP=="RECTIFICACIÓN"))
+
+		not( exists( ObjValue(IDO==idoLinea2, PROPNAME==Constants.prop_documento, VALOR!=null, VALUECLS==classNOEvolucionado)))
+								
+		not( ObjValue(IDO==idoLinea1, PROPNAME==Constants.prop_documento, VALOR==idDocumento2) ) //Evitamos que la línea antigua ya esté anclada al doc mas evolucionado.
+		not( exists( ObjValue(IDO==idoLinea1, PROPNAME==Constants.prop_documento, VALOR!=null, VALUECLS==classEvolucionado)))
+
+
+
+		///////
+		ObjValue(IDO==idoLinea1, PROPNAME==Constants.prop_iva, idIVA:VALOR!=null)		
+		ObjValue(ID==idDocumento1, PROPNAME==Constants.prop_cliente||==Constants.prop_proveedor, cliente:VALOR!=null)
+		ObjValue(ID==idDocumento1, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE!=null)
+		DatValue(IDO==idoLinea1, PROPNAME=="rdn", rdnLinea1:VALOR!=null)
+		cantidadVariable:DatValue(IDO==idoLinea1, PROPNAME=="cantidad", cantidadPendiente:DOUBLEVALUE!=null)
+		//////
+		
+		ObjValue(IDO==idoLinea2, PROPNAME==Constants.prop_iva, VALOR==idIVA)				
+		ObjValue(ID==idDocumento2, PROPNAME==Constants.prop_cliente||==Constants.prop_proveedor, VALOR==cliente) //El cliente es el mismo en ambos casos		
+		ObjValue(ID==idDocumento2, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+		
+		ids:HashMap()	from accumulate(IndividualValue(IDO==idoLinea1||==idoLinea2,prop:PROPNAME=="lote"||=="medida1"||=="medida2"||=="talla"||=="color",ov:CVALUE!=null),
+										init(HashMap mapa=new HashMap();),
+										action(mapa.put(prop,ov);),
+										result(mapa))				
+	then
+		//dma.printRule("\n\n========== FUSIÓN DE LÍNEAS <<<<< pendiente:");
+		dma.printRule("========== FUSIÓN DE LÍNEAS :NoEvo"+ids.size());
+
+		Domain lineaFusion=null;
+		
+		if(cantidadPendiente > cantidadNueva){
+			dma.printRule("cantidadPendiente > cantidadNueva");
+			//Enlazamos la línea mas evolucionada con el documento menos evolucionado.
+			lineaFusion= new Domain(idoLinea2, valueClsLinea);
+			
+			dma.addValue(idDocumento1, classNOEvolucionado, Constants.prop_linea, new ObjectValue(idoLinea2, valueClsLinea));
+			//Modificamos la línea el documento menos evolucionado con la diferencia.
+			dma.setValue(idoLinea1, valueClsLinea, Constants.prop_cantidad, new DoubleValue(cantidadPendiente - cantidadNueva));
+			//Consumimos el evento de cambio para que el sistema no se de cuenta de la disminución.
+			cantidadVariable.consumirEventoCambio();
+		}
+		
+		if(cantidadPendiente.equals(cantidadNueva)){
+			dma.printRule("cantidadPendiente == cantidadNueva");		
+			//Borramos la línea nueva.
+			dma.delValue(idDocumento2, classEvolucionado, Constants.prop_linea, new ObjectValue(idoLinea2, valueClsLinea));
+			dma.deleteObject(idoLinea2, valueClsLinea);						
+			//Enlazamos la antigua al documento más evolucionado.
+			lineaFusion= new Domain(idoLinea1, valueClsLinea);
+			dma.addValue(idDocumento2, classEvolucionado, Constants.prop_linea, new ObjectValue(idoLinea1, valueClsLinea));
+		}
+		
+		if(cantidadPendiente < cantidadNueva){
+			dma.printRule("cantidadPendiente < cantidadNueva");		
+			//Enlazamos la línea menos evolucionada con el documento más evolucionado
+			lineaFusion= new Domain(idoLinea1, valueClsLinea);
+			dma.addValue(idDocumento2, classEvolucionado, Constants.prop_linea, new ObjectValue(idoLinea1, valueClsLinea));
+			//Modificamos la cantidad con la diferencia de (cantNueva - cantPendiente)
+			dma.setValue(idoLinea2, valueClsLinea, Constants.prop_cantidad, new DoubleValue(cantidadNueva - cantidadPendiente));
+			//Consumimos el evento de cambio sobre la cantidad nueva.
+			cantidadNuevaVariable.consumirEventoCambio();
+		}
+		
+		Iterator itr=ids.keySet().iterator();
+		while(itr.hasNext()){
+			String propname=(String)itr.next();	
+			Value ov=(Value)ids.get(propname);
+			dma.setValue(lineaFusion, propname, ov);
+			dma.printRule(" FUSION PROP "+propname+" "+ov);
+		}
+	end
+
+rule "STOCK SUMAR MISMO CODIGO" //NO DEBE SUMAR NUMEROS DE SERIE POR SER UNICOS
+salience -200
+agenda-group "rules" when 		
+	ObjValue(CLASSNAME=="STOCK",idoStock1:IDO,PROPNAME=="producto",idoProducto:IDOVALUE)
+	ObjValue(CLASSNAME=="STOCK",idoStock2:IDO!=idoStock1,PROPNAME=="producto",IDOVALUE==idoProducto)
+	ObjValue(IDO==idoStock1,PROPNAME=="almacén_stock",idoAlm:IDOVALUE)
+	ObjValue(IDO==idoStock2,idtoStock:IDTO,PROPNAME=="almacén_stock",IDOVALUE==idoAlm)
+	forall(	IndividualValue(ido:IDO==idoStock1||==idoStock2,p:PROPNAME=="talla"||=="color"||=="lote"||=="medida1"||=="medida2",detalle:VALOR!=null)
+			IndividualValue(IDO==idoStock1||==idoStock2,IDO!=ido,PROPNAME==p,VALOR==detalle))	
+	Individual(IDO==idoStock1,STATE==Constants.INDIVIDUAL_STATE_READY)
+	Individual(IDO==idoStock2,STATE==Constants.INDIVIDUAL_STATE_READY)				
+then
+	System.err.println("\\================ STOCK SUMAR MISMO CODIGO ");
+	int idoDel=idoStock1;
+	int idoKeep=idoStock2;
+	if(idoStock2<0){
+		idoDel=idoStock2;
+		idoKeep=idoStock1;
+	}
+	Domain domKeep=new Domain(idoKeep,idtoStock);
+	Domain domDel=new Domain(idoDel,idtoStock);
+	double qDel=dma.getDoubleValue(domDel,"cantidad",true);
+	dma.setDoubleValue(domDel,"cantidad",0.0);//para que otra regla permita eliminarlo
+	dma.deleteObject(idoDel,idtoStock);
+	
+	double qKeep=dma.getDoubleValue(domKeep,"cantidad",true);
+	dma.setDoubleValue(domKeep,"cantidad",qDel+qKeep);	
+end
+
+rule "STOCK CORRUPTO" 
+//en algun caso parece queda aislado un lote y desaparece de linea y stock, pero el rdn refleja dicho lote. Aqui se actualiza y elimina el instalado.
+//como es lote no debe estar en la linea en base de datos, tampoco debe estar la cantidad contribuida en el stock, por eso en actualiza stock descuento la cantidad corrupta o initial value
+salience -250
+//menos prioridad que la anterior que suma stock coherentes
+agenda-group "rules" when 			
+	DatValue(CLASSNAME=="STOCK",idoStock1:IDO>0,idtoStock:IDTO,PROPNAME=="rdn",rdnS:VALOR!=null)
+	DatValue(CLASSNAME=="STOCK",idoStock2:IDO<0,PROPNAME=="rdn",VALOR==rdnS)
+	Individual(IDO==idoStock1,STATE==Constants.INDIVIDUAL_STATE_READY)
+	Individual(IDO==idoStock2,STATE==Constants.INDIVIDUAL_STATE_READY)
+		
+	exists((and 	IndividualValue(ido:IDO==idoStock1||==idoStock2,p:PROPNAME=="producto"||=="almacén_stock"||=="talla"||=="color"||=="lote"||=="medida1"||=="medida2",detalle:VALOR!=null)
+					not IndividualValue(IDO==idoStock1||==idoStock2,IDO!=ido,PROPNAME==p,VALOR==detalle)))	
+					
+	detalleNew:ArrayList() from collect(IndividualValue(ido:IDO==idoStock2,PROPNAME=="producto"||=="almacén_stock"||=="talla"||=="color"||=="lote"||=="medida1"||=="medida2",VALOR!=null))
+				
+then
+	System.err.println("================ STOCK CORRUPTO");
+	int idoDel=idoStock2;
+	int idoKeep=idoStock1;
+
+	Domain domKeep=new Domain(idoKeep,idtoStock);
+	Domain domDel=new Domain(idoDel,idtoStock);
+	double qDel=dma.getDoubleValue(domDel,"cantidad",true);
+	dma.setDoubleValue(domDel,"cantidad",0.0);//para que otra regla permita eliminarlo
+	dma.deleteObject(idoDel,idtoStock);
+	
+	for(int i=0;i<detalleNew.size();i++){
+		IndividualValue iv=(IndividualValue)detalleNew.get(i);
+		dma.setValue(domKeep,iv.getPROPNAME(),iv.getCVALUE());
+	}
+	//no hace falta
+end
+
+rule "NO SE PUEDE ELIMINAR STOCK DISTINTO DE CERO" 
+ agenda-group "rules" when 
+  	FactHierarchy(CLASSSUP=="STOCK",idtostock:IDTO)
+	Individual(IDTO==idtostock,idoStock:IDO,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+	DatValue(IDO==idoStock,PROPNAME=="cantidad",q:QMIN!=null)
+	distintoGrupo:Long() from accumulate((and 	ObjValue(IDO==idoStock,PROPNAME=="producto", idoProducto:IDOVALUE)
+											ObjValue(IDO==idoProducto,PROPNAME=="empresa", idoEmpStock:IDOVALUE)
+											ObjValue(IDO==idoEmpStock,PROPNAME=="delegacion_central", idoDelStock:IDOVALUE)
+											ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="mi_empresa",idoMiE:IDOVALUE!=null)
+											ObjValue(IDO==idoMiE,PROPNAME=="delegacion_central", ido:IDOVALUE!=idoDelStock)),
+											count(ido))
+											
+	eval(q.doubleValue()!=0 || idoStock.intValue()>0&&distintoGrupo.intValue()>0)
+then
+	if(distintoGrupo.intValue()>0)	throw new OperationNotPermitedException("No se puede eliminar un stock de otro grupo de empresas");
+	else
+		if(q.doubleValue()!=0)	throw new OperationNotPermitedException("No se puede eliminar un stock que no esté a cero");
+	
+end
+
+rule "PRECARGA ALMACENES DE CENTRO"
+salience 0 
+agenda-group "rules" when 
+	  
+	FactHierarchy(idtoRoot:IDTO, CLASSSUP=="SALIDA_ARTÍCULOS"||=="PRODUCCIÓN") 
+	FactHierarchy(idtoCentro:IDTO, CLASSSUP=="CENTRO_TRABAJO") 
+	ObjValue(IDTO==idtoRoot,VALUECLS==idtoCentro,PROPNAME=="origen"||=="destino"||=="centro_trabajo",idEntidad:IDOVALUE!=null,centro:OBJECTVALUE)
+then
+	dma.printRule("\n\n ================  RULE PRECARGA ALMACENES DE CENTRO ==================");
+	HashMap<String,Value> whereAlmacen=new HashMap<String,Value>();
+	whereAlmacen.put("centro_trabajo",centro);
+	instance  filerAlmacen=dma.buildInstanceWith("ALMACÉN",whereAlmacen,null,null,null);
+	HashSet<IDIndividual> idosStock=dma.loadIndividualsWithSatisficedFilter(filerAlmacen);
+end	
+
+rule "ALMACEN DE DELEGACION Y EMPRESA"
+salience -100 //menos prioridad que almacen de aplicacion por defecto
+agenda-group "rules" when 
+	  
+	FactHierarchy(idtoRoot:IDTO, c:CLASSSUP=="ALBARÁN_CLIENTE"||=="ALBARÁN_PROVEEDOR") 	
+	ObjValue(IDTO==idtoRoot,idoRoot:IDO,PROPNAME=="mi_empresa",idoEmp:IDOVALUE!=null,empresa:OBJECTVALUE)
+	
+	delegaRoot:ArrayList() from collect(ObjValue(IDO==idoRoot,PROPNAME=="delegación",idoDeleg:IDOVALUE!=null,delegacion:OBJECTVALUE))
+	
+	Model(IDTO==idtoRoot,P:PROPNAME==(c.equals("ALBARÁN_CLIENTE")?"origen":"destino"),OP==Constants.OP_INTERSECTION)
+	
+	//Para que tenga sentido no debe configurar almacen ni empresa por defecto en aplicacion
+	not(ObjValue(IDO==idoRoot,PROPNAME==P,idoAlmRoot:IDOVALUE!=null))
+				
+	precargaAlm:ObjectValue() from accumulate((and 	FactHierarchy(idtoAlm:IDTO, CLASSSUP=="ALMACÉN")
+													ObjValue(IDTO==idtoAlm,idoAlm:IDO,PROPNAME=="empresa",IDOVALUE==idoEmp)
+													forall(	ObjValue(IDO==idoRoot,PROPNAME=="delegación",idoDeleg:IDOVALUE!=null)
+															ObjValue(IDO==idoAlm,PROPNAME=="delegación",IDOVALUE==idoDeleg))),
+										init(ObjectValue res=new ObjectValue(0,0);),
+										action(res=new ObjectValue(idoAlm,idtoAlm);),
+										result(res))
+then
+	dma.printRule("================  ALMACENES DE DELEGACION Y EMPRESA ==================");
+	if(precargaAlm.getValue()==0){
+		dma.printRule("===PRECARGANDO");
+		HashMap<String,Value> whereAlmacen=new HashMap<String,Value>();
+		whereAlmacen.put("empresa",empresa);
+		if(delegaRoot.size()>0){				
+			whereAlmacen.put("delegación",((ObjValue)delegaRoot.get(0)).getOBJECTVALUE());
+		}
+		instance  filerAlmacen=dma.buildInstanceWith("ALMACÉN",whereAlmacen,null,null,null);
+		HashSet<IDIndividual> idosStock=dma.loadIndividualsWithSatisficedFilter(filerAlmacen);
+	}else{
+		dma.printRule("===ASIGNANDO");
+		dma.setValue(idoRoot,idtoRoot,P,precargaAlm);
+	}
+end	
+
+rule "CICLO VIDA LINEAS DOC: LANZAMIENTO DE EXCEPCIONES"
+//Esta es la lógica que atiende a bloqueo, para que en caso de producirse una excepcion se reestablezcan los antiguos valores
+//CAMBIADO ALFONSO 3: prioridad mayor
+salience 10
+agenda-group "rules" when
+	
+
+	ObjValue(PROPNAME=="targetClass",idoDoc:IDOVALUE,idtodoc:VALUECLS,documentoedicion:RANGENAME)
+	exists(FactHierarchy(CLASS==documentoedicion,CLASSSUP=="DOCUMENTO_COMERCIAL"||CLASSSUP=="DOCUMENTO"))
+	ObjValue(IDO==idoDoc,PROPNAME=="línea",idLinea:VALOR!=null) 
+	exists(IndividualValue(ID==idLinea,PROPNAME=="cantidad"||=="clave_producto"||=="lote",hasCHANGED==true))
+
+	ObjValue(ID==idLinea,idolinea:IDO,idtolinea:IDTO, PROPNAME=="producto", idProducto:VALOR!=null,claseLinea:CLASSNAME!=null)
+	//acumulamos todos los documentos de esa linea
+	documentosDeLaLinea: ArrayList(size>1) from collect (ObjValue(ID==idLinea, PROPNAME=="documento", VALOR!=null))
+
+	cantidadLineaSource:DatValue(ID==idLinea,lineaClassName:CLASSNAME,PROPNAME=="cantidad",cantidadPrev:PREVIODOUBLEVALUE!=null, cantidadNueva:QMIN!=null)
+	//cantidadPrev:Double() from accumulate(DatValue(	ID==idLinea, PROPNAME=="cantidad", cantidad:PREVIODOUBLEVALUE!=null),sum( cantidad))
+	//cantidadNueva:Double() from accumulate(DatValue( ID==idLinea, PROPNAME=="cantidad", cantidad: QMIN!=null),sum(cantidad))
+			
+	eval(!cantidadPrev.equals(cantidadNueva))
+
+then
+
+	boolean facturada=false,pedida=false,servida=false;
+	boolean lineaTbEnOtrosDocs=false;
+	
+	dma.printRule("=================>>DISPARO RULE CICLO VIDA: EXCEPTION en doc"+documentoedicion+" "+idoDoc+"  desde linea="+idLinea+"  (oldvalue: "+cantidadPrev+",current: "+cantidadNueva +") en el documento edicion"+documentoedicion);
+	Value lote=null;
+	boolean esAlbaranFactura=false;
+	int idoAlbaran=0,idoFactura=0;
+	for(int i=0;i<documentosDeLaLinea.size();i++){
+		if(dma.isSpecialized(((ObjValue)documentosDeLaLinea.get(i)).getRANGENAME(),"PEDIDO")){
+			dma.printRule("esta  pedida");
+			pedida=true;
+			if(!dma.isSpecialized(documentoedicion,"PEDIDO")){
+				lineaTbEnOtrosDocs=true;
+			}
+		}
+		if(dma.isSpecialized(((ObjValue)documentosDeLaLinea.get(i)).getRANGENAME(),"ALBARÁN")){
+			dma.printRule("esta servida");
+			servida=true;
+			if(!dma.isSpecialized(documentoedicion,"ALBARÁN")){
+				lineaTbEnOtrosDocs=true;
+			}
+		}
+		if(dma.isSpecialized(((ObjValue)documentosDeLaLinea.get(i)).getRANGENAME(),"FACTURA")){
+			dma.printRule("está una facturada");
+			facturada=true;
+			if(!dma.isSpecialized(documentoedicion,"FACTURA")){
+				lineaTbEnOtrosDocs=true;
+			}
+		}
+	}
+			
+	if( dma.isSpecialized(documentoedicion,"PEDIDO") ){
+	dma.printRule("Caso1: tocando un pedido");
+		if(servida||facturada){
+			throw new OperationNotPermitedException("No puede modificar una linea pedida que ya esta servida o facturada");
+		}
+	}
+	else if( dma.isSpecialized(documentoedicion,"ALBARÁN")&&!dma.isSpecialized(documentoedicion,"FACTURA") ){
+	dma.printRule("Caso2: tocando un albarán, pedido="+pedida+" facturado="+facturada);
+		if( facturada ){
+					throw new OperationNotPermitedException("No puede modificar una linea servida ya facturada");
+					}
+	}	
+end
+
+rule "CICLO VIDA LINEAS DOC: MODIFICADA CANTIDAD 2A EDICION" 
+no-loop true 
+  agenda-group "rules" when 
+	
+	//Si hacemos que el doc este bloqueado, en la accion albaranar la linea permanece lock hasta el final, y cuando se pone ready el doc ya esta ready tambien
+	// target class asegura se trata del doc en edicion
+	ObjValue(PROPNAME=="targetClass",idoDoc:IDOVALUE,documentoedicion:RANGENAME)
+	exists(FactHierarchy(CLASS==documentoedicion,CLASSSUP=="DOCUMENTO"))
+		
+	ObjValue(IDO==idoDoc, idtoDoc:IDTO,PROPNAME=="línea",idoLinea:IDOVALUE, idLinea:VALOR!=null,idtoLinea:VALUECLS,claseLinea:RANGENAME!=null) 
+		
+	cantidadLineaSource:DatValue(ID==idLinea,lineaClassName:CLASSNAME,PROPNAME=="cantidad",cantidadPrev:PREVIODOUBLEVALUE!=null, cantidadNueva:QMIN!=null,hasCHANGED==true)
+	//CAMBIADO ALFONSO 2:	siguiente or reemplaza linea bloqueo anterior
+	Individual(ID==idLinea,STATE==Constants.INDIVIDUAL_STATE_READY)
+	//Lock(ID==idLinea, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	//acumulamos todos los documentos de esa linea
+	documentosDeLaLinea: ArrayList(size>1) from collect (ObjValue(ID==idLinea, PROPNAME=="documento", VALOR!=null))
+		
+
+	                                  
+
+	
+	//EXCEPCION, NO ESTAR EN LA ACCIÓN Modificar_Factura_Albarán_Stock
+	not(ObjValue(CLASSNAME=="Modificar_Conjuntamente_Factura_Albarán_Stock",IDO!=null,IDOVALUE==idoDoc))
+	
+then
+	dma.printRule("\n\n\n============ CICLO VIDA LINEAS DOC: MODIFICADA CANTIDAD en doc"+documentoedicion+" "+idoDoc+"  desde linea="+idLinea+"  (oldvalue: "+cantidadPrev+",current: "+cantidadNueva +") en el documento edicion"+documentoedicion);
+	dma.printRule("documentosDeLaLinea="+documentosDeLaLinea+"\n INDLINEA="+"\n\ncontenido de la linea");
+	Domain linea= new Domain( idoLinea, idtoLinea );
+	Domain documento= new Domain(idoDoc,idtoDoc);
+
+	boolean tieneLote = false;
+	if(dma.getMetaData().hasProperty(claseLinea,"lote")){
+		tieneLote=dma.getValue(linea,"lote")!=null;
+	}
+
+	DoubleValue valorAntiguo=new DoubleValue(cantidadPrev,cantidadPrev);
+	//calculamos la diferencia
+	double dIncr=Math.abs(cantidadNueva.doubleValue()-cantidadPrev.doubleValue());
+	DoubleValue incremento=new DoubleValue(dIncr,dIncr);
+	boolean incrementado= cantidadPrev<cantidadNueva;
+	dma.printRule("Increntado igual a "+incrementado);
+	
+	boolean servida=false,facturada=false,pedida=false, esAlbaranFactura=false;
+	int idoAlbaran=0,idoFactura=0;
+	for(int i=0;i<documentosDeLaLinea.size();i++){
+		ObjValue opDoc= (ObjValue)documentosDeLaLinea.get(i);
+		if(dma.isSpecialized(opDoc.getRANGENAME(),"PEDIDO")||dma.isSpecialized(opDoc.getRANGENAME(),"SOLICITUD")){
+			dma.printRule("esta  pedida");
+			pedida=true;			
+		}
+		if(dma.isSpecialized(opDoc.getRANGENAME(),"FLUJO_ARTÍCULOS")){
+			dma.printRule("esta servida");
+			servida=true;
+			idoAlbaran=opDoc.getIDOVALUE();
+		}
+		if(dma.isSpecialized(opDoc.getRANGENAME(),"FACTURA")){
+			dma.printRule("está una facturada");
+			facturada=true;
+			idoFactura=opDoc.getIDOVALUE();
+		}
+	}
+	
+	if(idoAlbaran!=0 && idoAlbaran==idoFactura) esAlbaranFactura=true;
+	
+	
+	boolean partir=false;
+	
+	if(incrementado ){//&& lineaTbEnOtrosDocs){
+		//Un incremento siempre es compatible tanto con fases posteriores como anteriores, siempre es una nueva linea que solo pertenece a el doc siendo editado
+		String excluproperties="documento#cantidad#importe#número";
+		Domain newLinea=dma.cloneIndividual(idoLinea,idtoLinea, idtoLinea, excluproperties);	
+
+		//String idoNewLineaStr=new Integer(idNewLinea).toString();
+		dma.printRule("Incrementa y esta en otros documentos");		
+		//1 enlazamos la nueva linea al documento que se esta editando		
+		dma.addValue(documento,"línea",new ObjectValue(newLinea));		
+		
+		dma.setValue(newLinea,"cantidad",incremento);		
+		
+		dma.setValue(linea,"cantidad",valorAntiguo);						
+		cantidadLineaSource.consumirEventoCambio();
+		//Consumo producto para que reglas por defecto no pongan descuento o precios por defecto
+        dma.consumirEventoCambio(documento.getIdo(),"línea",newLinea.getIdo(),newLinea.getIdto());
+        
+        //TODO: hacer configurable, que al incrementar, actualice precios en nueva linea, para ello no consumiento producto
+        dma.consumirEventoCambio(newLinea.getIdo(),"producto");
+        dma.consumirEventoCambio(newLinea.getIdo(),"mi_empresa");
+        dma.consumirEventoCambio(newLinea.getIdo(),"medida1");
+		dma.consumirEventoCambio(newLinea.getIdo(),"medida2");
+		dma.consumirEventoCambio(newLinea.getIdo(),"color");
+		dma.consumirEventoCambio(newLinea.getIdo(),"talla");
+		//dma.setLock(idNewLinea,true,dma.getUser(), true);
+		//dma.ruleSetLock(idNewLinea);
+		
+	}else if(servida){
+		dma.printRule("Caso2: tocando un albarán"+pedida+" "+facturada);
+		if( pedida ){
+			partir=true;
+			dma.printRule("Se van a partir las lineas de los otros documentos");}
+			
+	}else if( dma.isSpecialized(documentoedicion,"FACTURA") && !( esAlbaranFactura && !pedida )){
+			//como hay mas de un documento, y factura es la ultima fase, sabemos existe fase anterior hay que partir
+			//si no es a la vez albaran partimos seguro por haber doc anterior
+			//si es a la vez factura, partimos solo si está pedida
+			partir=true;}
+			
+	//Cuando se incremente hay que tener en cuenta que se van a partir el resto de lineas que no afecten a la original
+
+	dma.printRule(" CICLO true Utask " + documentoedicion +","+partir+","+incrementado +"," + pedida +","+servida+","+facturada ); 
+
+	if(partir){
+		dma.printRule("Se procede a partir por un decremento");
+		String excluproperties="documento#cantidad#importe#número";
+		Domain newLinea=dma.cloneIndividual(idoLinea,idtoLinea, idtoLinea, excluproperties);	
+		//Consumo producto para que reglas por defecto no pongan descuento o precios por defecto
+        dma.consumirEventoCambio(newLinea.getIdo(),"producto");
+        dma.consumirEventoCambio(newLinea.getIdo(),"mi_empresa");
+        dma.consumirEventoCambio(newLinea.getIdo(),"medida1");
+		dma.consumirEventoCambio(newLinea.getIdo(),"medida2");
+		dma.consumirEventoCambio(newLinea.getIdo(),"color");
+		dma.consumirEventoCambio(newLinea.getIdo(),"talla");
+		dma.setValue(newLinea,"cantidad",incremento);
+		
+		//Este set se hace a una cantidad ficticia para deshacerlo con undo, con objeto consuma el evento (prev=current valor)
+		//dma.setValue(idLinea,"cantidad",++cantidadNueva);
+		if( !incrementado ) cantidadLineaSource.consumirEventoCambio();
+		
+		//dma.ruleSetLock(idNewLinea); el bloqueo tiene que ser del usuario pq el control al partir debe pasar al usuario que tiene que validar los campos de la nueva linea
+		//SOLO FUNCIONA, AL PARTIR EN FACTURA, SI BLOQUEAMOS LA LINEA ANTIGUA, SI BLOQUEO LA NUEVA SE PIERDE EL BLOQUEO Y ES AGREGADA
+		//dma.setLock(new Integer(idLinea),true,dma.getUser(), true);
+		if(tieneLote){			
+			if(facturada){
+				dma.setValue(newLinea,"lote",dma.getValue(linea,"lote"));
+				//dma.setValue(newLinea,"precio",null);//Se supone quiere cambiar precio, de esta forma no es agregada, y el usuario no puede desvincular sin arreglar previamente el precio
+			}
+			else{
+				//						
+				dma.printRule("Tiene lote pero no facturada");			
+				//dma.addValue(documento,"línea",new ObjectValue(newLinea));Añado linea partida por si se desea modificar su lote (en albaran) 					
+				//inicializamos el nuevo lote a null
+				//Este es el unico caso que además de enlazar nueva linea a otros documentos (en siguiente for dentro de partir),
+				// tb la enlazamos a este documento
+				dma.setValue(newLinea,"lote",null);}
+		}else dma.printRule("No tiene lote");
+			
+		for(int i=0;i<documentosDeLaLinea.size();i++){
+		   	ObjectValue docDeEnlace= ((ObjValue)documentosDeLaLinea.get(i)).getOBJECTVALUE();
+			dma.printRule("doc"+docDeEnlace);
+			if(!docDeEnlace.equals(documento)){
+				dma.addValue(newLinea,"documento",docDeEnlace);
+				//Consumo producto para que reglas por defecto no pongan descuento o precios por defecto
+        		dma.consumirEventoCambio(docDeEnlace.getValue(),"línea",newLinea.getIdo(),newLinea.getIdto());
+        		
+				dma.printRule("Enlazando docsss         "+docDeEnlace+" "+documento);}}	
+	}
+			
+end
+
+
+rule "AL DESVINCULAR UNA LINEA EN EL CICLO DE VIDA COMPROBAR QUE DICHA LINEA NO ESTABA ENLAZADA A OTRO DOCUMENTO"
+no-loop true 
+  agenda-group "rules" when 
+	
+
+	l:ObjValue(classDocDesvinculado:CLASSNAME,idDocDesvinculado:ID,PROPNAME=="línea",idLinea:INITIALVALOR!=null,VALOR==null) 
+	Individual(ID==idLinea,STATE==Constants.INDIVIDUAL_STATE_READY)
+	not(FactHierarchy(CLASS==classDocDesvinculado,CLASSSUP=="TICKET"))
+	DatValue(ID==idLinea,PROPNAME=="cantidad",DOUBLEVALUE!=null&&!=0) 
+	(or
+		exists((and 
+			FactHierarchy(CLASS==classDocDesvinculado,CLASSSUP=="PEDIDO")		
+			FactHierarchy(classAlbaran:CLASS,CLASSSUP=="ALBARÁN")
+			ObjValue(ID==idLinea,PROPNAME=="documento",RANGENAME==classAlbaran,VALOR!=null) 		
+			)
+			)
+		exists((and 
+		FactHierarchy(CLASS==classDocDesvinculado,CLASSSUP=="ALBARÁN")		
+		FactHierarchy(classFactura:CLASS,CLASSSUP=="FACTURA")
+		ObjValue(ID==idLinea,PROPNAME=="documento",RANGENAME==classFactura,VALOR!=null&&!=idDocDesvinculado)
+		))
+	)
+	//acumulamos todos los documentos de esa linea
+	//documentosDeLaLinea: ArrayList(size>1) from collect (ObjValue(ID==idLinea, PROPNAME=="documento", PREVALOR!=null))
+	
+	//EXCEPCION, NO ESTAR EN LA ACCIÓN Modificar_Factura_Albarán_Stock
+	not(ObjValue(CLASSNAME=="Modificar_Conjuntamente_Factura_Albarán_Stock",IDO!=null,VALOR==idDocDesvinculado))
+
+then
+	dma.printRule("\n\n=================  DISPARO RULE AL DESVINCULAR UNA LINEA HAY QUE COMPROBAR QUE NO ESTABA ENLAZADA A OTRO DOC");
+	//dma.printRule("documentosDeLaLinea="+documentosDeLaLinea+"\n INDLINEA="+idLinea);
+
+	throw new OperationNotPermitedException("No puede DESVINCULAR una linea pedida que ya esta servida, o servida que está facturada");
+	
+
+end
+
+rule "COMPROBAR SI EL PEDIDO YA HA SIDO ENTREGADO" 
+salience 100
+ agenda-group "rules" when 
+  	
+	ObjValue(CLASSNAME=="Albaranar_Documentos_Venta"||=="Albaranar_Documentos_Compra"||=="Albaranar_Pedidos_Distribuidor",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstadotask:VALOR!=null)
+	ObjValue(IDO==idoUTask,PROPNAME=="sourceClass",idpedido:VALOR!=null,idtoPedido:VALUECLS)
+	DatValue(ID==idEstadotask,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_PREVALIDANDO)
+	DatValue(ID==idpedido,PROPNAME=="rdn",codigo:VALOR)
+	exists(Model(IDTO==idtoPedido,PROPNAME=="albaranado"))
+then
+ 	dma.printRule("\n\n============== RULE COMPROBAR SI EL PEDIDO YA HA SIDO ENTREGADO");
+ 	BooleanValue albaranado=(BooleanValue)dma.serverGetValue(Integer.parseInt(idpedido),idtoPedido,"albaranado");
+	if(albaranado!=null && albaranado.getBvalue()){
+		throw new OperationNotPermitedException("No se puede albaranar el documento '"+codigo+"' ya que está albaranado");
+	}else{
+		dma.printRule(".............si se puede albaranar el pedido");
+	}
+end
+
+
+rule "COMPROBAR SI EL PEDIDO HA SIDO ENTREGADO ANTES DE PERMITIR BORRARLO" 
+salience 100
+ agenda-group "rules" when 
+  	//IMPte: se hace con el pedido, y no por ejemplo con la factura porque sino no 
+  	//sería posible borrar los documentos evolucionados (la logica que se quiere mantener es que se pueda
+  	//borrar documentos desde los posteriores en la evolucion: factura hacia atras, si
+  	//la factura que también tiene un estado de entrega no se pudiera borrar por estar entregada
+  	//no se podría borrar los documentos (el pedido no se podría borrar por estar facturado ni el albaran 
+  	//que hace la entrega de la factura tampoco por estar facturado
+	FactHierarchy(namecls:CLASS,CLASSSUP=="PEDIDO")
+	Individual(CLASSNAME==namecls,idtopedido:IDTO,idopedido:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+	exists(Model(CLASSNAME==namecls,PROPNAME=="albaranado"))
+then
+
+ 	dma.printRule("\n\n============== COMPROBAR SI EL PEDIDO O FACTURA HA SIDO ENTREGADO ANTES DE PERMITIR BORRARLO");
+ 	BooleanValue albaranado=(BooleanValue)dma.serverGetValue(idopedido,idtopedido,dma.getIdProperty("albaranado"));
+ if(albaranado!=null && albaranado.getBvalue()){
+		throw new OperationNotPermitedException("No se puede borrar un pedido entregado");
+	}else{
+		dma.printRule(".............si se puede borrar  el pedido ");
+	}
+end
+ 
+rule "REGULARIZACION: NO PERMITIR MODIFICAR REFERENCIA PRODUCTO"
+salience 100
+no-loop true
+agenda-group "rules" when 
+  	
+	//No debe recalcularse en una edición posterior, por haber cambiado initial de stock, sin haber cambiado la linea
+	//esta condicion sustituye la condicion de bloqueo de la linea que debe discontinuarse
+  	FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA_REGULARIZACIÓN")
+	(or exists(IndividualValue(IDTO==idtoLinea,ido:IDO>0,hasCHANGED==true))
+		Individual(IDTO==idtoLinea,ido:IDO>0,STATE==Constants.INDIVIDUAL_STATE_DELETED))
+		
+then
+	dma.printRule("REGULARIZACION: NO PERMITIR MODIFICAR REFERENCIA PRODUCTO");
+	throw new OperationNotPermitedException("En una regularización ya existente, para modificar las cantidades de un producto debe crear una nueva linea");
+end
+
+
+rule "CALCULO STOCK PREVIO EN REGULARIZACIÓN"
+salience -100
+ agenda-group "rules" when 
+  	
+	ObjValue(idReg:ID,CLASSNAME=="REGULARIZACIÓN",PROPNAME=="línea", idoLinea:IDOVALUE,LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL)
+	//No debe recalcularse en una edición posterior, por haber cambiado initial de stock, sin haber cambiado la linea
+	//esta condicion sustituye la condicion de bloqueo de la linea que debe discontinuarse
+	
+	//O bien que solo se recalcule si cambio producto, lote etc., es decir una object property
+	
+	exists(ObjValue(IDO==idoLinea,hasCHANGED==true))
+	ObjValue(ID==idReg,PROPNAME=="almacén", idAlmacen:VALOR)
+	
+	DatValue(IDO==idoLinea,idtolinea:IDTO,PROPNAME=="clave_producto", key:VALOR!=null)
+			
+	Individual(CLASSNAME=="STOCK",idoStock:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	ObjValue(IDO==idoStock,PROPNAME=="almacén_stock", VALOR==idAlmacen)
+			
+	DatValue(IDO==idoStock,PROPNAME=="clave_producto", VALOR==key)
+	//importante esperar a que esté cantidad para que se pueda disparar la agrupación antes
+	//No puedo tirar de initial value en vez de first, porque initial cambia con las reservas, de manera que al poner la cantidad en la linea
+	// y reservar en servidor, si a su vez hubiera otra reserva de otro usuario, se la traeria y actualizaria initial, volviendose a disparar esta regla con un valor incorrecto
+	
+	//Parece no se pone un not cantidad initial para sea dianmico al cambiar de producto.
+
+	//Para inicializar estando la linea bloqueada hay que acumular, ya que no se precarga o instala mientras la linea este bloqueada
+	cantidadStock: Double()    from accumulate(	DatValue(IDO==idoStock,PROPNAME=="cantidad",cantidad:FIRSTDOUBLE!=null),
+												sum(cantidad))
+	forall(
+       ObjValue(IDO==idoLinea,PROPNAME=="lote", idoLote:IDOVALUE!=null)
+       ObjValue(IDO==idoStock,PROPNAME=="lote", IDOVALUE==idoLote)
+	)
+ 	forall(
+       ObjValue(IDO==idoStock,PROPNAME=="lote", idoLote:IDOVALUE!=null)
+       ObjValue(IDO==idoLinea,PROPNAME=="lote", IDOVALUE==idoLote)
+	)
+	//soportar cantidad final igual a anterior en regularizacion poniendo como causa "cierre"
+	esCierre:ArrayList() from collect(DatValue(ID==idReg,PROPNAME=="causa",VALOR=="cierre"))
+then
+	dma.printRule(" ==== RULE CALCULO STOCK PREVIO EN REGULARIZACIÓN");
+	dma.setValue(idoLinea,idtolinea,"cantidad_antes_regularizar",new DoubleValue(cantidadStock));	
+	if(esCierre.size()>0){
+		dma.setValue(idoLinea,idtolinea,"cantidad",new DoubleValue(cantidadStock));
+	}
+end
+
+function  String getTodayLoteCode(String rdnProducto){
+	Calendar calendario = Calendar.getInstance();
+	String anyo=String.valueOf(calendario.get(calendario.YEAR)).substring(2);
+	int diaSemana=calendario.get(calendario.DAY_OF_WEEK);
+	diaSemana= diaSemana==Calendar.SUNDAY ? 7:diaSemana-1;
+	return rdnProducto+"/"+anyo+calendario.get(calendario.WEEK_OF_YEAR)+diaSemana;	
+}
+
+
+rule "REGULARIZACIÓN DE STOCKS: FASE 1 CREACION REGULARIZACION SIN LINEAS"
+salience -100 //en el caso de modelo 1.2 o anterior se disparara la regla de la version antigua y al crear la regularizacion la anterior ya no se disparárá esta
+ agenda-group "rules" 
+ when 
+		
+	ObjValue(CLASSNAME=="Regularizar_stocks",  idoUTask:IDO,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+	ObjValue(IDO==idoUTask,PROPNAME=="params",idparams:VALOR!=null)
+	DatValue(ID==idparams,PROPNAME=="causa",causareg:DATAVALUE!=null)
+
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass", idStock:VALOR!=null)
+	DatValue(ID==idStock,clasestock:CLASSNAME,idoLinea:IDO,PROPNAME=="cantidad",cantidadinicial:INITIALVALOR,cantidad:VALOR!=null)
+	ObjValue(ID==idStock,PROPNAME=="producto",producto:VALOR!=null)
+	ObjValue(ID==idStock,PROPNAME=="almacén_stock",idalmacen:VALOR!=null,almacen:OBJECTVALUE)
+	not((and
+			ObjValue(IDO==idoUTask, PROPNAME=="targetClass", reg:VALOR!=null)
+			ObjValue(ID==reg, PROPNAME=="almacén", VALOR==idalmacen)	))
+		
+then
+	dma.printRule("\n\n ===========> REGULARIZACIÓN DE STOCKS: CREACION REGULARIZACION SIN LINEAS.almacen="+almacen);
+	Domain reg=dma.creaIndividualOfClass("REGULARIZACIÓN");
+	dma.setValue(reg,"fecha",new TimeValue(Auxiliar.getFechaActual()));
+	dma.setValue(reg,"causa",causareg);
+	dma.setValue(reg,"almacén",almacen);
+	dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(reg));
+end
+
+rule "REGULARIZACIÓN DE STOCKS:  FASE 2 CREACION LINEAS"
+salience -100 //en el caso de modelo 1.2 o anterior se disparara la regla de la version antigua y al crear la regularizacion la anterior ya no se disparárá esta
+ agenda-group "rules" 
+ when 
+		
+	ObjValue(CLASSNAME=="Regularizar_stocks",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass", idStock:VALOR!=null)	
+	ObjValue(ID==idStock,clasestock:CLASSNAME,idoStock:IDO,PROPNAME=="producto",producto:OBJECTVALUE!=null,idtoProducto:VALUECLS)
+	ObjValue(ID==idStock,PROPNAME=="almacén_stock",almacen:VALOR!=null)
+	ObjValue(IDO==idoUTask, PROPNAME=="targetClass", reg:VALOR!=null)
+	ObjValue(ID==reg, idtoReg:IDTO,idoReg:IDO,PROPNAME=="almacén", VALOR==almacen)
+	
+	infoAdicionalXpropiedad:HashMap()	
+	from accumulate(
+	 	(and 	 	
+	 		IndividualValue(ID==idStock,propiedad:PROPNAME=="lote"||=="medida1"||=="medida2"||=="talla"||=="color", info:CVALUE!=null)
+		),
+		init( HashMap<String,Value> infoAdicionalXpropiedad2=new HashMap <String,Value> (); ),									
+	  	action( infoAdicionalXpropiedad2.put(propiedad,info);),
+		result(infoAdicionalXpropiedad2))	
+then
+	dma.printRule("\n\n ===========> REGULARIZACIÓN DE STOCKS: FASE 2 CREACION LINEAS.almacen="+almacen);
+
+	Domain domLinea=dma.creaIndividualOfClass("LÍNEA_REGULARIZACIÓN");
+	//no interesa hacer set a cantidad para que el usuario ponga las cantidades con el intro le lleve a esos campos
+	//dma.setValue(domLinea,"cantidad",cantidad);
+	
+	dma.setValue(domLinea,"producto",producto);
+	Iterator<String> itProps=infoAdicionalXpropiedad.keySet().iterator();
+	while (itProps.hasNext()){
+		String propiedad=itProps.next();
+	    dma.setValue(domLinea,propiedad,(Value)infoAdicionalXpropiedad.get(propiedad));
+	}
+	dma.addValue(idoReg,idtoReg,"línea",new ObjectValue(domLinea));
+end
+
+rule "TRASPASAR STOCKS"
+ agenda-group "rules" 
+ when 
+	ObjValue(clsAction:CLASSNAME=="Traspasar"||=="Solicitar_traspaso_de_stocks",  idoUTask:IDO,idtoTask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+	
+	ObjValue(IDO==idoUTask, PROPNAME=="sourceClass", idoStock:IDOVALUE!=null,stock:OBJECTVALUE)
+	ObjValue(IDO==idoStock,idtoStock:IDTO, PROPNAME=="almacén_stock", idoOrigen:IDOVALUE!=null,origen:OBJECTVALUE)
+		
+	traspaso:Domain() from accumulate( (and	ObjValue(IDO==idoUTask, PROPNAME=="targetClass",idoTrasp:IDOVALUE,ov:OBJECTVALUE)
+											ObjValue(IDO==idoTrasp, PROPNAME=="origen",IDOVALUE==idoOrigen)),																								
+										init( Domain res= new Domain(0,0)),
+										action( res= new Domain(ov);),
+										result(res))													
+then
+	dma.printRule("=================================== TRASPASAR STOCKS");
+		
+	if(traspaso.getIdo()==0){
+	  	traspaso=dma.creaIndividualOfClass(clsAction.contains("Solicitar")?"PEDIDO_TRASPASO_ALMACENES":"TRASPASO_ALMACENES");	  	
+	  	dma.setValue(traspaso,"fecha",new TimeValue(Calendar.getInstance().getTimeInMillis()/Constants.TIMEMILLIS));		
+	  	dma.setValue(traspaso,"origen",origen);
+	  	dma.addValue(idoUTask,idtoTask,"targetClass",new ObjectValue(traspaso));	
+	}	
+	Domain linea= dma.cloneIndividual(idoStock,idtoStock,dma.getIdClass("LÍNEA_MATERIA"),"almacén_stock#rdn");
+	dma.addValue(traspaso,"línea",new ObjectValue(linea));
+	dma.delValue(idoUTask,idtoTask,"sourceClass",stock);
+end
+
+rule "NO SE PUEDE CREAR UN TRASPASO CON MISMO ORIGEN Y DESTINO"
+salience -100
+no-loop true
+ agenda-group "rules" when 
+  	 
+	 dest:ObjValue(CLASSNAME=="TRASPASO_ALMACENES",idSol:ID,PROPNAME=="destino",destino:VALOR!=null)
+	 orig:ObjValue(ID==idSol,PROPNAME=="origen",VALOR==destino&&VALOR!=null)
+then
+ 	dma.printRule("\n\n============NO SE PUEDE CREAR UN  TRASPASO CON MISMO ORIGEN Y DESTINO: dest="+dest+"\n origen="+orig);
+ 	throw new OperationNotPermitedException("No se puede crear  un traspaso con el mismo destino que origen");
+end
+
+
+
+
+rule "UN ALMACEN ASOCIADO A UNA LINEA DEBE SER DEL CENTRO DE TRABAJO DEL DOCUMENTO"
+salience -100
+no-loop true
+agenda-group "rules" when 
+	
+	FactHierarchy(idtoDoc:IDTO,clsSup:CLASSSUP=="FLUJO_ARTÍCULOS")
+	ObjValue(IDTO==idtoDoc,idoRoot:IDO!=null,propiedadAlmacenDoc:PROPNAME=="origen"||=="destino",valorAlmacenGlobal:VALOR!=null,chAlmDoc:hasCHANGED)
+	exists(Model(CLASSNAME==clsSup,PROPNAME==propiedadAlmacenDoc))
+	ObjValue(IDO==idoRoot,PROPNAME=="línea"||=="consumo",idLinea:VALOR)
+	ObjValue(ID==idLinea,propiedadAlmacenLinea:PROPNAME=="almacén_origen"||=="almacén_destino",VALOR!=valorAlmacenGlobal,idoAlmacen:IDOVALUE,idtoAlmacen:VALUECLS,chAlmLin:hasCHANGED)
+	
+	eval(chAlmDoc||chAlmLin)	
+	eval((propiedadAlmacenDoc.equals("origen")&&propiedadAlmacenLinea.equals("almacén_origen")||(propiedadAlmacenDoc.equals("destino")&&propiedadAlmacenLinea.equals("almacén_destino"))))
+	Individual(IDO==idoAlmacen, STATE==Constants.INDIVIDUAL_STATE_READY)
+	//el almacen tiene que estar completamente informado
+	forall(
+		Model(IDTO==idtoAlmacen,OP=="CAR",QMIN>=1,propObligatoria:PROPNAME)
+		IndividualValue(IDO==idoAlmacen,PROPNAME==propObligatoria,VALOR!=null)
+	)
+	not( ObjValue(IDO==idoAlmacen, PROPNAME=="centro_trabajo", VALOR==valorAlmacenGlobal))
+	DatValue(IDO==idoAlmacen, PROPNAME=="rdn", rdnAlmacen:VALOR!=null)
+then
+ 	dma.printRule("\n\n========== UN ALMACEN ASOCIADO A UNA LINEA DEBE SER DEL CENTRO DE TRABAJO DEL DOCUMENTO. rdnAlmac:"+rdnAlmacen+"  valorAlmacenGlobal:"+valorAlmacenGlobal+" idLinea:"+idLinea);
+ 	throw new OperationNotPermitedException("El almacen " + rdnAlmacen +" asociado a una línea no tiene el centro de trabajo del documento");
+end
+
+rule "UNA SALIDA_MERCANCIA CON ORIGEN TIPO ALMACEN  NO PUEDE TENER ALMACENES EN LA LÍNEA, SE BORRA ALMACEN DE LA LÍNEA"
+salience -100
+no-loop true
+agenda-group "rules" when 
+	
+	FactHierarchy(idtoRoot:IDTO,CLASSSUP=="SALIDA_ARTÍCULOS"||=="PRODUCCIÓN")  	  	
+	FactHierarchy(idtoAlmacen:IDTO,CLASSSUP=="ALMACÉN")
+  	ObjValue(IDTO==idtoRoot,VALUECLS==idtoAlmacen, propDoc:PROPNAME=="origen"||=="destino", idoRoot:IDO!=null,IDOVALUE!=null,chAlmDoc:hasCHANGED)
+  	FactHierarchy(idtoLinea:IDTO, CLASSSUP=="LÍNEA_MATERIA")
+	ObjValue(IDO==idoRoot,PROPNAME=="línea"||=="consumo", idoLinea:IDOVALUE!=null, VALUECLS==idtoLinea)
+	ObjValue(IDO==idoLinea, propLinea:PROPNAME=="almacén_origen"||=="almacén_destino",IDOVALUE!=null,ovalmacen:OBJECTVALUE,idPropAlmacenLinea:PROP,chAlmLin:hasCHANGED)
+	
+	eval(chAlmDoc||chAlmLin)
+  	
+  	eval( (propDoc.equals("origen") && propLinea.equals("almacén_origen")) || (propDoc.equals("destino") && propLinea.equals("almacén_destino")) )
+then
+ 	dma.printRule("\n\n========== UNA SALIDA_MERCANCIA CON ORIGEN TIPO ALMACEN  NO PUEDE TENER ALMACENES EN LA LÍNEA, SE BORRA ALMACEN DE LA LÍNEA");
+ 	dma.delValue(idoLinea,idtoLinea,idPropAlmacenLinea,ovalmacen);
+end
+
+
+rule "ASIGNACION ALMACEN DE SALIDA ALEATORIO"
+//MENOS PRIORIDAD QUE ASIGNACIÓN ALMACEN DE SALIDA, ALMACEN PRIORITARIO
+salience -100
+agenda-group "rules"
+when
+	
+	FactHierarchy(idtoDoc:IDTO, claseSup:CLASSSUP=="ALBARÁN_VENTA"||=="PRODUCCIÓN") 
+	DatValue(CLASSNAME=="APLICACIÓN", PROPNAME=="asignar_stocks_salidas", BOOLEANVALOR==true)
+	ObjValue(idoDoc:IDO,IDTO==idtoDoc,PROPNAME=="origen", idoCentro:IDOVALUE!=null,idtoCentro:VALUECLS,LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL)	
+	FactHierarchy(IDTO==idtoCentro,CLASSSUP=="CENTRO_TRABAJO")
+	ObjValue(IDO==idoDoc,PROPNAME=="línea"||=="consumo",idoLinea:IDOVALUE) 
+	not( ObjValue(IDO==idoLinea,PROPNAME=="almacén_origen",IDOVALUE!=null) )
+	
+	forall( ObjValue(IDO==idoDoc,PROPNAME=="línea",IDOVALUE==idoLinea) //Si el doc no es albaran, no asignamos almacen origen en lineas de salida
+			FactHierarchy(IDTO==idtoDoc, CLASSSUP=="ALBARÁN_VENTA")) 
+	
+	DatValue(IDO==idoLinea,PROPNAME=="cantidad",cantidadLinea:DOUBLEVALUE!=null)		
+	ObjValue(IDO==idoLinea,idtoLinea:IDTO,PROPNAME=="producto",idoProducto:IDOVALUE)
+	
+	FactHierarchy(idtoAlmacen:IDTO,CLASSSUP=="ALMACÉN")
+	ObjValue(idoAlmacen:IDO,IDTO==idtoAlmacen,PROPNAME=="centro_trabajo",IDOVALUE==idoCentro)
+	ObjValue(IDO==idoAlmacen, PROPNAME=="centro_trabajo", IDOVALUE==idoCentro)	
+
+	ObjValue(idoStock:IDO, PROPNAME=="almacén_stock", IDOVALUE==idoAlmacen)
+	ObjValue(IDO==idoStock,PROPNAME=="producto", IDOVALUE==idoProducto)
+	DatValue(IDO==idoStock,PROPNAME=="cantidad",q:DOUBLEVALUE>0)	//es suficiente que haya stock aunque sea parcial, hay otra regla que si es parcial es capaz de partir línea
+	//OJO no fuerzo a que el lote ni serie coincida, pues cualquier lote me vale
+	forall( IndividualValue(IDO==idoStock,partidaProp:PROPNAME=="medida1"||=="medida2"||=="talla"||=="color", partidaIdent:VALOR!=null)
+			IndividualValue(IDO==idoLinea,PROPNAME==partidaProp, VALOR==partidaIdent))								 
+
+then
+	dma.printRule("==============ASIGNACION ALMACEN DE SALIDA  ALEATORIO "+idoAlmacen);
+	dma.setValue(new Domain(idoLinea,idtoLinea),"almacén_origen",new ObjectValue(idoAlmacen,idtoAlmacen));	
+end
+
+rule "ASIGNACION ALMACEN DE SALIDA, ALMACÉN PRIORITARIO" 
+//MAS PRIORIDAD QUE ASIGNACION ALMACEN DE SALIDA
+salience 0
+ agenda-group "rules" when 
+ 
+	FactHierarchy(idtoDoc:IDTO, CLASSSUP=="ALBARÁN_VENTA"||=="PRODUCCIÓN") 
+	DatValue(CLASSNAME=="APLICACIÓN", PROPNAME=="asignar_stocks_salidas", BOOLEANVALOR==true)
+	ObjValue(idoDoc:IDO,IDTO==idtoDoc,PROPNAME=="origen", idoCentro:IDOVALUE!=null,idtoCentro:VALUECLS,LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL)
+	FactHierarchy(IDTO==idtoCentro,CLASSSUP=="CENTRO_TRABAJO")
+	ObjValue(IDO==idoDoc,PROPNAME=="línea"||=="consumo",idoLinea:IDOVALUE) 
+	not( ObjValue(IDO==idoLinea,PROPNAME=="almacén_origen",IDOVALUE!=null) )
+	
+	forall( ObjValue(IDO==idoDoc,PROPNAME=="línea",IDOVALUE==idoLinea) //Si el doc no es albaran, no asignamos almacen origen en lineas de salida
+			FactHierarchy(IDTO==idtoDoc, CLASSSUP=="ALBARÁN_VENTA"))
+				
+	DatValue(IDO==idoLinea,PROPNAME=="cantidad",cantidadLinea:DOUBLEVALUE!=null)		
+	ObjValue(IDO==idoLinea,idtoLinea:IDTO,PROPNAME=="producto",idoProducto:IDOVALUE)
+	DatValue(IDO==idoLinea,PROPNAME=="rdn",rdnLinea:VALOR)			
+	
+	FactHierarchy(idtoAlmacen:IDTO,CLASSSUP=="ALMACÉN")
+	ObjValue(idoAlmacen:IDO,IDTO==idtoAlmacen,PROPNAME=="centro_trabajo",IDOVALUE==idoCentro)
+	ObjValue(idoStock:IDO, PROPNAME=="almacén_stock", IDOVALUE==idoAlmacen)
+	ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="almacén_salidas_por_defecto", IDOVALUE==idoAlmacen)	
+	ObjValue(IDO==idoAlmacen, PROPNAME=="centro_trabajo", IDOVALUE==idoCentro)	
+	ObjValue(IDO==idoStock,PROPNAME=="producto", IDOVALUE==idoProducto)
+	DatValue(IDO==idoStock,PROPNAME=="cantidad",DOUBLEVALUE>0)	//es suficiente que haya stock aunque sea parcial, hay otra regla que si es parcial es capaz de partir línea
+	//OJO no fuerzo a que el lote ni serie coincida, pues cualquier lote me vale
+	forall( IndividualValue(IDO==idoStock,partidaProp:PROPNAME=="medida1"||=="medida2"||=="talla"||=="color", partidaIdent:VALOR!=null)
+			IndividualValue(IDO==idoLinea,PROPNAME==partidaProp, VALOR==partidaIdent))	
+then	
+	dma.printRule("\n\n=====================  ASIGNACION ALMACEN DE SALIDA, ALMACÉN PRIORITARIO.  rdnLinea:"+rdnLinea+"  idoAlmacen:"+idoAlmacen);
+	dma.setValue(new Domain(idoLinea,idtoLinea),"almacén_origen",new ObjectValue(idoAlmacen,idtoAlmacen));	
+end
+
+rule "STOCK NEGATIVOS: CONSUMIR CAMBIO ALMACEN"
+//Mejora el rendimiento. Si en un albaran por defecto se asigna un almacen y el usuario lo cambia, es hasChanged no va a correlar en siguientes acciones de usuario al añadir o modificar lineas
+// ya que se trataran de nuevos run, habiendose consumido el hanged en el run en el que realmente fue cambiado el almacen
+salience -500 
+ agenda-group "rules" when   	
+	
+	F:ObjValue(idoRoot:IDO,PROPNAME=="almacén_origen"||=="origen"||=="almacén_destino"||=="destino", PREVALOR!=null,hasCHANGED==true)	
+       	    	            
+ then
+	dma.printRule("==========STOCK NEGATIVOS: CONSUMIR CAMBIO ALMACEN");
+	F.consumirEventoCambio();
+end
+
+rule "NO SE PUEDE ACEPTAR PEDIDOS CLIENTE/DISTRIBUIDOR POR CANTIDAD QUE NO ESTE DISPONIBLE EN STOCK TOTAL SI ASÍ SE CONFIGURA LA APLICACIÓN"
+salience -100 //importante para que se dispare esta regla antes que la que calculo stocks
+ agenda-group "rules" when   	
+	
+	FactHierarchy(idtoPedido:IDTO,CLASSSUP=="PEDIDO_DE_CLIENTE"||=="PEDIDO_DISTRIBUIDOR")
+	DatValue(PROPNAME=="no_permitir_pedidos_sin_stock_disponible",BOOLEANVALOR==true)
+	
+	ObjValue(IDTO==idtoPedido,LEVEL==Constants.LEVEL_PROTOTYPE,idoPedido:IDO!=null,PROPNAME=="línea",idoLinea:IDOVALUE!=null)
+	//Lock(IDO==idoLinea,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(IDO==idoLinea,PROPNAME=="producto",idoProducto:IDOVALUE)
+	DatValue(IDO==idoProducto,PROPNAME=="rdn",rdnProd:VALOR!=null) 
+	DatValue(IDO==idoLinea,PROPNAME=="cantidad",cantidadPedida:DOUBLEVALUE!=null)	
+	DatValue(IDO==idoProducto,PROPNAME=="stock_total",stockTotal:DOUBLEVALUE)
+    eval(cantidadPedida>stockTotal)   	
+ then
+	 dma.printRule("\n\n ==========NO SE PUEDE ACEPTAR PEDIDOS CLIENTE/DISTRIBUIDOR POR CANTIDAD QUE NO ESTE DISPONIBLE EN STOCK TOTAL SI ASÍ SE CONFIGURA LA APLICACIÓN");
+	throw new OperationNotPermitedException("No se permite pedir "+cantidadPedida+"  del producto :"+rdnProd+" porque supera el stock_total disponible: "+stockTotal);
+ end
+ 
+ 
+rule "NO SE PERMITEN STOCK NEGATIVOS SI ASÍ SE CONFIGURA LA APLICACIÓN"
+salience -200 //importante para que se dispare esta regla antes que la que calculo stocks
+//esta en bbdd rules pq las reglas PARTIR LINEAS POR FALTA DE STOCK EN DOCUMENTOS MULTIALMACEN y demás de asignación de lógica de stock en albaranes no funciona
+//si esa regla se pone en rules. Comenta Alfonso manenerla en bddrules aunque para evitar solucionar los problemas
+
+//!!!!!OJO ANTES DE QUITAR DE BDDRULES LEER ARRIBA!!!!!!!!!!
+ agenda-group "rules" when   	//!!!!!OJO ANTES DE QUITAR DE BDDRULES LEER ARRIBA!!!!!!!!!!
+	
+	DatValue(PROPNAME=="no_permitir_stock_negativos",BOOLEANVALOR==true)
+	//not(DatValue(CLASSNAME=="APLICACIÓN", PROPNAME=="asignar_stocks_salidas", BOOLEANVALOR==true))
+	FactHierarchy(CLASSSUP=="STOCK",idtoStock:IDTO)
+	DatValue(IDTO==idtoStock, PROPNAME=="cantidad",stock:DOUBLEVALUE<0,idoStock:IDO!=null)
+	ObjValue(IDO==idoStock,PROPNAME=="producto",idoProd:IDOVALUE!=null,idtoProd:VALUECLS)
+	ObjValue(IDO==idoStock,PROPNAME=="almacén_stock",idoAlm:IDOVALUE!=null,idtoAlm:VALUECLS)	
+ then
+	 dma.printRule("\n\n ==========NO SE PERMITEN STOCK NEGATIVOS SI ASÍ SE CONFIGURA LA APLICACIÓN");
+	throw new OperationNotPermitedException("No se permite stock negativos. El producto: "+dma.getValue(idoProd,idtoProd,"rdn").getValue_s()+" quedaría con stock: "+stock+"  en el almacén: "+dma.getValue(idoAlm,idtoAlm,"rdn").getValue_s());
+end
+
+/*
+Si se elimina un producto o un destino, y se vuelve a poner, no se reinstala el stock porque la regla de instalacion ya no atiende a un "not stock", ya que lo acumula con objeto de arreglarlo si esta corrupto
+rule "DESINSTALACION DE STOCKS CANTIDAD 0"
+salience -200
+no-loop true
+//si se pone en bddrules falla porque vuelve a ejecutarse grupo rules al aceptar
+agenda-group "rules" when 
+	
+	FactHierarchy(idtoStock:IDTO,CLASSSUP=="STOCK")
+  	Individual(IDTO==idtoStock,idoStock:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+  	DatValue(IDO==idoStock,PROPNAME=="cantidad", cantidad:DOUBLEVALUE==0)  	
+  	(or	
+  		exists(DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="borrar_stocks_a_cero",BOOLEANVALOR==true))
+	  	eval(idoStock<0))
+	ObjValue(IDO==idoStock,PROPNAME=="producto",idoProducto:IDOVALUE!=null,idtoProducto:VALUECLS)	 
+	//acumular otras referencias dominio !=stock no aislado ni deleted	
+	dominios:ArrayList()
+		from accumulate(
+				(and
+					ObjValue(idoDom:IDO!=idoStock,idtoDom:IDTO,PROP!=null,IDOVALUE==idoProducto)
+					Individual(IDO==idoDom,ISOLATED==false,STATE==Constants.INDIVIDUAL_STATE_READY)) 	
+				,
+			init(ArrayList list=new ArrayList();),
+			action( list.add(idoDom+" "+idtoDom);),
+			result(list))
+	DatValue(IDO==idoStock,PROPNAME=="clave_producto", clave:VALOR!=null)  
+	
+	not((and DatValue(idoDom:IDO!=idoStock,PROPNAME=="clave_producto",VALOR==clave)
+			 Lock(IDO==idoDom,LOCKEDBYUSER==true)))
+	
+then
+ 	dma.printRule("\n  ================ DESINSTALACION DE STOCKS CANTIDAD 0: stock="+idoStock+" idoProducto:"+idoProducto+" dominios:"+dominios);
+	dma.deleteObject(idoStock,idtoStock);
+	//si producto nuevo y no existen otras refe delete producto
+	if(Constants.isIDTemporal(idoProducto) && dominios.isEmpty()){
+		dma.deleteObject(idoProducto,idtoProducto);
+	}
+end*/
+
+
+rule "EN ACCION Modificar_Conjuntamente_Factura_Albarán_Stock SI SE ELIMINA LÍNEA DE LA FACTURA SE ELIMINA DEL ALBARÁN" 
+ agenda-group "rules" when 
+	ObjValue(CLASSNAME=="Modificar_Conjuntamente_Factura_Albarán_Stock",  idoUTask:IDO,PROPNAME=="sourceClass",idFactura:VALOR!=null)
+	ObjValue(ID==idFactura,PROPNAME=="línea",lineaDesvinculada:PREVALOR!=null,VALOR==null,idtoLinea:VALUECLS)
+	ObjValue(ID==lineaDesvinculada,PROPNAME=="documento",idoAlbaran:IDOVALUE!=null,idtoAlbaran:VALUECLS,RANGENAME=="ALBARÁN_CLIENTE")	
+then
+ 	dma.printRule("\n\n============== EN ACCION Modificar_Conjuntamente_Factura_Albarán_Stock SI SE ELIMINA LÍNEA DE LA FACTURA SE ELIMINA DEL ALBARÁN");
+ 	dma.delValue(idoAlbaran,idtoAlbaran,"línea",new ObjectValue(Integer.parseInt(lineaDesvinculada),idtoLinea));
+end
+	
+
+rule "EN ACCION Modificar_Conjuntamente_Factura_Albarán_Stock SI SE CREA NUEVA LÍNEA EN LA FACTURA SE AÑADE AL ALBARÁN" 
+ agenda-group "rules" when 
+	ObjValue(CLASSNAME=="Modificar_Conjuntamente_Factura_Albarán_Stock",  idoUTask:IDO, idtoUTask:IDTO,PROPNAME=="sourceClass",idFactura:VALOR!=null)
+	ObjValue(ID==idFactura,PROPNAME=="línea",lineaNueva:VALOR!=null,idoLineaNueva:IDOVALUE<0,idtoLineaNueva:VALUECLS)	
+	
+	not(ObjValue(ID==lineaNueva,PROPNAME=="documento",VALOR!=null,RANGENAME=="ALBARÁN_CLIENTE"))	
+	ObjValue(ID==idFactura,PROPNAME=="línea",IDOVALUE>0,lineaComun:VALOR!=null)
+	ObjValue(ID==lineaComun,PROPNAME=="documento",idoAlbaran:IDOVALUE!=null,idtoAlbaran:VALUECLS,RANGENAME=="ALBARÁN_CLIENTE")
+		
+	
+then
+ 	dma.printRule("\n\n============== EN ACCION Modificar_Conjuntamente_Factura_Albarán_Stock SI SE CREA NUEVA LÍNEA EN LA FACTURA SE AÑADE AL ALBARÁN");
+ 	dma.addValue(idoAlbaran,idtoAlbaran,"línea",new ObjectValue(idoLineaNueva,idtoLineaNueva));
+end
+
+rule "EN ACCION Modificar_Conjuntamente_Factura_Albarán_Stock targetClass=sourceClass" 
+ agenda-group "rules" when 
+	ObjValue(CLASSNAME=="Modificar_Conjuntamente_Factura_Albarán_Stock",  idoUTask:IDO,idtoUTask:IDTO,PROPNAME=="sourceClass",idFactura:VALOR!=null,factura:OBJECTVALUE)
+	not(ObjValue(IDO==idoUTask,PROPNAME=="targetClass",VALOR==idFactura))
+then		
+ 	dma.printRule("\n\n============== EN ACCION Modificar_Factura_Albarán_Stock targetClass=sourceClass");
+ 	dma.addValue(idoUTask,idtoUTask,"targetClass",factura);
+end	
+	
+rule "EN ACCION Modificar_Conjuntamente_Factura_Albarán_Stock cargar Albaran de la Factura si no está en motor" 
+salience -200
+ agenda-group "rules" when 
+	ObjValue(CLASSNAME=="Modificar_Conjuntamente_Factura_Albarán_Stock",  idoUTask:IDO,PROPNAME=="sourceClass",idFactura:VALOR!=null)
+	ObjValue(ID==idFactura,PROPNAME=="línea",linea:VALOR!=null)
+	ObjValue(ID==linea,PROPNAME=="documento",idoAlbaran:IDOVALUE!=null,idtoAlbaran:VALUECLS,RANGENAME=="ALBARÁN_CLIENTE")
+	not(DatValue(IDO==idoAlbaran,PROPNAME=="rdn"))	
+then
+ 	dma.printRule("\n\n============== EN ACCION Modificar_Conjuntamente_Factura_Albarán_Stock cargar Albaran de la Factura si no está en motor");
+ 	dma.ruleGetFromServer(idoAlbaran,idtoAlbaran,2,false); 
+end	
+
+
+rule "RECTIFICATIVO"
+salience -200
+ agenda-group "rules" when 
+	Model(p:PROPNAME=="rectificativo",OP=="AND",clsDoc:CLASSNAME)
+	Lock(CLASSNAME==clsDoc,idoDoc:IDO!=null,idtoDoc:IDTO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	rectificativoData:ArrayList() from collect(ObjValue(IDO==idoDoc,PROPNAME=="rectifica_a",IDOVALUE!=null))	
+then
+	dma.printRule("============= RECTIFICATIVO "+rectificativoData.size());
+	dma.setValue(idoDoc,idtoDoc,p,new BooleanValue(rectificativoData.size()>0));
+end
+
+
+rule "PARTIR LINEAS POR FALTA DE STOCK EN DOCUMENTOS MULTIALMACEN"
+salience -200
+//Menos prioritaria que partir lineas por ciclo de vida. Así si hay un cambio de cantidad procesable por ciclo, esta puede no se dispare si el resultado satisface stock
+//Menos perioritaria que la anterior. 
+//Menos prioritaria que la actualizacion stock
+//Menos prioritaria que la de marcar por defecto lote siendo consumido
+//Menos prioritaria que asignar lote a linea y producir lote
+agenda-group "rules" when 
+		//NOTA: PARTIR LINEAS POR STOCK FICTICIOS es otra regla        
+        
+    	FactHierarchy(idtoRoot:IDTO,clsSup:CLASSSUP=="PRODUCCIÓN"||=="FLUJO_ARTÍCULOS")
+    	//not(FactHierarchy(IDTO==idtoRoot,CLASSSUP=="TRASPASO_ALMACENES"))	    	
+        Individual(IDTO==idtoRoot, classRoot:CLASSNAME,idoRoot:IDO,STATE==Constants.INDIVIDUAL_STATE_READY,docLevel:LEVEL)
+        ObjValue(IDO==idoRoot,propLinea:PROPNAME=="consumo"||=="línea",idoLineaIN:IDOVALUE!=null,obLineaIN:OBJECTVALUE)     
+		 
+		forall( FactHierarchy(CLASSSUP=="PRODUCCIÓN",IDTO==idtoRoot)
+	 			ObjValue(IDO==idoRoot,PROPNAME=="estado",idoEstado:IDOVALUE!=null)
+	 			DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR=="Programado"))
+	 				 
+        ObjValue( idoStock:IDO, PROPNAME=="almacén_stock", idoAlmacen:IDOVALUE)
+        DatValue(IDO==idoStock, PROPNAME=="clave_producto", key:VALOR!=null)
+        DatValue(IDO==idoStock,PROPNAME=="cantidad",cantidadStock:QMAX< 0, hasCHANGED==true) 
+                			    	
+        DatValue(IDO==idoLineaIN, clsLineaIn:CLASSNAME, PROPNAME=="clave_producto",VALOR==key)
+	    DatValue(IDO==idoLineaIN, PROPNAME=="rdn", rdnLinea:VALOR,initRdnLinea:INITIALVALOR)        
+        ObjValue(IDO==idoLineaIN, PROPNAME=="producto",idoProductoIN:IDOVALUE)
+        DatValue(IDO==idoProductoIN, PROPNAME=="rdn", rdnProducto:VALOR)
+        forall(	ObjValue(IDO==idoLineaIN,PROPNAME=="lote",idoLote:IDOVALUE!=null) 
+        		ObjValue(IDO==idoStock,PROPNAME=="lote",IDOVALUE==idoLote))
+        //SOlo partimos si más de una linea del mismo producto talla y color pueden distinguir más de un stock. 
+        //Es decir, si dadas unas caracteristicas comerciales (un producto con una talla y color determinada) puede 
+        //haber más de un stock con esas mismas características, por ejemplo porque tenga distinto lote o porque la linea especifique distinto almacen. 
+        //En caso contrario no tiene sentido partir
+
+     	asignaSalidas:ArrayList() from collect(DatValue(CLASSNAME=="APLICACIÓN", PROPNAME=="asignar_stocks_salidas", BOOLEANVALOR==true))
+		asignaEntradas:ArrayList() from collect(DatValue(CLASSNAME=="APLICACIÓN", PROPNAME=="asignar_stocks_entradas", BOOLEANVALOR==true))
+		asignaConsumo:ArrayList() from collect(DatValue(CLASSNAME=="APLICACIÓN", PROPNAME=="asignar_stocks_consumo", BOOLEANVALOR==true))
+		noStockNeg:ArrayList() from collect(DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="no_permitir_stock_negativos",BOOLEANVALOR==true))
+		esDespiece:Double() from accumulate(DatValue(IDO==idoRoot, PROPNAME=="es_despiece", q:QMIN!=null) sum(q))
+		
+		traspasar_stock_real:Long() from accumulate((and 	FactHierarchy(IDTO==idtoRoot,CLASSSUP=="TRASPASO_ALMACENES")															
+															DatValue(CLASSNAME=="PARAMETRO_VERDADERO",idoParam:IDO,PROPNAME=="rdn",VALOR=="TRASPASAR_STOCK_REAL")
+															not((and 	DatValue(IDO==idoParam,PROPNAME=="filtro",f:VALOR!=null)															
+																		ObjValue(act:CLASSNAME,PROPNAME=="estadoRealizacion")
+																		eval(!f.matches("(?i).*("+act+").*"))))
+        													DatValue(IDO==idoParam,PROPNAME=="activo",VALOR=="true")), count(idoParam))
+
+     	(or	eval(noStockNeg.size()>0)
+     		eval(traspasar_stock_real.intValue()>0)
+     		exists(ObjValue(IDO==idoLineaIN,PROPNAME=="lote",VALOR!=null))
+	        exists(ObjValue(IDO==idoLineaIN,PROPNAME=="almacén_origen", IDOVALUE!=null))
+	        )
+	        
+		FactHierarchy(CLASSSUP=="ALMACÉN",idtoAlmacen:IDTO)
+		ObjValue(VALUECLS==idtoAlmacen,IDO==idoLineaIN||==idoRoot, propAlmacenLinea:PROPNAME=="almacén_origen"||=="origen"||=="almacén_destino"||=="destino", IDOVALUE==idoAlmacen,almCh:hasCHANGED)
+		
+		//si correla por origen es una salida
+		eval(	noStockNeg.size()>0 || traspasar_stock_real.intValue()>0 ||
+				propAlmacenLinea.contains("destino")&&propLinea.equals("línea")&&(asignaEntradas.size()>0)||
+				propAlmacenLinea.contains("origen")&&propLinea.equals("línea")&&(asignaSalidas.size()>0)||
+				clsSup.equals("PRODUCCIÓN")&&(asignaConsumo.size()>0)&&(
+												propAlmacenLinea.contains("origen")&&propLinea.equals(esDespiece.intValue()==0?"consumo":"línea")||
+												propAlmacenLinea.contains("destino")&&propLinea.equals(esDespiece.intValue()==0?"línea":"consumo")
+											)
+			)
+			
+		//Una linea es de salida si tiene almacen origen como aqui se exige, asi que no hace falta exigir DOC herede de salida
+
+		FactQ:DatValue(IDO==idoLineaIN,PROPNAME=="cantidad",cantidadLinea:QMAX,initLin:INITIALDOUBLE)
+        //las entradas solo parten sin son devoluciones
+      
+        eval(propAlmacenLinea.contains("destino")&&cantidadLinea<0 || propAlmacenLinea.contains("origen")&&cantidadLinea>0)
+        
+		
+        Lock(IDO==idoLineaIN,idtoLineaIN:IDTO,st:STATE!=null,userLock:USERCHANGEDSTATE)
+       
+        // si la linea la ha bloqueado el usuario esperamos a que se salga, con end lock
+        eval(almCh || userLock!=null && (userLock.equals(Constants.USER_SYSTEM)&&st.equals(Constants.INDIVIDUAL_STATE_LOCK)||!userLock.equals(Constants.USER_SYSTEM)&&st.equals(Constants.INDIVIDUAL_STATE_END_LOCK)))
+                        		                                                                                                                                                                                                                          
+        //forall( ObjValue(IDO==idoStock,partidaProp:PROPNAME=="lote"||=="talla"||=="color", partidaIdent:IDOVALUE!=null)
+        //        ObjValue(IDO==idoLineaIN,PROPNAME==partidaProp, IDOVALUE==partidaIdent))          
+                
+		bajoUnaAccion:String()  from accumulate((and 	FactHierarchy(CLASSSUP=="ACTION",idtoAction:IDTO)
+														ObjValue(IDTO==idtoAction,cls:CLASSNAME,PROPNAME=="estadoRealizacion",VALUE!=null)),
+														init(String res="";), action(res=cls;), result(res))
+		DatValue(IDO==idoAlmacen, PROPNAME=="rdn", rdnAlm:VALOR)  												                                                     
+
+		//NoStockNegativo:Number() from accumulate(DatValue(ido:IDO,ICLASSNAME=="APLICACIÓN",PROPNAME=="no_permitir_stock_negativos",BOOLEANVALOR==true)),
+		//							sum(ido)                                                
+      
+then
+        dma.printRule("==============PARTIR LINEAS POR FALTA DE STOCK EN DOCUMENTOS MULTIALMACEN solo stk real:"+(traspasar_stock_real.intValue()>0)+" almacen "+rdnAlm+",producto "+rdnProducto+", cant lin y stock "+cantidadLinea+","+cantidadStock+" linea:"+idoLineaIN+","+idoStock);
+        int sentido= (propAlmacenLinea.contains("destino")?-1:1);
+        double cantidadConsumida= sentido*cantidadLinea;
+        Domain lineaIN=new Domain(idoLineaIN,idtoLineaIN);
+        
+                //Hay que distinguir entre el nivel de la linea y el de la contibucion de la linea.
+                //Una linea ya existente, que venga de un documento en una fase previa, pero que bajo un nuevo docRoot, representa una contribución completamente nueva
+                
+                //el stock de este almacen no alimenta ninguna unidad, lo reseteamos para que sea asignado otro
+                //Debió haberse asignado sin estar cargado el stock, pero ahora si por tanto no volverá a asignarse el mismo almacen                
+                //Caso de ser el doc prototipo, o la linea nueva, la cantidad consumida es todo el valor de la linea, por mucho que la linea ya existiera, toda su contribución es nueva
+                
+        if(docLevel==Constants.LEVEL_INDIVIDUAL && initLin!=null && initRdnLinea!=null && initRdnLinea.equals(rdnLinea)){
+                cantidadConsumida=sentido*(cantidadLinea- initLin);
+        }
+        dma.printRule(" cantidad consumida "+        sentido*cantidadConsumida);
+        if( cantidadConsumida > 0 ){ //Si en esta sesion no hay contribución nueva cantidadConsumida==0, todo contribuyo cuando se guardo en BD, no debo modificar nada
+                ObjectValue lote=null;
+                
+                if(dma.getMetaData().hasProperty(clsLineaIn,"lote")){
+                        lote=(ObjectValue)dma.getValue(lineaIN,"lote");
+                }
+                if( cantidadConsumida==sentido*cantidadLinea && cantidadStock <= -cantidadConsumida ){ 
+                        if( lote!=null ){
+                        	if(bajoUnaAccion.equals("Generar_produccion_automatica_basada_en_consumos")){
+                        		System.err.println("PARTIR LINEAS, no se parte por accion auto y consumirse todo");
+	                        }else{
+	                        	System.err.println("PARTIR LINEAS, se eliminará el lote cant:"+cantidadLinea+", consum:"+cantidadConsumida);
+	                        	dma.showMessage("El producto "+rdnProducto+" no tiene stock disponible para el lote seleccionado.");
+                        		dma.delValues(lineaIN,"lote");                        		
+                        	}
+                        }	
+                        else	if(propAlmacenLinea.equals("almacén_origen")){
+	                        		System.err.println("PARTIR LINEAS, se eliminará el almacen");
+                         			dma.delValues(lineaIN,propAlmacenLinea);
+                         		}else{
+                         			if(bajoUnaAccion.length()==0){
+                         				throw new OperationNotPermitedException("No puede realizarse el cambio.\nEl producto "+rdnProducto+" no tiene stock disponible (está configurado que no puede haber stock negativos)");
+                         				//dma.showMessage("El producto "+rdnProducto+" no tiene stock disponible");
+                         			}else{
+                         				dma.delValue(new Domain(idoRoot,idtoRoot),propLinea,obLineaIN);
+                         			}
+                         		}
+                }else {
+                			//Pendiente es lo que no se puede servir
+                            Double cantidadPendiente= Math.min( Math.abs(cantidadConsumida), -cantidadStock );                            
+                            dma.printRule("       pendiente="+cantidadPendiente+","+classRoot);
+                            
+                            if( lote==null && !propAlmacenLinea.equals("almacén_origen") && bajoUnaAccion.length()==0	){
+                            	dma.showMessage(" La cantidad del producto "+rdnProducto +" va a ser reducida al stock existente: "+(cantidadLinea-sentido*cantidadPendiente));
+                            }
+                            dma.setValue(lineaIN,"cantidad",new DoubleValue(cantidadLinea - sentido*cantidadPendiente));//Cantidad Stock es negativo, por tanto resta lo que falta
+                            
+                            //Si reduzco la cantidad, sin crear una linea con lo restante (es decir si no entramos en siguiente if), no puedo consumir evento
+                            //porque debe dispararse ciclo de vida
+                            if( lote!=null || propAlmacenLinea.equals("almacén_origen") ){
+                            	//TODO: en negocios se quiera parta en documentos (por falta stock) añadir forall: si es linea_articulo tenga precio!=null
+                        
+	                            String excluproperties="cantidad#importe#concepto#almacén_origen#almacén_destino#lote#número#consumido_por";
+    	                        Domain lineaIN_target=dma.cloneIndividual(idoLineaIN,idtoLineaIN, idtoLineaIN, excluproperties);                
+                        
+        	                    //Domain lineaIN_target= dma.creaIndividualOfClass(classLineaIN);
+                                
+            	                //dma.setValue(lineaIN_target,"producto",producto);
+                	            dma.printRule("\nCrear linea "+lineaIN_target.getIdo()+" q="+sentido*cantidadPendiente);                        
+                    	        dma.setValue(lineaIN_target,"cantidad",new DoubleValue(sentido*cantidadPendiente));
+                        	    
+                        	    if(propLinea.equals("consumo")){
+                        	    	//En este caso no tiene inversa como "línea", por tanto el clone de documento no la informa
+                        	    	dma.addValue(new Domain(idoRoot,idtoRoot),propLinea,new ObjectValue(lineaIN_target));
+                        	    }
+                        	    FactQ.consumirEventoCambio();
+                        	    //Consumo producto para que reglas por defecto no ponga
+                        	    dma.consumirEventoCambio(idoRoot,"línea",lineaIN_target.getIdo(),lineaIN_target.getIdto());
+                        	    dma.consumirEventoCambio(lineaIN_target.getIdo(),"producto");
+                        	}
+                 }
+          }
+end
+
+rule "PARTIR LINEAS POR FALTA DE STOCK DISPONIBLE"
+salience -200
+agenda-group "rules" when 
+		//NOTA: PARTIR LINEAS POR STOCK FICTICIOS es otra regla
+        
+    		
+        DatValue(CLASSNAME=="PARAMETRO_NUMERICO",idoParamDispon:IDO,PROPNAME=="rdn",VALOR=="STOCK_DISPONIBILE_MINIMO")
+        DatValue(IDO==idoParamDispon,PROPNAME=="valor_numerico",disponMin:QMIN!=null)
+        
+        FactHierarchy(idtoRoot:IDTO,clsSup:CLASSSUP=="PEDIDO_DE_CLIENTE"||=="PEDIDO_TRASPASO_ALMACENES")  
+        Individual(IDTO==idtoRoot, classRoot:CLASSNAME,idoRoot:IDO,STATE==Constants.INDIVIDUAL_STATE_READY,docLevel:LEVEL)
+        Lock(IDO==idoRoot,LOCKEDBYUSER==true)
+        
+        ObjValue(IDO==idoRoot,propLinea:PROPNAME=="línea",idoLineaIN:IDOVALUE!=null,obLineaIN:OBJECTVALUE)     	 				 				         
+                			    		          
+        ObjValue(IDO==idoLineaIN, PROPNAME=="producto",idoProductoIN:IDOVALUE)
+        //no tiro de stock disponible current, que puede ser actualizado con reservas de stock dinamicas, ya que no tiene sentido al trabajar en red de delegaciones remotas, por tanto debo descontar
+        DatValue(IDO==idoProductoIN, PROPNAME=="stock_disponible",cantidadDisponibleInit:INITIALDOUBLE!=null)
+        DatValue(IDO==idoProductoIN, PROPNAME=="rdn", rdnProducto:VALOR)
+
+        //SOlo partimos si más de una linea del mismo producto talla y color pueden distinguir más de un stock. 
+        //Es decir, si dadas unas caracteristicas comerciales (un producto con una talla y color determinada) puede 
+        //haber más de un stock con esas mismas características, por ejemplo porque tenga distinto lote o porque la linea especifique distinto almacen. 
+        //En caso contrario no tiene sentido partir		
+
+		FactHierarchy(CLASSSUP=="ALMACÉN",idtoAlmacen:IDTO)
+		ObjValue(VALUECLS==idtoAlmacen,IDO==idoLineaIN||==idoRoot, propAlmacenLinea:PROPNAME=="almacén_origen"||=="origen", idoAlmacen:IDOVALUE,almCh:hasCHANGED)
+		
+		//si es una red, la disponibilidad solo se cuenta en la delegacion central
+		not((and 	ObjValue(IDO==idoProductoIN, PROPNAME=="empresa",idoEmpresaProd:IDOVALUE!=null)    
+					ObjValue(IDO==idoEmpresaProd,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE)
+					ObjValue(IDO==idoAlmacen,PROPNAME=="delegación",IDOVALUE!=idoDelCentral)))
+		
+	      		
+		//Una linea es de salida si tiene almacen origen como aqui se exige, asi que no hace falta exigir DOC herede de salida
+
+		FactQ:DatValue(IDO==idoLineaIN,PROPNAME=="cantidad",cantidadLinea:QMAX,initLin:INITIALDOUBLE)
+        //las entradas solo parten sin son devoluciones
+      
+        eval(cantidadLinea>0&&cantidadDisponibleInit-cantidadLinea<disponMin)        
+		
+        Lock(IDO==idoLineaIN,idtoLineaIN:IDTO,st:STATE!=null,userLock:USERCHANGEDSTATE)
+
+        // si la linea la ha bloqueado el usuario esperamos a que se salga, con end lock
+        eval( userLock!=null && (userLock.equals(Constants.USER_SYSTEM)&&st.equals(Constants.INDIVIDUAL_STATE_LOCK)||!userLock.equals(Constants.USER_SYSTEM)&&st.equals(Constants.INDIVIDUAL_STATE_END_LOCK)))                        		                                                                                                                                                                                                                                
+                
+		bajoUnaAccion:String()  from accumulate((and 	FactHierarchy(CLASSSUP=="ACTION",idtoAction:IDTO)
+														ObjValue(IDTO==idtoAction,cls:CLASSNAME,PROPNAME=="estadoRealizacion",VALUE!=null)),
+														init(String res="";), action(res=cls;), result(res))		 												                                                     
+                                    
+      
+then
+        dma.printRule("==============PARTIR LINEAS POR FALTA DE STOCK DISPONIBLE= ,producto "+rdnProducto+", cant lin y stock "+cantidadLinea+",linea:"+idoLineaIN);
+        int sentido= (propAlmacenLinea.contains("destino")?-1:1);
+        double cantidadConsumida= sentido*cantidadLinea;
+        Domain lineaIN=new Domain(idoLineaIN,idtoLineaIN);
+        
+                //Hay que distinguir entre el nivel de la linea y el de la contibucion de la linea.
+                //Una linea ya existente, que venga de un documento en una fase previa, pero que bajo un nuevo docRoot, representa una contribución completamente nueva
+                
+                //el stock de este almacen no alimenta ninguna unidad, lo reseteamos para que sea asignado otro
+                //Debió haberse asignado sin estar cargado el stock, pero ahora si por tanto no volverá a asignarse el mismo almacen                
+                //Caso de ser el doc prototipo, o la linea nueva, la cantidad consumida es todo el valor de la linea, por mucho que la linea ya existiera, toda su contribución es nueva
+                
+        if(docLevel==Constants.LEVEL_INDIVIDUAL && initLin!=null){
+                cantidadConsumida=sentido*(cantidadLinea- initLin);
+        }
+        double cantidadExcedida=Math.max(0.0,-(cantidadDisponibleInit-disponMin-cantidadConsumida));//exceso en postivio sobre el disponible
+        dma.printRule(" cantidad consumida "+       cantidadConsumida+ "excedida:"+cantidadExcedida);
+        
+        if( cantidadConsumida > 0 ){ //Si en esta sesion no hay contribución nueva cantidadConsumida==0, todo contribuyo cuando se guardo en BD, no debo modificar nada                
+                
+                if( cantidadConsumida==sentido*cantidadLinea && cantidadExcedida>=cantidadConsumida ){ 
+						if(propAlmacenLinea.equals("almacén_origen")){
+	                       		System.err.println("PARTIR LINEAS, se eliminará el almacen");
+                       			dma.delValues(lineaIN,propAlmacenLinea);
+                    	}else{
+                      			if(bajoUnaAccion.length()==0){
+                       				throw new OperationNotPermitedException("No puede realizarse el cambio.\nEl producto "+rdnProducto+" no tiene stock disponible (está configurado que no puede haber stock negativos)");
+                       				//dma.showMessage("El producto "+rdnProducto+" no tiene stock disponible");
+                       			}else{
+                       				dma.delValue(new Domain(idoRoot,idtoRoot),propLinea,obLineaIN);
+                       			}
+                    	}
+                }else {
+                			//Pendiente es lo que no se puede servir
+                            Double cantidadPendiente= Math.min( Math.abs(cantidadConsumida), cantidadExcedida);                            
+                            dma.printRule("       pendiente="+cantidadPendiente+","+classRoot);
+                            
+                            if( !propAlmacenLinea.equals("almacén_origen") && bajoUnaAccion.length()==0	){
+                            	dma.showMessage(" La cantidad del producto "+rdnProducto +" va a ser reducida al stock disponible: "+(cantidadLinea-sentido*cantidadPendiente));
+                            }
+                            dma.setValue(lineaIN,"cantidad",new DoubleValue(cantidadLinea - sentido*cantidadPendiente));//Cantidad Stock es negativo, por tanto resta lo que falta
+                            
+                            //Si reduzco la cantidad, sin crear una linea con lo restante (es decir si no entramos en siguiente if), no puedo consumir evento
+                            //porque debe dispararse ciclo de vida
+                            
+                 }
+          }
+end
+	
+rule "STOCK TOTAL TODAS NUESTRA MI_EMPRESAS"
+salience -100
+ agenda-group "rules" when 
+  	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="MATERIA")
+	DatValue(IDTO==idto,idmater:ID!=null,idomater:IDO!=null,PROPNAME=="rdn",LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL)	
+	
+	stockInit: Double() 
+    	from accumulate((and	
+    						FactHierarchy(CLASSSUP=="STOCK",idtoStock:IDTO)
+					    	ObjValue(IDTO==idtoStock,idstock:ID!=null,PROPNAME=="producto", INITIALVALOR==idmater)					    	
+							DatValue(ID==idstock,PROPNAME=="cantidad", cantidadInitial:INITIALDOUBLE!=null)
+							ObjValue(ID==idstock,PROPNAME=="almacén_stock", almacenStockInitial:INITIALVALOR!=null)
+							ObjValue(ID==almacenStockInitial,PROPNAME=="empresa", INITIALVALOR!=null,RANGENAME=="MI_EMPRESA")
+						),
+                      sum(cantidadInitial))
+	stockCurr: Double() 
+    	from accumulate((and
+    						FactHierarchy(CLASSSUP=="STOCK",idtoStock:IDTO)
+    						Individual(IDTO==idtoStock,idstock:ID,STATE==Constants.INDIVIDUAL_STATE_READY)
+					    	ObjValue(ID==idstock,PROPNAME=="producto", VALOR==idmater)										
+							DatValue(ID==idstock,PROPNAME=="cantidad", cantidadCurrent:DOUBLEVALUE!=null)
+							ObjValue(ID==idstock,PROPNAME=="almacén_stock", almacenStock:VALOR!=null)
+							ObjValue(ID==almacenStock,PROPNAME=="empresa", VALOR!=null,RANGENAME=="MI_EMPRESA")
+														
+						),
+                      sum(cantidadCurrent))                             
+					                                 
+then
+	dma.setIncrementalValue(idomater,idto,dma.getIdProperty("stock_total"),stockCurr-stockInit,null);
+	dma.printRule("\n\n ===========STOCK TOTAL TODAS NUESTRA MI_EMPRESAS: idmat="+idmater);	
+end
+
+
+//nueva regla calculo unidades a partir numero cajas (si cantidad=null)
+
+//Cajas tiene como valor por defecto=Parte Entera(linea.cantidad*linea.unidades_por_bulto+1)
+rule "CAJAS EN LINEA"
+ agenda-group "rules" when 
+   	FactHierarchy(nameclass:CLASS, CLASSSUP=="LÍNEA")
+	Model(CLASSNAME==nameclass,OP==Constants.OP_INTERSECTION,PROPNAME=="cantidad_envase_1")	
+	//No puedo decir no bloqueado por usuario porque antes de salir el usuario de la liena podria desautorizar el numero de cajas, de lo contrario esta regla se dispara despues machacando ese valor
+	ObjValue(CLASSNAME==nameclass,idoLinea:IDO,idtolinea:IDTO,IDO==idoLinea,PROPNAME=="producto",producto:VALOR!=null, ch1:hasCHANGED)		
+	DatValue(IDO==idoLinea,PROPNAME=="cantidad",cantidad:DOUBLEVALUE!=null, ch2:hasCHANGED)
+	ObjValue(ID==producto,PROPNAME=="tipo_embalado",tipoEmbalado:VALOR!=null, ch3:hasCHANGED)
+	DatValue(ID==tipoEmbalado,PROPNAME=="cantidadXenvase1",unidades:DOUBLEVALUE!=null, ch4:hasCHANGED)
+	eval( ch1||ch2||ch3||ch4 )
+then
+	dma.printRule("================= CAJAS EN LINEA");
+	cantidad=Math.abs(cantidad);
+
+	dma.setValue(idoLinea,idtolinea,"cantidad_envase_1", new DoubleValue(Auxiliar.redondea(cantidad/unidades,1)));
+end
+
+//Cajas tiene como valor por defecto=Parte Entera(linea.cantidad*linea.unidades_por_bulto+1)
+rule "CANTIDAD LÍNEA A PARTIR NÚMERO DE CAJAS"
+ agenda-group "rules" when 
+   	FactHierarchy(nameclass:CLASS, CLASSSUP=="LÍNEA")
+	Model(CLASSNAME==nameclass,OP==Constants.OP_INTERSECTION,PROPNAME=="cantidad_envase_1")	
+	//No puedo decir no bloqueado por usuario porque antes de salir el usuario de la liena podria desautorizar el numero de cajas, de lo contrario esta regla se dispara despues machacando ese valor
+	ObjValue(CLASSNAME==nameclass,idoLinea:IDO,idtolinea:IDTO,PROPNAME=="producto",producto:VALOR!=null, ch1:hasCHANGED)		
+	not(DatValue(IDO==idoLinea,PROPNAME=="cantidad",cantidad:DOUBLEVALUE!=null, ch2:hasCHANGED))
+	DatValue(IDO==idoLinea,PROPNAME=="cantidad_envase_1",cajas:DOUBLEVALUE!=null, ch2:hasCHANGED)
+	ObjValue(ID==producto,PROPNAME=="tipo_embalado",tipoEmbalado:VALOR!=null, ch3:hasCHANGED)
+	DatValue(ID==tipoEmbalado,PROPNAME=="cantidadXenvase1",cantidadXenvase1:DOUBLEVALUE!=null, ch4:hasCHANGED)
+	eval( ch1||ch2||ch3||ch4 )
+then
+	dma.printRule("\n\n ============= CANTIDAD LÍNEA A PARTIR NÚMERO DE CAJAS");
+	dma.setValue(idoLinea,idtolinea,"cantidad", new DoubleValue(cajas*cantidadXenvase1));
+end
+
+ 
+rule "CALCULO CANTIDAD_TOTAL EN ENTRADA/SALIDA MERCANCIA"
+salience -100
+ agenda-group "rules" when 
+  	//PERFORMANCE hacer patron contributivo
+	FactHierarchy(nameClass:CLASS, CLASSSUP=="FLUJO_ARTÍCULOS")
+	Individual(idoFlujo:IDO,idtoflujo:IDTO,CLASSNAME==nameClass,STATE==Constants.INDIVIDUAL_STATE_READY)
+	cantidadTotal:Double() 
+		     from accumulate(
+             				 (and 
+             					  ObjValue(IDO==idoFlujo, PROPNAME=="línea", idlinea:VALOR!=null)
+             					  DatValue(ID==idlinea,PROPNAME=="cantidad" ,cantidad:DOUBLEVALUE!=null)
+								  FactHierarchy(tipoProducto:CLASS,CLASSSUP=="MATERIA")							
+								  ObjValue(ID==idlinea,PROPNAME=="producto", RANGENAME==tipoProducto)          					  
+             				  ),
+                              sum(cantidad))
+then
+	dma.printRule("----------- RULE CALCULO CANTIDAD TOTAL EN ENTRADA/SALIDA MERCANCIA. cantidadTotal="+cantidadTotal);
+	dma.setDoubleValue(idoFlujo,idtoflujo,dma.getIdProperty("cantidad_total"),Auxiliar.redondea(cantidadTotal,4),true);
+end
+
+rule "CALCULO TOTAL KG"
+salience -100
+ agenda-group "rules" when 
+   //PERFORMANCE hacer patron contributivo
+   Model(nameclass:CLASSNAME,OP==Constants.OP_INTERSECTION,idProp:PROP,PROPNAME=="total_kg")//cualquier clase que tenga esa propiedad
+   Individual(CLASSNAME==nameclass,idoDoc:IDO,idtoDoc:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+   pesoGramos: Double() 
+   from accumulate(
+            			 (and 
+             					   ObjValue(IDO==idoDoc,PROPNAME=="línea",idlinea:VALOR!=null)
+								   ObjValue(ID==idlinea,PROPNAME=="producto",producto:VALOR!=null)
+								   DatValue(ID==producto,PROPNAME=="peso_bruto_gramos",pesoProducto:DOUBLEVALUE!=null)
+								   DatValue(ID==idlinea,PROPNAME=="cantidad",cantidadlinea:DOUBLEVALUE!=null)
+			     		),
+                             sum(cantidadlinea*pesoProducto)
+                  )
+then
+	dma.printRule("\n\n  =================  CALCULO TOTAL KG: pesoGramos="+pesoGramos+"  documento="+idoDoc+" "+nameclass);
+	dma.setDoubleValue(idoDoc,idtoDoc,idProp,Auxiliar.redondea(pesoGramos*0.001D,3),true);
+end
+
+rule "CALCULO TOTAL CAJAS"
+salience -100
+ agenda-group "rules" when 
+	//PERFORMANCE hacer patron contributivo
+	Model(nameclass:CLASSNAME,OP==Constants.OP_INTERSECTION,idprop:PROP,PROPNAME=="total_cantidad_envase1")//cualquier clase que tenga esa propiedad
+	Individual(CLASSNAME==nameclass,idtoDoc:IDTO,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+
+	totalCajas: Double() 
+	from accumulate(
+		(and 
+			ObjValue(IDO==idoDoc,PROPNAME=="línea",idlinea:VALOR!=null)
+			DatValue(ID==idlinea,PROPNAME=="cantidad_envase_1",cajas:DOUBLEVALUE!=null)),
+		sum(cajas)
+	)
+		//Totales (palet y cajas) lo tengo deshabilitado excepto en albaranar, habria que quitar permiso en pedido factura etc ya que si lo desautorizas en otro estado, al albaranar se recalcularia
+then
+	dma.printRule("\n\n  =================  CALCULO TOTAL CAJAS: totalCajas="+totalCajas);
+	dma.setDoubleValue(idoDoc,idtoDoc,idprop,totalCajas,true);	
+end
+
+rule "CALCULO NUMERO PALETS"
+ agenda-group "rules" when 
+   	
+   	Model(nameclass:CLASSNAME,OP==Constants.OP_INTERSECTION,idProp:PROP,PROPNAME=="n._palets")//cualquier clase que tenga esa propiedad
+
+   	Individual(CLASSNAME==nameclass,idoDoc:IDO,idtoDoc:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	//PERFORMANCE hacer patron contributivo
+	not(DatValue(IDO==idoDoc,PROPNAME=="emitido",VALOR=="true"))
+
+   	dPalets: Double() from accumulate((and ObjValue(IDO==idoDoc,PROPNAME=="línea",idlinea:VALOR!=null)
+										   DatValue(ID==idlinea,PROPNAME=="cantidad_envase_1",cajas:DOUBLEVALUE!=null)
+										   ObjValue(ID==idlinea,PROPNAME=="producto",producto:VALOR!=null)
+										   ObjValue(ID==producto,PROPNAME=="tipo_embalado",tipoEmbalado:VALOR!=null)
+										   DatValue(ID==tipoEmbalado,PROPNAME=="envase1Xenvase2", bultosporpalet:DOUBLEVALUE!=null&&!=0)),                                 
+                  				      sum(cajas/bultosporpalet))        
+                  				       
+then
+	dma.printRule("\n================= > DISPARO RULE CALCULO CALCULO NUMERO PALETS EN  ALBARAN y PEDIDO");
+
+	int nPalets= dPalets.intValue();
+	Double decimal= dPalets-nPalets;
+	if(decimal>0){
+		dma.setIntegerValue(idoDoc,idtoDoc,idProp,nPalets+1,true);
+	}else{
+		dma.setIntegerValue(idoDoc,idtoDoc,idProp,nPalets,true);			
+	}
+end
+
+rule "TRASPASOS: REQUIERE RECEPCION NO MODIFICABLE"
+ agenda-group "rules" when   	
+  	Lock(CLASSNAME=="TRASPASO_ALMACENES",idoTras:IDO>0,STATE==Constants.INDIVIDUAL_STATE_LOCK)								  	  	  		  	  	
+  	DatValue(IDO==idoTras,PROPNAME=="stock_requiere_recepcion_en_destino",hasCHANGED==true)
+then
+	dma.printRule("============== TRASPASOS: REQUIERE RECEPCION NO MODIFICABLE");
+	throw new OperationNotPermitedException("Este valor no es modificable en un traspaso ya existente");
+end
+
+//REGLAS STOCK DISPONIBLE
+
+/*rule "STOCK DISPONIBLE EN LINEA CONSUMO"
+	//solo utilizado como foto de como un consumo contribuyó a una salida en una produccion, para patron contributivo
+	//ya que en dicho patron no es posible hacer referencia a una variable (el stock disponible de articulo) que puede haber cambiado en otra sesion
+salience 100
+ agenda-group "rules" when 
+	FactHierarchy(idtoProdMaterial:IDTO,clase:CLASS,CLASSSUP=="PRODUCCIÓN")
+	ObjValue(IDTO==idtoProdMaterial,idTask:ID!=null,propLinea:PROPNAME=="consumo"||=="línea",idoLinea:IDOVALUE!=null,idtoLinea:VALUECLS)
+	ObjValue(IDO==idoLinea,PROPNAME=="producto",idoProd:IDOVALUE)
+	Model(IDTO==idtoLinea,PROPNAME=="stock_disponible",OP==Constants.OP_INTERSECTION)
+	DatValue(IDO==idoProd,PROPNAME=="stock_disponible",qDispon:QMIN!=null)	
+then
+	dma.printRule("============= STOCK DISPONIBLE EN LINEA CONSUMO");
+	dma.setValue(idoLinea,idtoLinea,"stock_disponible",new DoubleValue(qDispon));
+end*/
+
+//OPTIMIZAR CON ESTADO LINEA
+
+/*
+////////////////
+////////////////////////////CALCULO HORAS DISPONIBILIDAD DEL ARTICULO: SU SIGNFICADO ES EL PLAZO ESTIMADO DE ENTREGA PARA LA SIGUENTE UNIDAD QUE SE PIDIERA (OJO 1 UNIDAD, NO GARANTIZA
+//SI EL PEDIDO ES DE CANTIDAD >1 QUE TODAS LAS UNIDADES PUEDAN ESTAR DISPONBILES EN ESE PLAZO, GARANTIZA LA PRIMERA UNIDAD
+///////////////////
+rule "HORAS DISPONIBILIDAD ARTÍCULO SI HAY STOCK TOTAL SUFICIENTE PARA LAS RESERVAS EL DEL PLAZO DE ENTREGA DE MI EMPRESA"
+agenda-group "rules" when 
+	DatValue(idoMateria:IDO!=null,PROPNAME=="stock_total",total:DOUBLEVALUE>0,idtoMateria:IDTO)
+	DatValue(IDO==idoMateria,PROPNAME=="stock_reservado",reservado:DOUBLEVALUE!=null&&<total,clsArticulo:CLASSNAME)
+	Model(CLASSNAME==clsArticulo,prophorasEntrega:PROPNAME=="horas_entrega")
+	DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="horas_entrega",horasReparto:INTVALUE!=null)
+then
+	dma.printRule("\n\n-------------- HORAS DISPONIBILIDAD ARTÍCULO SI HAY STOCK TOTAL SUFICIENTE PARA LAS RESERVAS EL DEL PLAZO DE ENTREGA DE MI EMPRESA: idoMateria"+idoMateria+" horasReparto:"+horasReparto );
+	dma.setValueNotLock(idoMateria,idtoMateria,prophorasEntrega,new IntValue(horasReparto));
+end
+
+rule "HORAS DISPONIBILIDAD ARTÍCULO SE BORRAN SI NO HAY  SUFICIENTE STOCK DISPONIBLE"
+salience -200
+agenda-group "rules" when 
+	DatValue(idoMateria:IDO!=null,idtoMateria:IDTO!=null,PROPNAME=="stock_disponible",stock_disponible:DOUBLEVALUE!=null&&<=0,clsArticulo:CLASSNAME)//MENOR ESTRICTO QIUE CERO PARA DISPONIBILIDAD EN VENTA DEL PEDIDO QUE CONSUME LO RESERVADO
+	DatValue(IDO==idoMateria,prophorasEntrega:PROPNAME=="horas_entrega",DOUBLEVALUE!=null,horas:DATAVALUE)
+then
+	dma.printRule("\n\n-------------- HORAS DISPONIBILIDAD ARTÍCULO SE BORRAN SI NO HAY  SUFICIENTE STOCK DISPONIBLE: idoMateria:"+idoMateria+" stock_disponible:"+stock_disponible+"  se borraran las horas entrega:"+ horas);
+	dma.delValue(idoMateria,idtoMateria,prophorasEntrega,horas);
+end
+
+rule "HORAS DISPONIBILIDAD ARTÍCULO SI HAY STOCK DISPONIBLE PERO NO HAY STOCK TOTAL SUFICIENTE PARA LAS RESERVAS ES LA FECHA ESTIMADA APROVISIONAMIENTO+PLAZO DE ENTREGA DE MI EMPRESA"
+salience -200
+agenda-group "rules" when 
+	DatValue(idoMateria:IDO!=null,PROPNAME=="stock_total",total:DOUBLEVALUE!=null,idtoMateria:IDTO,clsArticulo:CLASSNAME)
+	DatValue(IDO==idoMateria,PROPNAME=="stock_disponible",DOUBLEVALUE>0)//PARA ESTAR SEGUROS QUE HAY DISPONIBILIDAD 	
+	DatValue(IDO==idoMateria,PROPNAME=="stock_reservado",reservado:DOUBLEVALUE>=total)
+	DatValue(IDO==idoMateria,PROPNAME=="fecha_estimada_aprovisionamiento",fechaAprov:DATE!=null)	
+	Model(CLASSNAME==clsArticulo,prophorasEntrega:PROPNAME=="horas_entrega")
+	DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="horas_entrega",horasreparto:INTVALUE!=null)
+then
+	dma.printRule("\n\n ====== HORAS DISPONIBILIDAD ARTÍCULO SI HAY STOCK DISPONIBLE PERO NO HAY STOCK TOTAL SUFICIENTE PARA LAS RESERVAS ES LA FECHA ESTIMADA APROVISIONAMIENTO+PLAZO DE ENTREGA DE MI EMPRESA\n...idoArt"+idoMateria);
+	int horasentrega=0;
+	long msfechaNow=Auxiliar.getFechaActual().getTime();
+	long msfechaAprovi=fechaAprov.getTime();
+	if(msfechaAprovi>msfechaNow){
+		horasentrega=horasreparto+(int)(msfechaAprovi-msfechaNow)/3600000;
+		//dma.printRule("...debug: fecha aproxionamiento es mayor que fecha actual, horasentrega=horas reparto+horas aprovision. horasentrega="+horasentrega);		
+	 }
+	 else{
+   		//en teoria ya deberia estar entregado pero de hecho no lo está, añadimos un día de plazo esperando que sea recibido al día siguiente;
+   		horasentrega=horasreparto+24;
+   		//dma.printRule("...debug: ya deberia estar entregado pero de hecho no lo está, añadimos un día de plazo esperando horasentrega="+horasentrega);
+   	}
+	dma.setValueNotLock(idoMateria,idtoMateria,prophorasEntrega,new IntValue(horasentrega));
+end*/
+
+/* DESHABILITADA POR RENDIMIENTO
+rule "FECHA ESTIMADA ENTREGA PEDIDO CLIENTE O DISTRIBUIDOR ES MAXIMO FECHA ENTREGA TODAS SUS LINEAS SI TODAS TIENEN FECHA ESTIMADA ENTREGA"
+salience -200
+ agenda-group "rules" when 
+	FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="PEDIDO_DE_CLIENTE"||=="PEDIDO_DISTRIBUIDOR")
+	Model(CLASSNAME==classdoc,propiedadfechaEstimadaEntrega:PROPNAME=="fecha_estimada_entrega",OP==Constants.OP_INTERSECTION)
+	DatValue(CLASSNAME==classdoc,iddoc:ID!=null,PROPNAME=="fecha",fechaPedido:DATE!=null,idoDoc:IDO,idtoDoc:IDTO)
+	ObjValue(ID==iddoc,PROPNAME=="línea")
+	not(
+		(and
+			ObjValue(ID==iddoc,PROPNAME=="línea",idlinea:VALOR!=null)
+			ObjValue(ID==idlinea, PROPNAME=="producto",idArt:VALOR!=null)
+			not((and
+				ObjValue(ID==idlinea, PROPNAME=="documento",doc:VALOR!=null,albaran:RANGENAME!=null)
+				FactHierarchy(CLASS==albaran,CLASSSUP=="ALBARÁN")								
+			))
+			not(DatValue(ID==idlinea,PROPNAME=="fecha_estimada_entrega",VALOR!=null))//IMPORTANTE QUE HAYA DISPONIBILIDAD DE TODOS LOS ARTICULOS PARA PODER DAR UNA FECHA ENTREGA
+		)
+	)	
+	maxFechaEntrega:Double() 
+             from accumulate(
+             				 (and 
+             					  ObjValue(ID==iddoc, PROPNAME=="línea", idLinea:VALOR!=null)
+             				  	  ObjValue(ID==idLinea,PROPNAME=="producto" ,idProducto:VALOR!=null)
+             				  	  DatValue(ID==idLinea,PROPNAME=="cantidad",VALOR!=null)
+             				  	  DatValue(ID==idLinea,PROPNAME=="fecha_estimada_entrega", fechaEntrega:QMIN!=null)
+             				  	  not((and
+             				  	  	ObjValue(ID==idLinea, PROPNAME=="documento",doc:VALOR!=null,albaran:RANGENAME!=null)
+									FactHierarchy(CLASS==albaran,CLASSSUP=="ALBARÁN")	
+             				  	  ))
+			 				  ),
+                              max(fechaEntrega))                            
+then
+	dma.printRule("\n\n ========= FECHA ESTIMADA ENTREGA PEDIDO CLIENTE O DISTRIBUIDOR ES MAXIMO FECHA ENTREGA TODAS SUS LINEAS SI TODAS TIENENE FECHA ESTIMADA ENTREGA idoDoc:"+iddoc+" maxFechaEntrega:"+maxFechaEntrega);
+	//if(maxHorasEntrega>=1){//PARA ESTAR SEGUROS QUE HAY PRODUCTOS QUE TIENEN PLAZO ENTREGA, DROOLS DEVUELVE MAXHORASENTREGA AUNQUE NO HAYA NINUNA LINEA QUE C
+		dma.setValueNotLock(idoDoc,idtoDoc,propiedadfechaEstimadaEntrega,new TimeValue(maxFechaEntrega.longValue()));
+	//}	
+	
+end*/
+
+/*
+rule "FECHA ESTIMADA ENTREGA LÍNEA PEDIDO CLIENTE O DISTRIBUIDOR EN LÍNEA NUEVA"
+ agenda-group "rules" when 
+	DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="horas_entrega",horasreparto:INTVALUE!=null)
+	FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="PEDIDO_DE_CLIENTE"||=="PEDIDO_DISTRIBUIDOR")
+	DatValue(CLASSNAME==classdoc,iddoc:ID!=null,PROPNAME=="fecha",fechaPedido:DATE!=null,idoDoc:IDO,idtoDoc:IDTO)
+	ObjValue(ID==iddoc,PROPNAME=="línea",idlinea:VALOR!=null,claseLinea:RANGENAME)
+	//SE TIENE QUE CUMPLIR ALGO DE LO SIGUEINTE PARA ASIGNAR FECHA A LA LÍNEA
+	//- SER UNA LÍNEA NUEVA
+	//- ESTAR EN UN PEDIDO NUEVO (para los casos en que las lineas no son nuevas pq vienen del presupuesto
+	//- no ser nueva pero no tener valor (si aún no tiene valor fecha_estimada_entrega hay que permitir que se calcule en ediciones posteriores
+	//por si las nuevas condiciones de stock-aprovisionamiento ahora si permiten conocer esa fecha
+	(or
+		exists(Individual(ID==idlinea,LEVEL==Constants.LEVEL_PROTOTYPE))
+		exists(Individual(ID==iddoc,LEVEL==Constants.LEVEL_PROTOTYPE))
+		not(exists(DatValue(ID==idlinea,PROPNAME=="fecha_estimada_entrega", VALOR!=null)))
+	)
+	Model(CLASSNAME==claseLinea,propiedadfechaEstimadaEntrega:PROPNAME=="fecha_estimada_entrega",OP==Constants.OP_INTERSECTION)
+	ObjValue(ID==idlinea, PROPNAME=="producto",idProducto:VALOR!=null)
+	DatValue(ID==idlinea, idoLinea:IDO,idtoLinea:IDTO,PROPNAME=="cantidad",cantidad:DOUBLEVALUE)
+	not((and
+			ObjValue(ID==idlinea, PROPNAME=="documento",doc:VALOR!=null,albaran:RANGENAME!=null)
+			FactHierarchy(CLASS==albaran,CLASSSUP=="ALBARÁN")								
+	))
+	DatValue(ID==idProducto,PROPNAME=="stock_total", totalStockAlmacen:DOUBLEVALUE!=null)
+	DatValue(ID==idProducto,PROPNAME=="stock_reservado", stockreservado:DOUBLEVALUE!=null)	
+	DatValue(ID==idProducto,PROPNAME=="stock_disponible", stockdisponible:DOUBLEVALUE!=null,idoProducto:IDO,idtoProducto:IDTO)	
+                                
+then
+	dma.printRule("\n\n ========= FECHA ESTIMADA ENTREGA LÍNEA PEDIDO CLIENTE O DISTRIBUIDOR EN LÍNEA NUEVA:\n idlinea:"+idlinea+" CANTIDAD:"+cantidad+" totalStockAlmacen:"+totalStockAlmacen+" stockreservado:"+stockreservado+"  stockdisponible:"+stockdisponible+" horasreparto:"+horasreparto);
+	//no se puede calcular fecha si No hay stock disponible o si no está el dato basico de que cantidad
+	if(cantidad==null||stockdisponible<0){
+		dma.printRule("... se borra la fecha estimada porque no hay cantidad en la línea o no hay stock disponible");
+		dma.delValues(idoLinea,idtoLinea,propiedadfechaEstimadaEntrega);
+		
+	}else if(totalStockAlmacen>=stockreservado){//si hay total suficiente para lo reservado la fecha de entrega es el plazao de entrega de nuestra empresa
+		dma.printRule("... hay suficiente stock en almacenes--->plazo entrega=fechaActual+horas reparto ");
+		long msFechaEstimadaEntrega=(long)(Auxiliar.getFechaActual().getTime()+horasreparto*3600000);
+		Date FechaEstimadaEntrega=new Date(msFechaEstimadaEntrega);
+		dma.setValue(idoLinea,idtoLinea,propiedadfechaEstimadaEntrega,new TimeValue(FechaEstimadaEntrega));
+		dma.printRule("...FechaEstimadaEntrega:"+FechaEstimadaEntrega);
+		
+	
+	}else{
+		dma.printRule("... NO hay suficiente stock en almacenes, pero si hay disponibilidad del--->plazo entrega=fechaActual+horasReparto");
+		TimeValue tvFechaAprov=(TimeValue)dma.getValue(idoProducto,idtoProducto,"fecha_estimada_aprovisionamiento");
+		if(tvFechaAprov!=null){
+		// hay disponible pero no hay suficiente en almacen para todo lo pedido--->estimacion entrega=fecha recepcion estimada compra+plazo entrega empresa
+		//las horas disponibilidad ya están en el artículo que han tenido en cuenta en este caso fechaRecepcionCompra+plazo entrega
+			long msFechaEstimadaEntrega=(long)(tvFechaAprov.getRelativeSecondsMax()*Constants.TIMEMILLIS+horasreparto*3600000);
+			Date FechaEstimadaEntrega=new Date(msFechaEstimadaEntrega);
+			dma.setValue(idoLinea,idtoLinea,propiedadfechaEstimadaEntrega,new TimeValue(FechaEstimadaEntrega));
+			dma.printRule("...FechaEstimadaEntrega:"+FechaEstimadaEntrega);
+		}else{//no hay disponibilidad
+			dma.delValues(idoLinea,idtoLinea,propiedadfechaEstimadaEntrega);
+		}
+		
+	}
+end
+
+rule "ELIMINACIÓN FECHA ESTIMADA ENTREGA PEDIDO CLIENTE O DISTRIBUIDOR SI ALGUNA DE LAS LÍNEAS NO TIENE FECHA ESTIMADA ENTREGA"
+ salience -100
+ agenda-group "rules" when 
+	FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="PEDIDO_DE_CLIENTE"||=="PEDIDO_DISTRIBUIDOR")
+	DatValue(CLASSNAME==classdoc,PROPNAME=="fecha_estimada_entrega",fechaEntrega:DATE!=null,idoDoc:IDO,idtoDoc:IDTO)
+	ObjValue(IDO==idoDoc,PROPNAME=="línea",idlinea:VALOR!=null)
+	ObjValue(ID==idlinea, PROPNAME=="producto",idArt:VALOR!=null)
+	not(DatValue(ID==idlinea,PROPNAME=="fecha_estimada_entrega",VALOR!=null))
+	not((and
+				ObjValue(ID==idlinea, PROPNAME=="documento",doc:VALOR!=null,albaran:RANGENAME!=null)
+				FactHierarchy(CLASS==albaran,CLASSSUP=="ALBARÁN")								
+	))
+then
+	dma.printRule("\n\n ========= ELIMINACIÓN FECHA ESTIMADA ENTREGA PEDIDO CLIENTE O DISTRIBUIDOR SI ALGUNO DE LAS LÍNEAS NO TIENE FECHA ESTIMADA ENTREGA idoDoc:"+idoDoc+" fechaEntrega:"+fechaEntrega+" productoSinDisp:"+idArt);
+	dma.delValues(idoDoc,idtoDoc,"fecha_estimada_entrega");
+end
+
+rule "ELIMINACION FECHA ESTIMADA APROVISIONAMIENTO ARTICULO CUANDO SE RECIBE EL PEDIDO O CUANDO SE ELIMINA EL PEDIDO"
+ agenda-group "rules" when 
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="ARTÍCULO")
+	DatValue(CLASSNAME==name,idArt:ID,idoArt:IDO!=null,idtoArt:IDTO!=null,IDO==idoArt,propiedadfechaaprov:PROPNAME=="fecha_estimada_aprovisionamiento",idpropfechaaprov:PROP,fechaAproArticulo:QMIN!=null,fecha:DATAVALUE,dateArt:DATE!=null)
+   	FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="PEDIDO_A_PROVEEDOR")
+	ObjValue(CLASSNAME==classdoc,iddoc:ID!=null,PROPNAME=="línea",idlinea:VALOR!=null)
+	ObjValue(ID==idlinea, PROPNAME=="producto",VALOR==idArt)
+	DatValue(ID==iddoc,PROPNAME=="fecha_estimada_entrega",dateDoc:DATE!=null,dateDocDV:DATAVALUE)
+	(or
+		exists(Individual(ID==iddoc,STATE==Constants.INDIVIDUAL_STATE_DELETED))
+		not(exists(
+			(and
+				ObjValue(idAnylinea:ID!=null, PROPNAME=="producto",VALOR==idArt)
+				not(
+					(and
+						ObjValue(ID==idAnylinea, PROPNAME=="documento",doc:VALOR!=null,albaran:RANGENAME!=null)
+						FactHierarchy(CLASS==albaran,CLASSSUP=="ALBARÁN")								
+					)
+				)
+			)
+		)))
+	exists(DatValue(ID==iddoc,PROPNAME=="fecha_estimada_entrega",DATE==dateArt))
+	
+then
+	dma.printRule("\n\n------  ELIMINACION FECHA ESTIMADA APROVISIONAMIENTO ARTICULO CUANDO SE RECIBE EL PEDIDO O CUANDO SE ELIMINA EL PEDIDO--------idoArt:"+idoArt+"  fechaAprov:"+dateArt);
+	dma.delValues(idoArt,idtoArt,idpropfechaaprov);	
+end
+ 
+ 
+rule "FECHA ESTIMADA APROVISIONAMIENTO ARTICULO"
+ agenda-group "rules" when 
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="ARTÍCULO")
+	Lock(IDTO==idto,idArt:ID,idoArt:IDO!=null,idtoArt:IDTO!=null,STATE==Constants.INDIVIDUAL_STATE_READY||==Constants.INDIVIDUAL_STATE_LOCK)
+	Model(CLASSNAME==name,propiedadfechaaprov:PROPNAME=="fecha_estimada_aprovisionamiento",OP==Constants.OP_INTERSECTION)
+   	FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="PEDIDO_A_PROVEEDOR")
+	ObjValue(CLASSNAME==classdoc,iddoc:ID!=null,PROPNAME=="línea",idlinea:VALOR!=null)
+	ObjValue(ID==idlinea, PROPNAME=="producto",VALOR==idArt)
+	not((and
+		ObjValue(ID==idlinea, PROPNAME=="documento",doc:VALOR!=null,albaran:RANGENAME!=null)
+		FactHierarchy(CLASS==albaran,CLASSSUP=="ALBARÁN")								
+	))
+	DatValue(ID==iddoc,PROPNAME=="fecha_estimada_entrega",fechaAprov:DATE!=null,initialValorFechaEstimadaEntregaDoc:INITIALVALOR)
+	(or
+		not(exists(DatValue(ID==idArt,PROPNAME=="fecha_estimada_aprovisionamiento",DATE>fechaAprov)))//la fecha que se la indicado es mayor que la que la que tiene el articulo
+		exists(DatValue(ID==idArt,PROPNAME=="fecha_estimada_aprovisionamiento",VALOR==initialValorFechaEstimadaEntregaDoc))//SE HA EDITADO LA FECHA EN EL DOC QUE LE DIO VALOR
+	)	
+then
+	dma.printRule("\n\n------  CALCULO FECHA ESTIMADA APROVISIONAMIENTO ARTICULO--------idoArt:"+idoArt+"  fechaAprov:"+fechaAprov);
+	dma.setValueNotLock(idoArt,idtoArt,propiedadfechaaprov,new TimeValue(fechaAprov));	
+end
+
+
+*/
+

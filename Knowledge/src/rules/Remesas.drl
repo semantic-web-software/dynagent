@@ -1,0 +1,468 @@
+package dynagent.ruleengine.src.ruler.ERPrules
+
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import java.io.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.text.DecimalFormat;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+global DataModelAdapter dma;
+
+/**************************************************************************************************************************************
+**												FUNCIONES AUXILIARES REMESAS									 			         **
+***************************************************************************************************************************************/
+	function String nuevoRegistro(HashMap valoresDefinidos, Object[][] matriz){
+		String registro = new String();
+		String valorDefinido;
+		
+		//Recorremos cada elemento de la matriz de referencia buscando si se han definido ya algunos valores.
+		for (Object[] campoYFormato : matriz) {
+			if(valoresDefinidos.get(campoYFormato[0].toString()) != null){
+				valorDefinido = valoresDefinidos.get(campoYFormato[0].toString()).toString();
+				//En caso de que SI exista algun valor ya definido por el usuario, lo formateamos
+				registro += formateaCadena(valorDefinido, campoYFormato);
+			}else{
+				//En caso de que NO exista, formateamos la cadena vacía.
+				registro += formateaCadena("", campoYFormato);
+			}
+		}
+		
+		return registro;
+	}
+	
+	function void insertaRegistroOrdenado(ArrayList registros, HashMap nuevoRegistro){
+		int posicion = 0;
+		
+		if(registros.isEmpty()){
+			registros.add(nuevoRegistro);
+		}else{
+			for (HashMap<String, String> reg : (ArrayList<HashMap<String, String>>)registros) {
+				int valorComparacion = comparaRegistrosPorCampo(nuevoRegistro, reg, "D1");
+				if(valorComparacion < 0){ //nuevoRegistro < reg
+					registros.add(posicion, nuevoRegistro);
+					return;
+				}
+				
+				if(valorComparacion == 0){ //Mismo valor del campo
+					valorComparacion = comparaRegistrosPorCampo(nuevoRegistro, reg, "D2");
+					if(valorComparacion < 0){ //nuevoRegistro < reg
+						registros.add(posicion, nuevoRegistro);
+						return;
+					}
+					
+					if(valorComparacion == 0){ //Mismo valor del campo
+						valorComparacion = comparaRegistrosPorCampo(nuevoRegistro, reg, "B2");
+						if(valorComparacion <= 0){ //nuevoRegistro < reg
+							registros.add(posicion, nuevoRegistro);
+							return;
+						}
+						
+						//Por ahora no tiene sentido comparar con el código del dato, ya que solo existe el caso de que valga 80 para todos los regs.
+						//if(valorComparacion == 0){ //Mismo valor del campo
+						//	valorComparacion = comparaRegistrosPorCampo(nuevoRegistro, reg, "A2");
+						//	if(valorComparacion <= 0){ //nuevoRegistro <= reg
+						//		registros.add(posicion, nuevoRegistro);
+						//		return;
+						//	}
+						//}
+						
+						//Si nuevoRegistro es mayor que reg, pasamos a comparar con el siguiente 
+					}
+					
+					//Si nuevoRegistro es mayor que reg, pasamos a comparar con el siguiente 
+				}
+				
+				//Si nuevoRegistro es mayor que reg, pasamos a comparar con el siguiente 
+				posicion++;
+			}
+			
+			//Si llega a este punto, es porque el es el ultimo registo.
+			registros.add(nuevoRegistro);
+		}
+	}
+	
+	function int comparaRegistrosPorCampo(HashMap reg1, HashMap reg2, String campo){
+		String v1 = reg1.get(campo).toString();
+		String v2 = reg2.get(campo).toString();
+		
+		return v1.compareToIgnoreCase(v2);
+	}
+	
+	function String formateaCadena(String cadena, Object[] campoYFormato){
+		if(campoYFormato[0].toString().equals("A1")){
+			return campoYFormato[4].toString();
+		}else if(campoYFormato[0].toString().equals("A2")){
+				return campoYFormato[4].toString();
+		}else{
+			int fill_case = (Integer)campoYFormato[1];
+			
+			if(fill_case == Constants.no_fill){
+				return cadena;
+			}else{
+				return rellenar(fill_case, (Integer)campoYFormato[3], cadena);
+			}
+		}
+	}
+	
+	function void escribirEnFicheroObligatorios(File fichero, ArrayList registrosObligatorios){
+	
+		for(HashMap<String, String> registro : (ArrayList<HashMap<String, String>>)registrosObligatorios){
+			escribirEnFichero(fichero, nuevoRegistro(registro, Constants.INDIVIDUAL_OBLIGATORIO));
+		}
+	}
+	
+	function String rellenar(int tipo, int longitud, String cadena){
+		String nuevaCadena = "";
+		if(cadena != null){
+			nuevaCadena = cadena;
+		}
+		
+		if(tipo == Constants.fill_blank){
+			while(nuevaCadena.length()<longitud){
+				nuevaCadena += " ";
+			}
+		}
+		
+		if(tipo == Constants.fill_zeros){
+			while(nuevaCadena.length()<longitud){
+				nuevaCadena = "0" + nuevaCadena;
+			}
+		}
+		
+		return nuevaCadena;
+	}	
+	
+	function void escribirEnFichero(File f, String cadena){
+		FileWriter fw = null;
+		BufferedWriter bw = null;
+		
+			try {
+				fw = new FileWriter(f, true);
+				bw = new BufferedWriter(fw);
+				
+				bw.write(cadena);
+				bw.newLine();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+			
+		fw.flush();
+		bw.close();
+		fw.close();
+	}
+
+	function String nifFormatter(String oldNIF){
+		return oldNIF;	
+		/*String regExpDigit = "([Xx]|[Yy]|[0-9])[0-9]{7}";
+		String regExpChar = "[a-zA-Z]{1}";
+		String out = null;
+		
+		Pattern p1 = Pattern.compile(regExpDigit);
+		Matcher m1 = p1.matcher(oldNIF);
+		if(m1.find()){
+			out = oldNIF.substring(m1.start(), m1.end());
+			
+			p1 = Pattern.compile(regExpChar);
+			m1 = p1.matcher(oldNIF);
+			
+			if(m1.find()){
+				out += oldNIF.substring(m1.start(), m1.end());
+			}
+			
+		}else{
+			System.out.println("No Matches");
+		}
+		
+		return out;*/
+	}
+/**************************************************************************************************************************************
+**												REGLAS ESPECÍFICAS DE REMESAS									 			         **
+***************************************************************************************************************************************/
+
+rule "[REMESAS][PRECARGA] PRECARGA VENCIMIENTOS"
+	salience 100
+	agenda-group "rules" when
+   	    
+	   	ObjValue(typetask:CLASSNAME=="Volcar_remesa_norma_19", idUTask:ID, idtoUTask:IDTO, PROPNAME==Constants.prop_estado_realizacion, idEstado:VALOR!=null)
+	    ObjValue(ID==idUTask, PROPNAME==Constants.prop_source_class, idRemesa:VALOR!=null, remesa:OBJECTVALUE)  	 
+	    eval( dma.preload(remesa) )
+	    ObjValue(ID==idUTask, PROPNAME==Constants.prop_params, idParams:VALUE!=null)
+	    DatValue(ID==idParams, PROPNAME=="fichero", ruta:VALOR!=null)
+	       
+		idos: HashSet()  
+		from accumulate( 
+					ObjValue(ID==idRemesa, PROPNAME=="recibos", idVencimiento:VALOR!=null),
+				init( HashSet<Integer> idosVencimientos = new HashSet<Integer>(); ),
+                action( idosVencimientos.add(Integer.parseInt(idVencimiento)); ),
+                result( idosVencimientos ) 
+        )
+	    	    
+	then
+		dma.printRule("[REMESAS][PRECARGA] PRECARGA VENCIMIENTOS");
+		//Creamos el mapa
+		HashMap<Integer, HashSet<Integer>> mapaIdtoIdos = new HashMap<Integer, HashSet<Integer>>();
+		Integer idto = dma.getIdClass("VENCIMIENTO_DE_COBRO");
+		mapaIdtoIdos.put(idto, idos);
+		
+		//Los cargamos
+		dma.loadIndividuals(mapaIdtoIdos);
+end
+
+rule "[REMESAS] CHECK CUENTA CLIENTE REGISTROS NORMA 19"
+	salience 100
+	agenda-group "rules" when	   
+	   	ObjValue(typetask:CLASSNAME=="Volcar_remesa_norma_19", idUTask:ID, idtoUTask:IDTO, PROPNAME=="sourceClass", idoRemesa:IDOVALUE)
+		ObjValue(IDO==idoRemesa, PROPNAME=="recibos", idVencimiento:VALOR!=null)	    
+	    ObjValue(ID==idVencimiento, PROPNAME=="cliente", idCliente:VALOR!=null, idtoCliente:VALUECLS)
+	    eval( dma.preload(Integer.parseInt(idCliente), idtoCliente) )
+	    DatValue(ID==idCliente, PROPNAME=="rdn", rdnCliente:VALOR!=null)
+	    not(ObjValue(ID==idCliente, PROPNAME=="cuenta_bancaria", idCuentaBanco:VALOR!=null, idtoCuentaBanco:VALUECLS))
+then
+	   throw new OperationNotPermitedException("Atencion el cliente de codigo "+ rdnCliente +" no tiene cuenta bancaria asociada");
+end
+
+/*rule "[REMESAS] CHECK DEUDA REGISTROS NORMA 19"
+	salience 100
+	agenda-group "rules" when	   
+	   	ObjValue(typetask:CLASSNAME=="Volcar_remesa_norma_19", idUTask:ID, idtoUTask:IDTO, PROPNAME=="sourceClass", idoRemesa:IDOVALUE)
+		ObjValue(IDO==idoRemesa, PROPNAME=="recibos", idVencimiento:VALOR!=null)
+		DatValue(ID==idVencimiento, PROPNAME=="rdn", rdn:VALOR!=null)
+		DatValue(ID==idVencimiento, PROPNAME=="importe", importe:DOUBLEVALUE!=null&&!=0)	
+		DatValue(ID==idVencimiento, PROPNAME=="deuda", DOUBLEVALUE!=importe)		    
+then
+	   throw new OperationNotPermitedException("Atencion el vencimiento "+ rdn +" ya está cobrado parcialmente");
+end*/
+
+rule "[REMESAS] REGISTROS NORMA 19"
+	agenda-group "rules" when
+	    
+	   	ObjValue(typetask:CLASSNAME=="Volcar_remesa_norma_19", idUTask:ID, idtoUTask:IDTO, PROPNAME==Constants.prop_estado_realizacion, idEstado:VALOR!=null)
+	   	DatValue(ID==idEstado, PROPNAME=="rdn", estado:VALOR==Constants.INDIVIDUAL_REALIZADO)   
+	   	
+	    ObjValue(ID==idUTask, PROPNAME=="sourceClass", idoRemesa:IDOVALUE)         		    
+
+ 		ObjValue(IDO==idoRemesa, PROPNAME=="caja", idoCaja:IDOVALUE!=null, idtoCaja:VALUECLS) 		
+   	    
+   	    eval( dma.preload(idoCaja, idtoCaja) )
+   	    
+   	    ObjValue(IDO==idoCaja, PROPNAME=="cuenta_bancaria", idoCuentaOrd:IDOVALUE, idtoCuentaOrd:VALUECLS)
+	    eval( dma.preload(idoCuentaOrd, idtoCuentaOrd) )   	    
+   	    DatValue(IDO==idoCuentaOrd, PROPNAME=="entidad", entidadOrd:VALOR!=null)
+   	    
+   	    //Datos que obtenemos de la remesa:
+   	    DatValue(IDO==idoRemesa, PROPNAME=="rdn", rdnRemesa:VALOR!=null )   	    
+   	    DatValue(IDO==idoRemesa, PROPNAME=="fecha_cobro", fecha_cobro:DATE!=null )   	    
+	    ObjValue(IDO==idoRemesa, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE!=null)
+
+	    //Datos que obtenemos de la configuración de remesas de esa empresa
+	    ObjValue(idoConfigRemesa:IDO, idtoConfigRemesa:IDTO, CLASSNAME=="CONFIGURACIÓN_REMESAS")    
+	    ObjValue(IDO==idoConfigRemesa, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+	    eval( dma.preload(idoConfigRemesa, idtoConfigRemesa) )
+	    DatValue(IDO==idoConfigRemesa, PROPNAME=="entidad", entidad:VALOR==entidadOrd)	    
+	       	    
+  	    DatValue(IDO==idoConfigRemesa, PROPNAME=="sufijo_ordenante", sufijoOrd:VALOR!=null)
+	    DatValue(IDO==idoConfigRemesa, PROPNAME=="sufijo_presentador", sufijo:VALOR!=null)
+	    DatValue(IDO==idoConfigRemesa, PROPNAME=="NIF-CIF-VAT", nif_presentador:VALOR!=null)
+	    DatValue(IDO==idoConfigRemesa, PROPNAME=="presentador", presentador:VALOR!=null)
+	    
+	    DatValue(IDO==idoConfigRemesa, PROPNAME=="oficina", oficina:VALOR!=null)	    
+	    
+	    //Datos que obtenemos de MI_EMPRESA
+   	    DatValue(IDO==idoMiEmpresa, PROPNAME=="NIF-CIF-VAT", nifOrd:VALOR!=null)
+   	    DatValue(IDO==idoMiEmpresa, PROPNAME=="nombre", nombreOrd:VALOR!=null)   	       	    
+   	    	    
+	    DatValue(IDO==idoCuentaOrd, PROPNAME=="oficina", oficinaOrd:VALOR!=null)
+	    DatValue(IDO==idoCuentaOrd, PROPNAME=="dígito_de_control", digitoControlOrd:VALOR!=null)
+	    DatValue(IDO==idoCuentaOrd, PROPNAME=="número_cuenta", numeroCuentaOrd:VALOR!=null)
+	    
+	    ObjValue(ID==idUTask, PROPNAME=="params", idParams:VALUE!=null)
+		DatValue(ID==idParams, PROPNAME=="fichero", ruta:VALOR!=null)
+ 				
+	    datosVencimientos: HashMap()
+	    	from accumulate(
+	    			(and
+	    				ObjValue(IDO==idoRemesa, PROPNAME=="recibos", idVencimiento:VALOR!=null)
+	    				DatValue(ID==idVencimiento, PROPNAME=="importe", importe:DOUBLEVALUE!=null&&!=0)	    					    				   			
+	    				DatValue(ID==idVencimiento, PROPNAME=="rdn", code:VALOR!=null)
+	    				ObjValue(ID==idVencimiento, PROPNAME=="cliente", idCliente:VALOR!=null, idtoCliente:VALUECLS)
+	    				eval( dma.preload(Integer.parseInt(idCliente), idtoCliente) )
+	    				DatValue(ID==idCliente, PROPNAME=="nombre", nombreCliente:VALOR!=null)
+	    				DatValue(ID==idCliente, PROPNAME=="rdn", rdnCliente:VALOR!=null)
+	    				ObjValue(ID==idCliente, PROPNAME=="cuenta_bancaria", idCuentaBanco:VALOR!=null, idtoCuentaBanco:VALUECLS)
+	    				eval( dma.preload(Integer.parseInt(idCuentaBanco), idtoCuentaBanco) )
+	    				DatValue(ID==idCuentaBanco, PROPNAME=="entidad", entidadCliente:VALOR!=null)
+	    				DatValue(ID==idCuentaBanco, PROPNAME=="oficina", oficinaCliente:VALOR!=null)
+	    				DatValue(ID==idCuentaBanco, PROPNAME=="dígito_de_control", digitoControlCliente:VALOR!=null)
+	    				DatValue(ID==idCuentaBanco, PROPNAME=="número_cuenta", numeroCuentaCliente:VALOR!=null)
+	    				
+	    			),
+	    		init( HashMap lista = new HashMap(); ),
+	    		action(	ArrayList listaDatos=(ArrayList)lista.get(idCliente);	    				
+	    				if(listaDatos==null){
+	    					listaDatos = new ArrayList();
+	    					lista.put(idCliente,listaDatos);	    
+	    										
+	    					listaDatos.add(rdnCliente);
+	    					listaDatos.add(nombreCliente);
+	    					listaDatos.add(entidadCliente);
+	    					listaDatos.add(oficinaCliente);
+	    					listaDatos.add(digitoControlCliente);
+	    					listaDatos.add(numeroCuentaCliente);
+	    					listaDatos.add(importe.toString());	    				
+	    					listaDatos.add(code.substring(0,code.indexOf('#')));
+	    				}else{
+	    					Double importeTotal=new Double((String)listaDatos.get(6))+importe;
+	    					listaDatos.set(6,importeTotal.toString());
+	    					String res=(String)listaDatos.get(7)+","+code.substring(0,code.indexOf('#'));
+	    					if(res.length()>40) res=res.substring(0,40);
+	    					listaDatos.set(7,res);
+	    				}	    				
+	    			 ),
+	    		result( lista )
+	    	)
+	    
+	then
+		dma.printRule("[REMESAS]REGISTROS NORMA 19: "+estado+" "+ruta);
+		Double importeAcumulado = 0.0D;
+		int totalRegistros = 0;
+		int totalDomiciliaciones = 0;
+		
+		//Mapa reutilizable que se usará para poner los valores definidos a la hora de crear cada registro	
+		HashMap<String, String> mapa;
+		
+		//Formato para numeros decimales:
+		DecimalFormat df1 = new DecimalFormat("#.00");
+		
+		//Datos del presentador
+		String codigo_presentador = nifFormatter(nif_presentador) + sufijo;
+		//Fecha actual formateada
+		Date fechaHoy = Calendar.getInstance().getTime();
+		SimpleDateFormat formato = new SimpleDateFormat("ddMMyy");
+		String fecha_confeccion = formato.format(fechaHoy);
+		//Fecha de cargo formateada
+		String fecha_cargo= formato.format(fecha_cobro);
+		
+		
+		//Creamos el fichero de salida:
+		rdnRemesa=rdnRemesa.replace('/','_');
+		rdnRemesa=rdnRemesa.replace("\\","_");
+		ruta += "\\Remesa_" + rdnRemesa + ".txt";
+		
+		dma.printRule("DBG PREVIO "+ruta);
+		File fichero = new File(ruta);
+		fichero.createNewFile();
+		dma.printRule("DBG Tras crear");
+		//Cabecera del presentador:
+		mapa = new HashMap<String, String>();
+		mapa.put("B1", codigo_presentador);
+		mapa.put("B2", fecha_confeccion);
+		mapa.put("C", presentador);
+		mapa.put("E1", entidad);
+		mapa.put("E2", oficina);
+		escribirEnFichero(fichero, nuevoRegistro(mapa, Constants.CABECERA_PRESENTADOR));
+		totalRegistros++;
+		
+		//Cabecera del ordenante:
+		mapa = new HashMap<String, String>();
+		mapa.put("B1", (nifFormatter(nifOrd) + sufijoOrd));
+		mapa.put("B2", fecha_confeccion);
+		mapa.put("B3", fecha_cargo);
+		mapa.put("C", nombreOrd);
+		mapa.put("D1", entidadOrd);
+		mapa.put("D2", oficinaOrd);
+		mapa.put("D3", digitoControlOrd);
+		mapa.put("D4", numeroCuentaOrd);
+		mapa.put("E2", "01");
+		escribirEnFichero(fichero, nuevoRegistro(mapa, Constants.CABECERA_ORDENANTE));
+		totalRegistros++;
+		
+		//Un registro por vencimiento
+		ArrayList<HashMap<String, String>> registrosObligatorios = new ArrayList<HashMap<String, String>>();
+		Iterator itr=datosVencimientos.values().iterator();
+		while(itr.hasNext()){
+			ArrayList vencimiento=(ArrayList)itr.next();
+			mapa = new HashMap<String, String>();
+			mapa.put("B1",(nifFormatter(nifOrd) + sufijoOrd));
+			mapa.put("B2",(String)vencimiento.get(0));
+			mapa.put("C", (String)vencimiento.get(1));
+			mapa.put("D1",(String)vencimiento.get(2));
+			mapa.put("D2",(String)vencimiento.get(3));
+			mapa.put("D3",(String)vencimiento.get(4));
+			mapa.put("D4",(String)vencimiento.get(5));
+			//Damos formato al importe
+			Double importe = Double.parseDouble((String)vencimiento.get(6));
+			String strImporte=df1.format(importe);
+			strImporte.replaceAll(",", "");
+			strImporte.replaceAll(".", "");
+			dma.printRule("REM IMPORTE "+strImporte);
+			mapa.put("E", strImporte);
+			mapa.put("G", (String)vencimiento.get(7));
+			//Pasamos al fichero
+			insertaRegistroOrdenado(registrosObligatorios, mapa);
+			totalRegistros++;			
+			//Acumulamos el importe para el registro del total
+			importeAcumulado += Double.parseDouble((String)vencimiento.get(6));
+			totalDomiciliaciones++;
+		}
+		escribirEnFicheroObligatorios(fichero, registrosObligatorios);
+		
+		//Registro total del ordenante
+		mapa = new HashMap<String, String>();
+		mapa.put("B1", (nifFormatter(nifOrd) + sufijoOrd));
+		
+		String strImporteAcum=df1.format(importeAcumulado);
+		strImporteAcum.replaceAll(",", "");
+		strImporteAcum.replaceAll("\\.", "");			
+		mapa.put("E1", strImporteAcum);
+		
+		mapa.put("F1", String.valueOf(totalDomiciliaciones));
+		mapa.put("F2", String.valueOf(totalDomiciliaciones+2));
+		escribirEnFichero(fichero, nuevoRegistro(mapa, Constants.TOTAL_ORDENANTE));
+		totalRegistros++;		
+		
+		//Registro total general
+		mapa = new HashMap<String, String>();
+		mapa.put("B1", codigo_presentador);
+		mapa.put("D1", "1");
+		
+		mapa.put("E1", strImporteAcum);		
+		mapa.put("F1", String.valueOf(totalDomiciliaciones));
+		mapa.put("F2", String.valueOf(totalRegistros+1));		
+		escribirEnFichero(fichero, nuevoRegistro(mapa, Constants.TOTAL_GENERAL));	
+		
+		//dma.showMessage("Exportación exitosa. El fichero lo puede encontrar en: \"" + ruta + "\"");	
+end
+
+rule "[REMESAS][FILTRO] NO EXISTEN REMESAS CON VENCIMIENTOS DE EMPRESAS DISTINTAS"
+	agenda-group "rules" when
+	    
+	    FactHierarchy(clase:CLASS, CLASSSUP=="REMESA")
+		Individual(idRemesa:IDO, idtoRemesa:IDTO, CLASSNAME==clase)
+		eval( dma.preload(idRemesa, idtoRemesa) )
+		
+		//La empresa de un vencimiento
+		ObjValue(IDO==idRemesa, PROPNAME=="recibos", idVencimiento1:VALOR!=null, v1:OBJECTVALUE)
+		eval( dma.preload(v1) )
+		ObjValue(ID==idVencimiento1, PROPNAME=="mi_empresa", empresa1:OBJECTVALUE!=null)
+		
+		//La empresa de otro vencimiento de la misma remesa no puede ser diferente
+		ObjValue(IDO==idRemesa, PROPNAME=="recibos", idVencimiento2:VALOR!=null && !=idVencimiento1, v2:OBJECTVALUE)
+		eval( dma.preload(v2) )		
+		ObjValue(ID==idVencimiento2, PROPNAME=="mi_empresa", empresa2:OBJECTVALUE!=null)
+		eval( !empresa1.equals(empresa2) )
+	    
+	then
+		dma.printRule("[REMESAS][FILTRO] NO EXISTEN REMESAS CON VENCIMIENTOS DE EMPRESAS DISTINTAS");	
+		throw new OperationNotPermitedException("No se puede generar remesas con vencimientos asociados a empresas diferenteces. Por favor, revise su selección.");	
+end

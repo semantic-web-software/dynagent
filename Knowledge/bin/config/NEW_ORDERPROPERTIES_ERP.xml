@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<CONFIG>
+<ORDERPROPERTIES>
+   <OPROP>
+      <OP PROP="día" ORDER="1"/>
+      <OP PROP="número_días" ORDER="1"/>
+      <OP PROP="mes" ORDER="2"/>
+      <OP PROP="número_meses" ORDER="2"/>
+      <OP PROP="meses_relativos_factura" ORDER="2"/>
+      <OP PROP="descripción" ORDER="3"/>      
+    </OPROP>
+   <OPROP>
+      <OP PROP="base" ORDER="1"/>
+      <OP PROP="total_iva" ORDER="2"/>
+      <OP PROP="recargo" ORDER="3"/>
+      <OP PROP="retención" ORDER="4"/>
+      <OP PROP="importe" ORDER="5"/>
+      <OP PROP="mi_empresa" ORDER="6"/>
+      <OP PROP="delegación" ORDER="7"/>
+      <OP PROP="porcentaje_retención" ORDER="8"/>
+      <OP PROP="descuentos_globales" ORDER="9"/>
+      <OP PROP="desglose_iva" ORDER="10"/>
+    </OPROP>
+
+   <OPROP>
+      <OP PROP="nombre_comercial" ORDER="1"/>
+      <OP PROP="nombre" ORDER="2"/>
+      <OP PROP="primer_apellido" ORDER="3"/>
+      <OP PROP="segundo_apellido" ORDER="4"/>
+      <OP PROP="NIF-CIF-VAT" ORDER="5"/>
+      <OP PROP="dirección" ORDER="6"/>
+      <OP PROP="código_postal" ORDER="7"/>
+      <OP PROP="localidad" ORDER="8"/>
+      <OP PROP="país" ORDER="9"/>
+      <OP PROP="teléfono" ORDER="10"/>
+      <OP PROP="móvil" ORDER="11"/>
+      <OP PROP="teléfono2" ORDER="12"/>
+      <OP PROP="fax" ORDER="13"/>
+      <OP PROP="email" ORDER="14"/>
+      <OP PROP="página_web" ORDER="15"/>
+   </OPROP>
+  
+   <OPROP>
+      <OP PROP="objetivo_mínimo" ORDER="1"/>
+      <OP PROP="objetivo_máximo" ORDER="2"/>
+   </OPROP>
+      
+   <OPROP>
+      <OP PROP="fecha_min_entrega" ORDER="1"/>
+      <OP PROP="fecha_max_entrega" ORDER="2"/>
+   </OPROP>
+   <OPROP>
+      <OP PROP="entregado_metálico" ORDER="1"/>
+      <OP PROP="entregado_tarjeta" ORDER="2"/>
+      <OP PROP="devuelto_metálico" ORDER="4"/>
+      <OP PROP="devuelto_tarjeta" ORDER="5"/>
+   </OPROP>
+   <OPROP>
+      <OP PROP="peso_bruto_gramos" ORDER="1"/>
+      <OP PROP="peso_neto_gramos" ORDER="2"/>
+      <OP PROP="cubica" ORDER="3"/>
+      <OP PROP="EAN-13" ORDER="4"/>
+      <OP PROP="DUM-14" ORDER="5"/>
+	  <OP PROP="tipo_embalado" ORDER="6"/>      
+   </OPROP>
+   <OPROP>
+      <OP PROP="rdn" ORDER="1"/>
+      <OP PROP="serie" ORDER="2"/>
+   </OPROP>
+   <OPROP>
+   	  <OP PROP="descripción" ORDER="1"/>
+      <OP PROP="familia" ORDER="2"/>
+      <OP PROP="subfamilia" ORDER="3"/>
+      <OP PROP="marca" ORDER="4"/>
+      <OP PROP="talla" ORDER="5"/>
+      <OP PROP="color" ORDER="6"/>
+   </OPROP>
+   <OPROP>
+      <OP PROP="precios_compra" ORDER="1"/>
+      <OP PROP="pvp" ORDER="2"/>
+      <OP PROP="pvp_iva_incluido" ORDER="3"/>
+      <OP PROP="precio" ORDER="4"/>
+      <OP PROP="precio_iva_incluido" ORDER="5"/>
+      
+   </OPROP>
+   <OPROP>
+      <OP PROP="familia" ORDER="1"/>
+      <OP PROP="subfamilia" ORDER="2"/>
+      <OP PROP="fabricación_propia" ORDER="3"/>
+   </OPROP>
+   <OPROP>
+      <OP PROP="origen" ORDER="1"/>
+      <OP PROP="destino" ORDER="2"/>
+      
+      <!-- 
+      <OP PROP="destino_posterior" ORDER="3"/>
+       -->
+   </OPROP>
+  
+   <OPROP>
+      <OP PROP="enviado" ORDER="1"/>
+      <OP PROP="recibido" ORDER="2"/>
+    <!-- 
+      <OP PROP="reenviado" ORDER="3"/>
+     -->
+   </OPROP>
+   <OPROP>
+      <OP PROP="mínimo" ORDER="1"/>
+      <OP PROP="máximo" ORDER="2"/>
+   </OPROP>
+   
+   <OPROP>
+      <OP PROP="fecha" ORDER="1"/>
+      <OP PROP="fecha_min_entrega" ORDER="2"/>
+      <OP PROP="fecha_max_entrega" ORDER="3"/>
+      <OP PROP="fecha_estimada_entrega" ORDER="4"/>
+      <OP PROP="comienzo_curso" ORDER="5"/>
+      <OP PROP="finalización_curso" ORDER="6"/>
+      <OP PROP="hora_inicio_tutoría_mañana" ORDER="7"/>
+      <OP PROP="hora_fin_tutoría_mañana" ORDER="8"/>
+      <OP PROP="hora_inicio_tutoría_tarde" ORDER="9"/>
+      <OP PROP="hora_fin_tutoría_tarde" ORDER="10"/>
+   </OPROP>
+
+   <OPROP>
+      <OP PROP="cantidad_total" ORDER="1"/>
+      <OP PROP="total_cantidad_envase1" ORDER="2"/>
+      <OP PROP="n._palets" ORDER="3"/>
+      <OP PROP="total_kg" ORDER="4"/>
+   </OPROP>
+   <OPROP>
+      <OP PROP="dominio" ORDER="1"/>
+      <OP PROP="campo_en_prefijo" ORDER="3"/>
+      <OP PROP="prefijo" ORDER="4"/>
+      <OP PROP="inicio_contador" ORDER="5"/>
+      <OP PROP="sufijo" ORDER="6"/>
+      <OP PROP="dígitos_mínimos" ORDER="7"/>
+      <OP PROP="campo_filtro" ORDER="8"/>
+      <OP PROP="valor_filtro" ORDER="9"/>
+      <OP PROP="mi_empresa" ORDER="10"/>
+   </OPROP>
+   <OPROP>
+      <OP PROP="saldo_DEBE" ORDER="1"/>
+      <OP PROP="saldo_HABER" ORDER="2"/>
+      <OP PROP="proveedor" ORDER="3"/>
+      <OP PROP="cantidad" ORDER="4"/>
+      <OP PROP="saldo" ORDER="5"/>
+      <OP PROP="línea" ORDER="6"/>      
+   </OPROP>
+   
+   <OPROP>
+		<OP PROP="ámbito" ORDER="1" />
+		<OP PROP="dominio" ORDER="2" />
+		<OP PROP="grupo_campos" ORDER="3" />
+		<OP PROP="tabla" ORDER="4" />
+		<OP PROP="propiedad" ORDER="5"/>
+		<OP PROP="valor" ORDER="6"/>
+		<OP PROP="alias" ORDER="6"/>
+		<OP PROP="prioridad" ORDER="6"/>
+		<OP PROP="tamaño" ORDER="6"/>
+		<OP PROP="mínimo_número_valores" ORDER="6"/>
+		<OP PROP="máximo_número_valores" ORDER="7"/>
+	</OPROP>
+	
+	<OPROP>
+		<OP PROP="orden" ORDER="1" />
+		<OP PROP="propiedad" ORDER="2" />
+		<OP PROP="campo_filtro" ORDER="3" />
+		<OP PROP="valor_filtro" ORDER="4" />
+	</OPROP>
+	
+	<OPROP>
+      <OP PROP="cliente" ORDER="1"/>
+      <OP PROP="agente_comercial" ORDER="2"/>
+      <OP PROP="línea" ORDER="4"/>
+   </OPROP>
+
+	<OPROP>
+		<OP PROP="rdn" ORDER="1" />
+		<OP PROP="fecha_mínima_inicio" ORDER="2" />
+		<OP PROP="fecha_máxima_fin" ORDER="3" />
+		<OP PROP="prioridad" ORDER="4" />
+		<OP PROP="proyecto" ORDER="5" />
+		<OP PROP="subtarea" ORDER="6" />
+		<OP PROP="dedicación" ORDER="7" />
+		<OP PROP="programación" ORDER="8" />
+		<OP PROP="consumo" ORDER="9" />			
+	</OPROP>   
+   
+   <OPROP>
+		<OP PROP="total_aprovisionado" ORDER="1" />
+		<OP PROP="importe_total_aprovisionado" ORDER="2" />
+		<OP PROP="total_vendido" ORDER="3"/>
+		<OP PROP="importe_total_vendido" ORDER="4"/>
+		<OP PROP="coste" ORDER="5" />
+		<OP PROP="coste_actual" ORDER="6" />
+		<OP PROP="coste_actual_previo" ORDER="7" />	
+       	<OP PROP="fecha_última_compra" ORDER="8"/>
+      	<OP PROP="fecha_última_venta" ORDER="9"/>
+      	<OP PROP="fecha_alta" ORDER="10"/>
+    	<OP PROP="precio_medio_venta" ORDER="11"/>  
+    	<OP PROP="porcentaje_stock_malogrado" ORDER="13"/>
+      	<OP PROP="porcentaje_stock_recuperado" ORDER="14"/>
+      	<OP PROP="stock_malogrado_acumulado" ORDER="15"/>
+      	<OP PROP="stock_recuperado_acumulado" ORDER="16"/> 
+	</OPROP>
+	
+	<OPROP>
+		<OP PROP="entidad" ORDER="1" />
+		<OP PROP="oficina" ORDER="2" />
+		<OP PROP="dígito_de_control" ORDER="3" />
+		<OP PROP="número_cuenta" ORDER="4" />
+	</OPROP>
+	<OPROP>
+		<OP PROP="stock_total" ORDER="1" />
+		<OP PROP="stock_reservado" ORDER="2" />
+		<OP PROP="stock_pendiente_aprovisionar" ORDER="3" />
+		<OP PROP="stock_disponible" ORDER="4" />
+	</OPROP>
+	
+	<OPROP>
+		<OP PROP="mi_empresa" ORDER="2" />
+		<OP PROP="dígitos_cuentas" ORDER="3" />
+		<OP PROP="cuenta_bancos" ORDER="6" />
+		<OP PROP="cuenta_caja" ORDER="7" />
+		<OP PROP="carpeta" ORDER="8" />
+		<OP PROP="actualizar_saldo_subcuenta" ORDER="9" />
+	</OPROP>
+	
+	<OPROP>
+		<OP PROP="cantidad_1" ORDER="1" />
+		<OP PROP="cantidad_2" ORDER="2" />
+		<OP PROP="cantidad_3" ORDER="3" />
+		<OP PROP="cantidad_4" ORDER="4" />
+		<OP PROP="cantidad_5" ORDER="5" />
+		<OP PROP="cantidad_6" ORDER="6" />
+		<OP PROP="cantidad_7" ORDER="7" />
+		<OP PROP="cantidad_8" ORDER="8" />
+		<OP PROP="cantidad_9" ORDER="9" />
+		<OP PROP="cantidad_10" ORDER="10" />
+	</OPROP>
+	
+	
+</ORDERPROPERTIES>
+</CONFIG>

@@ -1,0 +1,1411 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd" name="master" pageWidth="595" pageHeight="842" whenNoDataType="AllSectionsNoDetail" columnWidth="535" leftMargin="30" rightMargin="30" topMargin="20" bottomMargin="20" isFloatColumnFooter="true">
+	<property name="ireport.zoom" value="1.5"/>
+	<property name="ireport.x" value="0"/>
+	<property name="ireport.y" value="0"/>
+	<property name="ireport.scriptlethandling" value="0"/>
+	<property name="ireport.encoding" value="UTF-8"/>
+	<import value="net.sf.jasperreports.engine.*"/>
+	<import value="java.util.*"/>
+	<import value="net.sf.jasperreports.engine.data.*"/>
+	<parameter name="linea_comercial" class="net.sf.jasperreports.engine.JasperReport"/>
+	<parameter name="documento_cargos" class="net.sf.jasperreports.engine.JasperReport"/>
+	<parameter name="documento_descuentos_globales" class="net.sf.jasperreports.engine.JasperReport"/>
+	<parameter name="documento_forma_pago" class="net.sf.jasperreports.engine.JasperReport"/>
+	<parameter name="documento_desglose_iva" class="net.sf.jasperreports.engine.JasperReport"/>
+	<parameter name="documento" class="java.lang.String" isForPrompting="false">
+		<defaultValueExpression><![CDATA["0"]]></defaultValueExpression>
+	</parameter>
+	<parameter name="path_userFiles" class="java.lang.String"/>
+	<parameter name="orden linea" class="java.lang.String"/>
+	<parameter name="idioma" class="java.lang.String"/>
+	<queryString>
+		<![CDATA[select
+clase.rdn as clase,
+f."total_cantidad_envase1" as "total_bultos",
+f."n._palets" as "cantidad_palets",
+f."tableId" as "tableId_factura",
+f.idto as "idto_factura",
+f."rdn" as "cod_factura",
+f."causa_rectificación" as causa,
+f."portes_pagados" as "portes_pagados_factura",
+f."observaciones_a_imprimir" as "observaciones_factura",
+f."fecha" as "fecha_factura",
+f."importe" as "importe_factura",
+f."su_referencia" as "su_referencia_factura",
+f.base as base,
+f."total_iva" as "total_iva_factura",
+f."recargo" as "recargo_factura",
+f."retención" as "retencion_factura",
+f."porcentaje_retención" as "porcentaje_retencion_factura",
+c.rdn as "cod_cliente",
+c.nombre as "nombre_cliente",
+c."dirección" as "direccion_cliente",
+c."código_postal" as "codigo_postal_cliente",
+c."NIF-CIF-VAT" as "NIF-CIF-VAT_cliente",
+c."teléfono" as "telefono_cliente",
+c."móvil" as "movil_cliente",
+c.fax as "fax_cliente",
+c.nombre_comercial as "nombre_comercial_cliente",
+l.rdn as "localidad_cliente",
+p.rdn as "provincia_cliente",
+pa.rdn as "pais_cliente",
+agente.rdn as "cod_agente_comercial",
+d."código_postal" as "codigo_postal_envio",
+d."dirección" as "direccion_envio",
+d."teléfono" as "telefono_envio",
+d.receptor as "receptor_envio",
+d.horario_entrega as "horario_entrega_envio",
+dl.rdn as "localidad_envio",
+dp.rdn as "provincia_envio",
+dpa.rdn as "pais_envio",
+trans.nombre as "nombre_transportista",
+trans."NIF-CIF-VAT" as "DNI_transportista",
+me.nombre as "nombre_mi_empresa",
+me."NIF-CIF-VAT" as "NIF-CIF-VAT_mi_empresa",
+me."dirección" as "direccion_mi_empresa",
+me."código_postal" as "codigo_postal_mi_empresa",
+lme.rdn as "localidad_mi_empresa",
+pme.rdn as "provincia_mi_empresa",
+pame.rdn as "pais_mi_empresa",
+me."teléfono" as "telefono_mi_empresa",
+me.fax as "fax_mi_empresa",
+me.email as "email_mi_empresa",
+me."página_web" as "web_mi_empresa",
+me.logo as "logo_mi_empresa",
+ct."matrícula" as "matricula_transporte",
+idiomas.rdn as idioma
+
+from
+v_documento as f															left join
+v_agente_comercial as agente 		on(f.agente_comercial=agente."tableId" and f."agente_comercialIdto"=agente.idto)		inner join
+"v_sujeto_comercial" as c 		on(	(c."tableId"=f."cliente" and c."idto"=f."clienteIdto") or
+						(c."tableId"=f."proveedor" and c."idto"=f."proveedorIdto"))				left join
+localidad as l 				on(l."tableId"=c.localidad)									left join
+provincia as p 				on(p."tableId"=c."provincia")									left join
+"país" as pa 				on(pa."tableId"=c."país")									left join
+"dirección" as d 			on(d."tableId"=f."dirección_envío")								left join
+localidad as dl 			on(dl."tableId"=d.localidad)									left join
+provincia as dp 			on(dp."tableId"=d."provinciaPROVINCIA")								left join
+"país" as dpa 				on(dpa."tableId"=d."país")									left join
+"transportista" as trans 		on(trans."tableId"=f."transportista")								left join
+"control_transporte" as ct		on(ct."tableId"=f."control_transporte")								left join
+mi_empresa as me 			on(f.mi_empresa=me."tableId")									left join
+localidad as lme 			on(lme."tableId"=me.localidad)									left join
+provincia as pme 			on(pme."tableId"=me."provinciaPROVINCIA")							left join
+"país" as pame 				on(pame."tableId"=me."país")									inner join
+clase					on(clase.id=f.idto),
+idiomas
+
+where
+
+idiomas."tableId"=$P{idioma}::int and
+f."tableId"*1000 +f.idto in($P!{documento})
+order by f.rdn;]]>
+	</queryString>
+	<field name="clase" class="java.lang.String"/>
+	<field name="total_bultos" class="java.lang.Integer"/>
+	<field name="cantidad_palets" class="java.lang.Integer"/>
+	<field name="tableId_factura" class="java.lang.Integer">
+		<property name="description" value="factura_a_cliente@tableId"/>
+	</field>
+	<field name="idto_factura" class="java.lang.Integer"/>
+	<field name="cod_factura" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@rdn"/>
+	</field>
+	<field name="causa" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@causa_rectificación"/>
+	</field>
+	<field name="portes_pagados_factura" class="java.lang.Boolean">
+		<property name="description" value="factura_a_cliente@portes_pagados"/>
+	</field>
+	<field name="observaciones_factura" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@observaciones_a_imprimir"/>
+	</field>
+	<field name="fecha_factura" class="java.lang.Long">
+		<property name="description" value="factura_a_cliente@fecha"/>
+	</field>
+	<field name="importe_factura" class="java.lang.Double">
+		<property name="description" value="factura_a_cliente@importe"/>
+	</field>
+	<field name="su_referencia_factura" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@su_referencia"/>
+	</field>
+	<field name="base" class="java.lang.Double"/>
+	<field name="total_iva_factura" class="java.lang.Double">
+		<property name="description" value="factura_a_cliente@total_iva"/>
+	</field>
+	<field name="recargo_factura" class="java.lang.Double">
+		<property name="description" value="factura_a_cliente@recargo"/>
+	</field>
+	<field name="retencion_factura" class="java.lang.Double">
+		<property name="description" value="factura_a_cliente@retención"/>
+	</field>
+	<field name="porcentaje_retencion_factura" class="java.lang.Double">
+		<property name="description" value="factura_a_cliente@porcentaje_retención"/>
+	</field>
+	<field name="cod_cliente" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@cliente;cliente@rdn"/>
+	</field>
+	<field name="nombre_cliente" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@cliente;cliente@nombre"/>
+	</field>
+	<field name="direccion_cliente" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@cliente;cliente@dirección"/>
+	</field>
+	<field name="codigo_postal_cliente" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@cliente;cliente@código_postal"/>
+	</field>
+	<field name="NIF-CIF-VAT_cliente" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@cliente;cliente@NIF-CIF-VAT"/>
+	</field>
+	<field name="telefono_cliente" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@cliente;cliente@teléfono"/>
+	</field>
+	<field name="movil_cliente" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@cliente;cliente@móvil"/>
+	</field>
+	<field name="fax_cliente" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@cliente;cliente@fax"/>
+	</field>
+	<field name="nombre_comercial_cliente" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@cliente;cliente@nombre_comercial"/>
+	</field>
+	<field name="localidad_cliente" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@cliente;cliente@localidad;localidad@rdn"/>
+	</field>
+	<field name="provincia_cliente" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@cliente;cliente@provincia;provincia@rdn"/>
+	</field>
+	<field name="pais_cliente" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@cliente;cliente@país;país@rdn"/>
+	</field>
+	<field name="cod_agente_comercial" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@agente_comercial;agente_comercial@rdn"/>
+	</field>
+	<field name="codigo_postal_envio" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@dirección_envío;dirección@código_postal"/>
+	</field>
+	<field name="direccion_envio" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@dirección_envío;dirección@dirección"/>
+	</field>
+	<field name="telefono_envio" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@dirección_envío;dirección@teléfono"/>
+	</field>
+	<field name="receptor_envio" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@dirección_envío;dirección@receptor"/>
+	</field>
+	<field name="horario_entrega_envio" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@dirección_envío;dirección@horario_entrega"/>
+	</field>
+	<field name="localidad_envio" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@dirección_envío;dirección@localidad;localidad@rdn"/>
+	</field>
+	<field name="provincia_envio" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@dirección_envío;dirección@provincia;provincia@rdn"/>
+	</field>
+	<field name="pais_envio" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@dirección_envío;dirección@país;país@rdn"/>
+	</field>
+	<field name="nombre_transportista" class="java.lang.String"/>
+	<field name="DNI_transportista" class="java.lang.String"/>
+	<field name="nombre_mi_empresa" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@mi_empresa;mi_empresa@nombre"/>
+	</field>
+	<field name="NIF-CIF-VAT_mi_empresa" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@mi_empresa;mi_empresa@NIF-CIF-VAT"/>
+	</field>
+	<field name="direccion_mi_empresa" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@mi_empresa;mi_empresa@dirección"/>
+	</field>
+	<field name="codigo_postal_mi_empresa" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@mi_empresa;mi_empresa@código_postal"/>
+	</field>
+	<field name="localidad_mi_empresa" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@mi_empresa;mi_empresa@localidad;localidad@rdn"/>
+	</field>
+	<field name="provincia_mi_empresa" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@mi_empresa;mi_empresa@provincia;provincia@rdn"/>
+	</field>
+	<field name="pais_mi_empresa" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@mi_empresa;mi_empresa@país;país@rdn"/>
+	</field>
+	<field name="telefono_mi_empresa" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@mi_empresa;mi_empresa@teléfono"/>
+	</field>
+	<field name="fax_mi_empresa" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@mi_empresa;mi_empresa@fax"/>
+	</field>
+	<field name="email_mi_empresa" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@mi_empresa;mi_empresa@email"/>
+	</field>
+	<field name="web_mi_empresa" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@mi_empresa;mi_empresa@página_web"/>
+	</field>
+	<field name="logo_mi_empresa" class="java.lang.String">
+		<property name="description" value="factura_a_cliente@mi_empresa;mi_empresa@logo"/>
+	</field>
+	<field name="matricula_transporte" class="java.lang.String"/>
+	<field name="idioma" class="java.lang.String"/>
+	<variable name="total_descuento_global" class="java.lang.Double" calculation="System">
+		<initialValueExpression><![CDATA[new Double(0)]]></initialValueExpression>
+	</variable>
+	<variable name="total_cargo" class="java.lang.Double" calculation="System">
+		<initialValueExpression><![CDATA[new Double(0)]]></initialValueExpression>
+	</variable>
+	<variable name="total_peso_neto" class="java.lang.Double" calculation="System">
+		<initialValueExpression><![CDATA[new Double(0)]]></initialValueExpression>
+	</variable>
+	<variable name="total_peso_bruto" class="java.lang.Double" calculation="System">
+		<initialValueExpression><![CDATA[new Double(0)]]></initialValueExpression>
+	</variable>
+	<variable name="punto_verde" class="java.lang.Double" calculation="System">
+		<initialValueExpression><![CDATA[new Double(0)]]></initialValueExpression>
+	</variable>
+	<variable name="total_importe" class="java.lang.Double" calculation="System">
+		<initialValueExpression><![CDATA[new Double(0)]]></initialValueExpression>
+	</variable>
+	<variable name="tiene_portes_pagados" class="java.lang.String">
+		<variableExpression><![CDATA[($F{portes_pagados_factura}.equals(new Double(1)))?"PORTES PAGADOS":null]]></variableExpression>
+	</variable>
+	<variable name="albaranes" class="java.lang.String" calculation="System"/>
+	<variable name="suma_unidades" class="java.lang.Double"/>
+	<variable name="suma_cubicaje" class="java.lang.Double">
+		<initialValueExpression><![CDATA[new Double(0)]]></initialValueExpression>
+	</variable>
+	<variable name="suma_cantidad" class="java.lang.Double" calculation="System">
+		<initialValueExpression><![CDATA[new Double(0)]]></initialValueExpression>
+	</variable>
+	<group name="factura" isStartNewPage="true" isResetPageNumber="true" isReprintHeaderOnEachPage="true" footerPosition="StackAtBottom">
+		<groupExpression><![CDATA[$F{tableId_factura}]]></groupExpression>
+		<groupHeader>
+			<band height="270">
+				<image scaleImage="RetainShape" hAlign="Left" vAlign="Middle" onErrorType="Blank">
+					<reportElement key="image-logo" x="0" y="0" width="236" height="94"/>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<graphicElement>
+						<pen lineWidth="0.0" lineStyle="Solid"/>
+					</graphicElement>
+					<imageExpression class="java.lang.String"><![CDATA["ROOT.war/" + $P{path_userFiles} + $F{logo_mi_empresa}]]></imageExpression>
+				</image>
+				<textField isStretchWithOverflow="true" pattern="" isBlankWhenNull="true">
+					<reportElement key="tlf-fax-email-empresa" positionType="Float" x="300" y="70" width="235" height="11" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true"/>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement rotation="None">
+						<font fontName="SansSerif" size="7" isBold="false" pdfFontName="Helvetica"/>
+					</textElement>
+					<textFieldExpression class="java.lang.String"><![CDATA[$F{telefono_mi_empresa}==null?
+(
+$F{fax_mi_empresa}==null?
+($F{email_mi_empresa}==null?
+"Tlf.:":
+"Email: " + $F{email_mi_empresa})
+:
+($F{email_mi_empresa}==null?"Fax: " + $F{fax_mi_empresa}:
+"Fax: " + $F{fax_mi_empresa} + "   Email: " + $F{email_mi_empresa})
+)
+:
+(
+$F{fax_mi_empresa}==null?
+
+($F{email_mi_empresa}==null?"Tlf.: " + $F{telefono_mi_empresa}:
+"Tlf.: " + $F{telefono_mi_empresa} + "\nEmail: " + $F{email_mi_empresa}):
+
+($F{email_mi_empresa}==null?
+"Tlf.: " + $F{telefono_mi_empresa} + "   Fax: " + $F{fax_mi_empresa}:
+"Tlf.: " + $F{telefono_mi_empresa} + "   Fax: " + $F{fax_mi_empresa} + "\nEmail: " + $F{email_mi_empresa})
+)]]></textFieldExpression>
+				</textField>
+				<frame>
+					<reportElement key="frame-envio" mode="Transparent" x="7" y="136" width="260" height="63" isRemoveLineWhenBlank="true">
+						<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+					</reportElement>
+					<box>
+						<pen lineWidth="1.0"/>
+						<topPen lineWidth="1.0"/>
+						<leftPen lineWidth="1.0"/>
+						<bottomPen lineWidth="1.0"/>
+						<rightPen lineWidth="1.0"/>
+					</box>
+					<textField isBlankWhenNull="true">
+						<reportElement key="telefono-envio" positionType="Float" x="1" y="50" width="115" height="13" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement verticalAlignment="Bottom">
+							<font size="10" isBold="false" pdfFontName="Helvetica"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{telefono_envio}==null?"TLF. ":"TLF.  " + $F{telefono_envio}]]></textFieldExpression>
+					</textField>
+					<textField isBlankWhenNull="true">
+						<reportElement key="pais-envio" x="116" y="50" width="143" height="13" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement>
+							<font size="10"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{pais_envio}]]></textFieldExpression>
+					</textField>
+					<textField isBlankWhenNull="true">
+						<reportElement key="receptor-envio" positionType="Float" x="1" y="10" width="258" height="13" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement verticalAlignment="Bottom">
+							<font size="10" isBold="false" pdfFontName="Helvetica"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{receptor_envio}]]></textFieldExpression>
+					</textField>
+					<textField isBlankWhenNull="true">
+						<reportElement key="localidad-envio" positionType="Float" x="41" y="40" width="218" height="13" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement verticalAlignment="Bottom">
+							<font size="10" isBold="false" pdfFontName="Helvetica"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[(($F{provincia_envio}==null)||($F{provincia_envio}.equals($F{localidad_envio})))?$F{localidad_envio}:$F{localidad_envio} + " (" + $F{provincia_envio} + ")"]]></textFieldExpression>
+					</textField>
+					<textField pattern="###0" isBlankWhenNull="true">
+						<reportElement key="cp-envio" positionType="Float" x="1" y="40" width="40" height="13" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement verticalAlignment="Bottom">
+							<font size="10" isBold="false" pdfFontName="Helvetica"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{codigo_postal_envio}]]></textFieldExpression>
+					</textField>
+					<textField isBlankWhenNull="true">
+						<reportElement key="nombre-envio" positionType="Float" x="1" y="20" width="258" height="13" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)) &&
+    $F{direccion_envio}!=null)]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement verticalAlignment="Bottom">
+							<font size="10" isBold="false" pdfFontName="Helvetica"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{nombre_comercial_cliente}!=null?$F{nombre_comercial_cliente}:$F{nombre_cliente}]]></textFieldExpression>
+					</textField>
+					<textField isBlankWhenNull="true">
+						<reportElement key="horario-envio" positionType="Float" x="1" y="0" width="258" height="13" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement verticalAlignment="Bottom">
+							<font size="10" isBold="false" pdfFontName="Helvetica"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{horario_entrega_envio}==null?"Horario de entrega: ":"Horario de entrega: " + $F{horario_entrega_envio}]]></textFieldExpression>
+					</textField>
+					<textField isBlankWhenNull="true">
+						<reportElement key="direccion-envio" positionType="Float" x="1" y="30" width="258" height="13" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement verticalAlignment="Bottom">
+							<font size="10" isBold="false" pdfFontName="Helvetica"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{direccion_envio}]]></textFieldExpression>
+					</textField>
+				</frame>
+				<frame>
+					<reportElement key="frame-cliente" mode="Transparent" x="278" y="136" width="250" height="63" isRemoveLineWhenBlank="true">
+						<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+					</reportElement>
+					<box>
+						<pen lineWidth="1.0"/>
+						<topPen lineWidth="1.0"/>
+						<leftPen lineWidth="1.0"/>
+						<bottomPen lineWidth="1.0"/>
+						<rightPen lineWidth="1.0"/>
+					</box>
+					<textField isBlankWhenNull="true">
+						<reportElement key="localidad-cliente" positionType="Float" x="41" y="32" width="208" height="13" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement verticalAlignment="Bottom">
+							<font size="10" isBold="false" pdfFontName="Helvetica"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[(($F{provincia_cliente}==null)||($F{provincia_cliente}.equals($F{localidad_cliente})))?$F{localidad_cliente}:$F{localidad_cliente} + " (" + $F{provincia_cliente} + ")"]]></textFieldExpression>
+					</textField>
+					<textField isBlankWhenNull="true">
+						<reportElement key="pais-cliente" positionType="Float" x="124" y="49" width="125" height="13" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement verticalAlignment="Bottom">
+							<font size="10" isBold="false" pdfFontName="Helvetica"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{pais_cliente}]]></textFieldExpression>
+					</textField>
+					<textField pattern="" isBlankWhenNull="true">
+						<reportElement key="nombre-cliente" positionType="Float" x="1" y="12" width="248" height="13" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement verticalAlignment="Bottom">
+							<font size="10" isBold="false" pdfFontName="Helvetica"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{nombre_cliente}]]></textFieldExpression>
+					</textField>
+					<textField isBlankWhenNull="true">
+						<reportElement key="direccion-cliente" positionType="Float" x="1" y="22" width="248" height="13" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement verticalAlignment="Bottom">
+							<font size="10" isBold="false" pdfFontName="Helvetica"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{direccion_cliente}]]></textFieldExpression>
+					</textField>
+					<textField pattern="###0" isBlankWhenNull="true">
+						<reportElement key="cp-cliente" positionType="Float" x="1" y="32" width="40" height="13" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement verticalAlignment="Bottom">
+							<font size="10" isBold="false" pdfFontName="Helvetica"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{codigo_postal_cliente}]]></textFieldExpression>
+					</textField>
+					<textField pattern="" isBlankWhenNull="true">
+						<reportElement key="nif-cliente" positionType="Float" x="1" y="2" width="248" height="13" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement verticalAlignment="Bottom">
+							<font size="10" isBold="false" pdfFontName="Helvetica"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{NIF-CIF-VAT_cliente}]]></textFieldExpression>
+					</textField>
+					<textField pattern="" isBlankWhenNull="true">
+						<reportElement mode="Transparent" x="1" y="36" width="100" height="17" forecolor="#000000" backcolor="#FFFFFF"/>
+						<textElement textAlignment="Left" verticalAlignment="Bottom" rotation="None" lineSpacing="Single" markup="none">
+							<font fontName="SansSerif" size="10" isBold="false" isItalic="false" isUnderline="false" isStrikeThrough="false" pdfFontName="Helvetica" pdfEncoding="Cp1252" isPdfEmbedded="false"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{telefono_cliente}]]></textFieldExpression>
+					</textField>
+					<textField pattern="" isBlankWhenNull="true">
+						<reportElement mode="Transparent" x="1" y="42" width="100" height="20" forecolor="#000000" backcolor="#FFFFFF"/>
+						<textElement textAlignment="Left" verticalAlignment="Bottom" rotation="None" lineSpacing="Single" markup="none">
+							<font fontName="SansSerif" size="10" isBold="false" isItalic="false" isUnderline="false" isStrikeThrough="false" pdfFontName="Helvetica" pdfEncoding="Cp1252" isPdfEmbedded="false"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{movil_cliente}]]></textFieldExpression>
+					</textField>
+					<textField pattern="" isBlankWhenNull="true">
+						<reportElement mode="Transparent" x="124" y="34" width="100" height="20" forecolor="#000000" backcolor="#FFFFFF"/>
+						<textElement textAlignment="Left" verticalAlignment="Bottom" rotation="None" lineSpacing="Single" markup="none">
+							<font fontName="SansSerif" size="10" isBold="false" isItalic="false" isUnderline="false" isStrikeThrough="false" pdfFontName="Helvetica" pdfEncoding="Cp1252" isPdfEmbedded="false"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{fax_cliente}]]></textFieldExpression>
+					</textField>
+				</frame>
+				<frame>
+					<reportElement key="frame-cabecera" x="-1" y="203" width="535" height="32" isRemoveLineWhenBlank="true"/>
+					<textField pattern="dd/MM/yyyy" isBlankWhenNull="true">
+						<reportElement key="fecha" positionType="Float" x="37" y="0" width="100" height="16" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement/>
+						<textFieldExpression class="java.util.Date"><![CDATA[new Date($F{fecha_factura}.longValue()*1000)]]></textFieldExpression>
+					</textField>
+					<textField>
+						<reportElement key="label-cod-comercial" positionType="Float" x="270" y="0" width="80" height="16" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement>
+							<font isBold="true" pdfFontName="Helvetica-Bold"/>
+						</textElement>
+						<textFieldExpression class="java.util.String"><![CDATA[Cod. Comercial:]]></textFieldExpression>
+					</textField>
+					<textField>
+						<reportElement key="label-referencia" positionType="Float" x="405" y="0" width="40" height="16" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement>
+							<font isBold="true" pdfFontName="Helvetica-Bold"/>
+						</textElement>
+						<textFieldExpression class="java.util.String"><![CDATA[Su Rfrª:]]></textFieldExpression>
+					</textField>
+					<textField isBlankWhenNull="true">
+						<reportElement key="cod-comercial" positionType="Float" x="348" y="0" width="57" height="16" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement/>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{cod_agente_comercial}]]></textFieldExpression>
+					</textField>
+					<textField isStretchWithOverflow="true" isBlankWhenNull="true">
+						<reportElement key="observaciones" positionType="Float" x="82" y="16" width="452" height="16" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement/>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{observaciones_factura}]]></textFieldExpression>
+					</textField>
+					<textField>
+						<reportElement key="label-observaciones" positionType="Float" x="0" y="16" width="82" height="16" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement>
+							<font isBold="true" pdfFontName="Helvetica-Bold"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[Observaciones:]]></textFieldExpression>
+					</textField>
+					<textField isBlankWhenNull="true">
+						<reportElement key="referencia" positionType="Float" x="445" y="0" width="89" height="16" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement/>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{su_referencia_factura}]]></textFieldExpression>
+					</textField>
+					<textField>
+						<reportElement key="label-cod-cliente" positionType="Float" x="138" y="0" width="66" height="16" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement>
+							<font isBold="true" pdfFontName="Helvetica-Bold"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{clase}.contains("CLIENTE")||$F{clase}.contains("VENTA")?
+($F{idioma}.equals("ingles")?"Client Code":"Cod. Cliente"):
+($F{idioma}.equals("ingles")?"Supplier Code":"Cod. Proveedor")]]></textFieldExpression>
+					</textField>
+					<textField>
+						<reportElement key="label-fecha" positionType="Float" x="0" y="0" width="37" height="16" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement>
+							<font isBold="true" pdfFontName="Helvetica-Bold"/>
+						</textElement>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{idioma}.equals("ingles")?"Date":"Fecha"]]></textFieldExpression>
+					</textField>
+					<textField isBlankWhenNull="true">
+						<reportElement key="cod-cliente" positionType="Float" x="203" y="0" width="64" height="16" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement/>
+						<textFieldExpression class="java.lang.String"><![CDATA[$F{cod_cliente}]]></textFieldExpression>
+					</textField>
+				</frame>
+				<textField isStretchWithOverflow="true" pattern="" isBlankWhenNull="true">
+					<reportElement key="nombre-empresa" positionType="Float" x="236" y="18" width="299" height="19" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true"/>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement textAlignment="Center" rotation="None">
+						<font fontName="SansSerif" size="12" isBold="true" pdfFontName="Helvetica-Bold"/>
+					</textElement>
+					<textFieldExpression class="java.lang.String"><![CDATA[$F{nombre_mi_empresa}]]></textFieldExpression>
+				</textField>
+				<textField isStretchWithOverflow="true" pattern="###0" isBlankWhenNull="true">
+					<reportElement key="cp-empresa" positionType="Float" x="300" y="59" width="30" height="11" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true"/>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement rotation="None">
+						<font fontName="SansSerif" size="7" isBold="false" pdfFontName="Helvetica"/>
+					</textElement>
+					<textFieldExpression class="java.lang.String"><![CDATA[$F{codigo_postal_mi_empresa}]]></textFieldExpression>
+				</textField>
+				<textField isStretchWithOverflow="true" pattern="" isBlankWhenNull="true">
+					<reportElement key="direccion-empresa" positionType="Float" x="300" y="48" width="235" height="11" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true"/>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement rotation="None">
+						<font fontName="SansSerif" size="7" isBold="false" pdfFontName="Helvetica"/>
+					</textElement>
+					<textFieldExpression class="java.lang.String"><![CDATA[$F{direccion_mi_empresa}]]></textFieldExpression>
+				</textField>
+				<textField isStretchWithOverflow="true" pattern="" isBlankWhenNull="true">
+					<reportElement key="localidad-empresa" positionType="Float" x="330" y="59" width="205" height="11" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true"/>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement rotation="None">
+						<font fontName="SansSerif" size="7" isBold="false" pdfFontName="Helvetica"/>
+					</textElement>
+					<textFieldExpression class="java.lang.String"><![CDATA[$F{pais_mi_empresa}==null?
+(
+($F{provincia_mi_empresa}==null || $F{provincia_mi_empresa}.equals($F{localidad_mi_empresa}))?
+$F{localidad_mi_empresa}:
+$F{localidad_mi_empresa} + " (" + $F{provincia_mi_empresa} + ")"
+)
+:
+(
+($F{provincia_mi_empresa}==null || $F{provincia_mi_empresa}.equals($F{localidad_mi_empresa}))?
+$F{localidad_mi_empresa} + ", " + $F{pais_mi_empresa}:
+$F{localidad_mi_empresa} + " (" + $F{provincia_mi_empresa} + ") " + $F{pais_mi_empresa}
+)]]></textFieldExpression>
+				</textField>
+				<textField isStretchWithOverflow="true" pattern="" isBlankWhenNull="true">
+					<reportElement key="nif-empresa" positionType="Float" x="300" y="37" width="147" height="11" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true"/>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement textAlignment="Left" rotation="None">
+						<font fontName="SansSerif" size="7" isBold="false" pdfFontName="Helvetica"/>
+					</textElement>
+					<textFieldExpression class="java.lang.String"><![CDATA[$F{NIF-CIF-VAT_mi_empresa}!=null?
+"C.I.F. " + $F{NIF-CIF-VAT_mi_empresa}:
+"C.I.F. "]]></textFieldExpression>
+				</textField>
+				<textField isStretchWithOverflow="true" isBlankWhenNull="true">
+					<reportElement key="cod-factura" positionType="Float" x="143" y="101" width="146" height="14" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true">
+						<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+					</reportElement>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement>
+						<font isBold="true" pdfFontName="Helvetica-Bold"/>
+					</textElement>
+					<textFieldExpression class="java.lang.String"><![CDATA[$F{cod_factura}]]></textFieldExpression>
+				</textField>
+				<line>
+					<reportElement key="line-2" x="0" y="115" width="270" height="1" isRemoveLineWhenBlank="true">
+						<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+					</reportElement>
+				</line>
+				<textField>
+					<reportElement key="label-cod-factura" positionType="Float" x="0" y="101" width="143" height="14" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true">
+						<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+					</reportElement>
+					<textElement markup="none">
+						<font isBold="true" pdfFontName="Helvetica-Bold"/>
+					</textElement>
+					<textFieldExpression class="java.lang.String"><![CDATA[!$F{idioma}.equals("ingles")?$F{clase}:
+(
+    $F{clase}.equals("FACTURA_A_CLIENTE")?"INVOICE":
+    (
+        $F{clase}.equals("ALBARÁN_CLIENTE")?"DELIVERY_NOTE":
+        (
+            $F{clase}.equals("PEDIDO_DE_CLIENTE")?"CUSTOMER_ORDER":
+            ($F{clase}.equals("PRESUPUESTO_VENTA")?"QUOTE":"ORDER")
+         )
+     )
+ )]]></textFieldExpression>
+				</textField>
+				<line>
+					<reportElement key="line-1" positionType="Float" x="0" y="268" width="535" height="1" isRemoveLineWhenBlank="true">
+						<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+					</reportElement>
+				</line>
+				<textField isStretchWithOverflow="true" pattern="" isBlankWhenNull="true">
+					<reportElement key="web-empresa" positionType="Float" x="300" y="83" width="235" height="11" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true">
+						<printWhenExpression><![CDATA[$F{web_mi_empresa}!=null]]></printWhenExpression>
+					</reportElement>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement rotation="None">
+						<font fontName="SansSerif" size="7" isBold="false" pdfFontName="Helvetica"/>
+					</textElement>
+					<textFieldExpression class="java.lang.String"><![CDATA["Web: " + $F{web_mi_empresa}]]></textFieldExpression>
+				</textField>
+				<frame>
+					<reportElement key="frame-cantidades" mode="Transparent" x="0" y="235" width="535" height="32" isRemoveLineWhenBlank="true" backcolor="#FFFFFF">
+						<printWhenExpression><![CDATA[$F{total_bultos}!=0 || $F{cantidad_palets}!=0 || $V{suma_cubicaje}!=0 || $V{total_peso_neto}!=0 || $V{total_peso_bruto}!=0 && $V{suma_cantidad}!=0]]></printWhenExpression>
+					</reportElement>
+					<textField evaluationTime="Report" pattern="###0" isBlankWhenNull="true">
+						<reportElement key="bultos" positionType="Float" x="37" y="0" width="98" height="16" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement/>
+						<textFieldExpression class="java.lang.Integer"><![CDATA[$F{total_bultos}]]></textFieldExpression>
+					</textField>
+					<staticText>
+						<reportElement key="label-bultos" mode="Transparent" x="0" y="0" width="37" height="16" isRemoveLineWhenBlank="true" backcolor="#FFFFFF">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<box>
+							<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+							<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						</box>
+						<textElement>
+							<font isBold="true" pdfFontName="Helvetica-Bold"/>
+						</textElement>
+						<text><![CDATA[Bultos:]]></text>
+					</staticText>
+					<staticText>
+						<reportElement key="label-unidades" mode="Transparent" x="137" y="0" width="51" height="16" isRemoveLineWhenBlank="true" forecolor="#000000" backcolor="#FFFFFF">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<textElement textAlignment="Left" verticalAlignment="Top" rotation="None" lineSpacing="Single" markup="none">
+							<font fontName="SansSerif" size="10" isBold="true" isItalic="false" isUnderline="false" isStrikeThrough="false" pdfFontName="Helvetica-Bold" pdfEncoding="Cp1252" isPdfEmbedded="false"/>
+						</textElement>
+						<text><![CDATA[Unidades:]]></text>
+					</staticText>
+					<staticText>
+						<reportElement key="label-cubicaje" mode="Transparent" x="137" y="16" width="49" height="16" isRemoveLineWhenBlank="true" forecolor="#000000" backcolor="#FFFFFF">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<textElement textAlignment="Left" verticalAlignment="Top" rotation="None" lineSpacing="Single" markup="none">
+							<font fontName="SansSerif" size="10" isBold="true" isItalic="false" isUnderline="false" isStrikeThrough="false" pdfFontName="Helvetica-Bold" pdfEncoding="Cp1252" isPdfEmbedded="false"/>
+						</textElement>
+						<text><![CDATA[Cubicaje:]]></text>
+					</staticText>
+					<staticText>
+						<reportElement key="label-palets" mode="Transparent" x="0" y="16" width="36" height="16" isRemoveLineWhenBlank="true" forecolor="#000000" backcolor="#FFFFFF">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<textElement textAlignment="Left" verticalAlignment="Top" rotation="None" lineSpacing="Single" markup="none">
+							<font fontName="SansSerif" size="10" isBold="true" isItalic="false" isUnderline="false" isStrikeThrough="false" pdfFontName="Helvetica-Bold" pdfEncoding="Cp1252" isPdfEmbedded="false"/>
+						</textElement>
+						<text><![CDATA[Palets:]]></text>
+					</staticText>
+					<textField evaluationTime="Report" pattern="###0" isBlankWhenNull="true">
+						<reportElement key="palets" positionType="Float" x="37" y="16" width="98" height="16" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<textElement/>
+						<textFieldExpression class="java.lang.Integer"><![CDATA[$F{cantidad_palets}]]></textFieldExpression>
+					</textField>
+					<textField evaluationTime="Report" isBlankWhenNull="true">
+						<reportElement key="unidades" x="187" y="0" width="79" height="16" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<textElement/>
+						<textFieldExpression class="java.lang.Double"><![CDATA[$V{suma_cantidad}]]></textFieldExpression>
+					</textField>
+					<textField isBlankWhenNull="true">
+						<reportElement key="cubicaje" x="185" y="16" width="81" height="16" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<textElement/>
+						<textFieldExpression class="java.lang.Double"><![CDATA[new Double($V{suma_cubicaje}.doubleValue()+$F{cantidad_palets}.doubleValue()*0.125)]]></textFieldExpression>
+					</textField>
+					<textField evaluationTime="Report" isBlankWhenNull="true">
+						<reportElement key="peso bruto" x="330" y="16" width="77" height="16" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<textElement/>
+						<textFieldExpression class="java.lang.Double"><![CDATA[$V{total_peso_bruto}]]></textFieldExpression>
+					</textField>
+					<staticText>
+						<reportElement key="label-peso-bruto " mode="Transparent" x="270" y="16" width="58" height="16" isRemoveLineWhenBlank="true" forecolor="#000000" backcolor="#FFFFFF">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<textElement textAlignment="Left" verticalAlignment="Top" rotation="None" lineSpacing="Single" markup="none">
+							<font fontName="SansSerif" size="10" isBold="true" isItalic="false" isUnderline="false" isStrikeThrough="false" pdfFontName="Helvetica-Bold" pdfEncoding="Cp1252" isPdfEmbedded="false"/>
+						</textElement>
+						<text><![CDATA[Peso Bruto:]]></text>
+					</staticText>
+					<staticText>
+						<reportElement key="label-peso-neto" mode="Transparent" x="270" y="0" width="55" height="16" isRemoveLineWhenBlank="true" forecolor="#000000" backcolor="#FFFFFF"/>
+						<textElement textAlignment="Left" verticalAlignment="Top" rotation="None" lineSpacing="Single" markup="none">
+							<font fontName="SansSerif" size="10" isBold="true" isItalic="false" isUnderline="false" isStrikeThrough="false" pdfFontName="Helvetica-Bold" pdfEncoding="Cp1252" isPdfEmbedded="false"/>
+						</textElement>
+						<text><![CDATA[Peso Neto:]]></text>
+					</staticText>
+					<textField evaluationTime="Report" isBlankWhenNull="true">
+						<reportElement key="peso neto" x="327" y="0" width="77" height="16" isRemoveLineWhenBlank="true">
+							<printWhenExpression><![CDATA[new Boolean($V{PAGE_NUMBER}.equals(new Integer(1)))]]></printWhenExpression>
+						</reportElement>
+						<textElement/>
+						<textFieldExpression class="java.lang.Double"><![CDATA[$V{total_peso_neto}]]></textFieldExpression>
+					</textField>
+				</frame>
+				<textField>
+					<reportElement x="70" y="120" width="155" height="14"/>
+					<textElement>
+						<font isBold="true"/>
+					</textElement>
+					<textFieldExpression class="java.lang.String"><![CDATA[$F{idioma}.equals("ingles")?"Delivery Data":"Datos Entrega"]]></textFieldExpression>
+				</textField>
+				<textField>
+					<reportElement x="319" y="122" width="155" height="14"/>
+					<textElement>
+						<font isBold="true"/>
+					</textElement>
+					<textFieldExpression class="java.lang.String"><![CDATA[$F{clase}.contains("CLIENTE")||$F{clase}.contains("VENTA")?
+($F{idioma}.equals("ingles")?"Customer Data":"Datos cliente"):
+($F{idioma}.equals("ingles")?"Provider Data":"Datos proveedor")]]></textFieldExpression>
+				</textField>
+			</band>
+		</groupHeader>
+		<groupFooter>
+			<band height="144">
+				<staticText>
+					<reportElement key="label-importe-factura" positionType="Float" mode="Opaque" x="420" y="0" width="33" height="15" backcolor="#CCCCCC"/>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement textAlignment="Right" verticalAlignment="Middle">
+						<font size="10" isBold="true" pdfFontName="Helvetica-Bold"/>
+					</textElement>
+					<text><![CDATA[Total: ]]></text>
+				</staticText>
+				<subreport isUsingCache="true">
+					<reportElement key="vencimientos" positionType="Float" x="236" y="40" width="299" height="100" isPrintWhenDetailOverflows="true"/>
+					<subreportParameter name="documento idto">
+						<subreportParameterExpression><![CDATA[$F{idto_factura}]]></subreportParameterExpression>
+					</subreportParameter>
+					<subreportParameter name="documento">
+						<subreportParameterExpression><![CDATA[$F{tableId_factura}]]></subreportParameterExpression>
+					</subreportParameter>
+					<connectionExpression><![CDATA[$P{REPORT_CONNECTION}]]></connectionExpression>
+					<subreportExpression class="net.sf.jasperreports.engine.JasperReport"><![CDATA[$P{documento_forma_pago}]]></subreportExpression>
+				</subreport>
+				<subreport isUsingCache="true">
+					<reportElement key="desglose iva" positionType="Float" x="0" y="40" width="225" height="100" isPrintWhenDetailOverflows="true"/>
+					<subreportParameter name="documento idto">
+						<subreportParameterExpression><![CDATA[$F{idto_factura}]]></subreportParameterExpression>
+					</subreportParameter>
+					<subreportParameter name="documento">
+						<subreportParameterExpression><![CDATA[$F{tableId_factura}]]></subreportParameterExpression>
+					</subreportParameter>
+					<connectionExpression><![CDATA[$P{REPORT_CONNECTION}]]></connectionExpression>
+					<subreportExpression class="net.sf.jasperreports.engine.JasperReport"><![CDATA[$P{documento_desglose_iva}]]></subreportExpression>
+				</subreport>
+				<textField isBlankWhenNull="true">
+					<reportElement key="portes-pagados" positionType="Float" x="0" y="20" width="135" height="15"/>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement>
+						<font isBold="true" pdfFontName="Helvetica-Bold"/>
+					</textElement>
+					<textFieldExpression class="java.lang.String"><![CDATA[$V{tiene_portes_pagados}]]></textFieldExpression>
+				</textField>
+				<line>
+					<reportElement key="line-4" positionType="Float" x="0" y="36" width="535" height="1"/>
+				</line>
+				<textField pattern="#,##0.00" isBlankWhenNull="true">
+					<reportElement key="importe-factura" positionType="Float" mode="Opaque" x="454" y="0" width="80" height="15" isPrintWhenDetailOverflows="true" backcolor="#CCCCCC"/>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement textAlignment="Right" verticalAlignment="Middle">
+						<font isBold="true" pdfFontName="Helvetica-Bold"/>
+					</textElement>
+					<textFieldExpression class="java.lang.Double"><![CDATA[$F{importe_factura}]]></textFieldExpression>
+				</textField>
+				<staticText>
+					<reportElement key="label-punto-verde" positionType="Float" x="299" y="20" width="173" height="14">
+						<printWhenExpression><![CDATA[new Boolean($F{pais_cliente}.equals("ESPAÑA"))]]></printWhenExpression>
+					</reportElement>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement textAlignment="Right" verticalAlignment="Bottom">
+						<font size="8"/>
+					</textElement>
+					<text><![CDATA[Total punto verde incluido en factura:]]></text>
+				</staticText>
+				<textField isStretchWithOverflow="true" evaluationTime="Band" pattern="###0.0000" isBlankWhenNull="true">
+					<reportElement key="punto-verde" positionType="Float" x="472" y="20" width="62" height="14">
+						<printWhenExpression><![CDATA[new Boolean($F{pais_cliente}.equals("ESPAÑA"))]]></printWhenExpression>
+					</reportElement>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement textAlignment="Right" verticalAlignment="Bottom"/>
+					<textFieldExpression class="java.lang.Double"><![CDATA[$V{punto_verde}]]></textFieldExpression>
+				</textField>
+				<staticText>
+					<reportElement key="label-total-recargo" positionType="Float" x="218" y="0" width="35" height="15" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true">
+						<printWhenExpression><![CDATA[new Boolean (!($F{recargo_factura}.equals(new Double(0.0))))]]></printWhenExpression>
+					</reportElement>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement textAlignment="Left" verticalAlignment="Middle">
+						<font size="8" isBold="true"/>
+					</textElement>
+					<text><![CDATA[Recargo:]]></text>
+				</staticText>
+				<textField isStretchWithOverflow="true" evaluationTime="Band" pattern="#,##0.00" isBlankWhenNull="true">
+					<reportElement key="total-iva" positionType="Float" x="170" y="0" width="42" height="15" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true">
+						<printWhenExpression><![CDATA[new Boolean (!($F{total_iva_factura}.equals(new Double(0.0))))]]></printWhenExpression>
+					</reportElement>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement textAlignment="Right" verticalAlignment="Middle">
+						<font size="8"/>
+					</textElement>
+					<textFieldExpression class="java.lang.Double"><![CDATA[$F{total_iva_factura}]]></textFieldExpression>
+				</textField>
+				<line>
+					<reportElement key="line-3" positionType="Float" x="0" y="17" width="535" height="1"/>
+				</line>
+				<staticText>
+					<reportElement key="label-total-iva" positionType="Float" x="128" y="0" width="42" height="15" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true">
+						<printWhenExpression><![CDATA[new Boolean (!($F{total_iva_factura}.equals(new Double(0.0))))]]></printWhenExpression>
+					</reportElement>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement textAlignment="Left" verticalAlignment="Middle">
+						<font size="8" isBold="true"/>
+					</textElement>
+					<text><![CDATA[IVA:]]></text>
+				</staticText>
+				<textField isStretchWithOverflow="true" evaluationTime="Band" pattern="#,##0.00" isBlankWhenNull="true">
+					<reportElement key="total-recargo" positionType="Float" x="253" y="0" width="44" height="15" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true">
+						<printWhenExpression><![CDATA[new Boolean (!($F{recargo_factura}.equals(new Double(0.0))))]]></printWhenExpression>
+					</reportElement>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement textAlignment="Right" verticalAlignment="Middle">
+						<font size="8"/>
+					</textElement>
+					<textFieldExpression class="java.lang.Double"><![CDATA[$F{recargo_factura}]]></textFieldExpression>
+				</textField>
+				<staticText>
+					<reportElement key="label-porcentaje-retencion" positionType="Float" x="378" y="0" width="11" height="15" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true">
+						<printWhenExpression><![CDATA[new Boolean (!($F{retencion_factura}.equals(new Double(0.0))))]]></printWhenExpression>
+					</reportElement>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement textAlignment="Center" verticalAlignment="Middle">
+						<font size="8" isBold="true"/>
+					</textElement>
+					<text><![CDATA[-]]></text>
+				</staticText>
+				<staticText>
+					<reportElement key="label-total-retencion" positionType="Float" x="302" y="0" width="40" height="15" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true">
+						<printWhenExpression><![CDATA[new Boolean (!($F{retencion_factura}.equals(new Double(0.0))))]]></printWhenExpression>
+					</reportElement>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement textAlignment="Left" verticalAlignment="Middle">
+						<font size="8" isBold="true"/>
+					</textElement>
+					<text><![CDATA[Retención:]]></text>
+				</staticText>
+				<textField isStretchWithOverflow="true" evaluationTime="Band" pattern="#,##0.0 %" isBlankWhenNull="true">
+					<reportElement key="porcentaje-retencion" positionType="Float" x="389" y="0" width="28" height="15" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true">
+						<printWhenExpression><![CDATA[new Boolean (!($F{retencion_factura}.equals(new Double(0.0))))]]></printWhenExpression>
+					</reportElement>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement textAlignment="Right" verticalAlignment="Middle">
+						<font size="8"/>
+					</textElement>
+					<textFieldExpression class="java.lang.Double"><![CDATA[new Double($F{porcentaje_retencion_factura}.doubleValue()/100)]]></textFieldExpression>
+				</textField>
+				<textField isStretchWithOverflow="true" evaluationTime="Band" pattern="#,##0.00" isBlankWhenNull="true">
+					<reportElement key="total-retencion" positionType="Float" x="342" y="0" width="35" height="15" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true">
+						<printWhenExpression><![CDATA[new Boolean (!($F{retencion_factura}.equals(new Double(0.0))))]]></printWhenExpression>
+					</reportElement>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement textAlignment="Right" verticalAlignment="Middle">
+						<font size="8"/>
+					</textElement>
+					<textFieldExpression class="java.lang.Double"><![CDATA[$F{retencion_factura}]]></textFieldExpression>
+				</textField>
+				<staticText>
+					<reportElement key="label-total-iva" positionType="Float" x="1" y="0" width="25" height="15" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true">
+						<printWhenExpression><![CDATA[new Boolean (!($F{total_iva_factura}.equals(new Double(0.0))))]]></printWhenExpression>
+					</reportElement>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement textAlignment="Left" verticalAlignment="Middle">
+						<font size="8" isBold="true"/>
+					</textElement>
+					<text><![CDATA[BASE:]]></text>
+				</staticText>
+				<textField isStretchWithOverflow="true" evaluationTime="Band" pattern="#,##0.00" isBlankWhenNull="true">
+					<reportElement key="total-iva" positionType="Float" x="26" y="0" width="67" height="15" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true"/>
+					<box>
+						<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+						<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					</box>
+					<textElement textAlignment="Right" verticalAlignment="Middle">
+						<font size="8"/>
+					</textElement>
+					<textFieldExpression class="java.lang.Double"><![CDATA[$F{base}]]></textFieldExpression>
+				</textField>
+			</band>
+		</groupFooter>
+	</group>
+	<detail>
+		<band height="13" splitType="Stretch">
+			<subreport isUsingCache="true">
+				<reportElement key="lineas" x="-27" y="9" width="588" height="3" isRemoveLineWhenBlank="true"/>
+				<subreportParameter name="documento idto">
+					<subreportParameterExpression><![CDATA[$F{idto_factura}]]></subreportParameterExpression>
+				</subreportParameter>
+				<subreportParameter name="documento">
+					<subreportParameterExpression><![CDATA[$F{tableId_factura}]]></subreportParameterExpression>
+				</subreportParameter>
+				<subreportParameter name="orden linea">
+					<subreportParameterExpression><![CDATA[$P{orden linea}]]></subreportParameterExpression>
+				</subreportParameter>
+				<connectionExpression><![CDATA[$P{REPORT_CONNECTION}]]></connectionExpression>
+				<returnValue subreportVariable="suma_peso_neto" toVariable="total_peso_neto"/>
+				<returnValue subreportVariable="suma_peso_bruto" toVariable="total_peso_bruto"/>
+				<returnValue subreportVariable="coste_punto_verde" toVariable="punto_verde"/>
+				<returnValue subreportVariable="suma_importe" toVariable="total_importe"/>
+				<returnValue subreportVariable="suma_cantidad" toVariable="suma_cantidad"/>
+				<returnValue subreportVariable="suma_cubicaje" toVariable="suma_cubicaje"/>
+				<subreportExpression class="net.sf.jasperreports.engine.JasperReport"><![CDATA[$P{linea_comercial}]]></subreportExpression>
+			</subreport>
+		</band>
+		<band height="6">
+			<subreport isUsingCache="true">
+				<reportElement key="descuentos globales" positionType="Float" x="0" y="0" width="535" height="1" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true"/>
+				<subreportParameter name="importe">
+					<subreportParameterExpression><![CDATA[$V{total_importe}]]></subreportParameterExpression>
+				</subreportParameter>
+				<subreportParameter name="documento idto">
+					<subreportParameterExpression><![CDATA[$F{idto_factura}]]></subreportParameterExpression>
+				</subreportParameter>
+				<subreportParameter name="documento">
+					<subreportParameterExpression><![CDATA[$F{tableId_factura}]]></subreportParameterExpression>
+				</subreportParameter>
+				<connectionExpression><![CDATA[$P{REPORT_CONNECTION}]]></connectionExpression>
+				<returnValue subreportVariable="suma_descuento_global" toVariable="total_descuento_global"/>
+				<subreportExpression class="net.sf.jasperreports.engine.JasperReport"><![CDATA[$P{documento_descuentos_globales}]]></subreportExpression>
+			</subreport>
+			<subreport isUsingCache="true">
+				<reportElement key="cargos" positionType="Float" x="0" y="3" width="535" height="1" isRemoveLineWhenBlank="true" isPrintWhenDetailOverflows="true"/>
+				<subreportParameter name="documento idto">
+					<subreportParameterExpression><![CDATA[$F{idto_factura}]]></subreportParameterExpression>
+				</subreportParameter>
+				<subreportParameter name="documento">
+					<subreportParameterExpression><![CDATA[$F{tableId_factura}]]></subreportParameterExpression>
+				</subreportParameter>
+				<connectionExpression><![CDATA[$P{REPORT_CONNECTION}]]></connectionExpression>
+				<returnValue subreportVariable="suma_cargo" toVariable="total_cargo"/>
+				<subreportExpression class="net.sf.jasperreports.engine.JasperReport"><![CDATA[$P{documento_cargos}]]></subreportExpression>
+			</subreport>
+		</band>
+	</detail>
+	<columnFooter>
+		<band height="70">
+			<frame>
+				<reportElement key="frame-transportista" mode="Opaque" x="0" y="2" width="535" height="68" isRemoveLineWhenBlank="true" backcolor="#FFFFFF">
+					<printWhenExpression><![CDATA[$F{matricula_transporte}!=null ||$F{nombre_transportista}!=null||$F{DNI_transportista}!=null]]></printWhenExpression>
+				</reportElement>
+				<staticText>
+					<reportElement mode="Transparent" x="0" y="0" width="70" height="16" isRemoveLineWhenBlank="true" forecolor="#000000" backcolor="#FFFFFF"/>
+					<textElement textAlignment="Left" verticalAlignment="Top" rotation="None" lineSpacing="Single" markup="none">
+						<font fontName="SansSerif" size="10" isBold="true" isItalic="false" isUnderline="false" isStrikeThrough="false" pdfFontName="Helvetica-Bold" pdfEncoding="Cp1252" isPdfEmbedded="false"/>
+					</textElement>
+					<text><![CDATA[Transportista:]]></text>
+				</staticText>
+				<staticText>
+					<reportElement mode="Transparent" x="0" y="16" width="52" height="16" forecolor="#000000" backcolor="#FFFFFF"/>
+					<textElement textAlignment="Left" verticalAlignment="Top" rotation="None" lineSpacing="Single" markup="none">
+						<font fontName="SansSerif" size="10" isBold="true" isItalic="false" isUnderline="false" isStrikeThrough="false" pdfFontName="Helvetica-Bold" pdfEncoding="Cp1252" isPdfEmbedded="false"/>
+					</textElement>
+					<text><![CDATA[Matrícula:]]></text>
+				</staticText>
+				<staticText>
+					<reportElement mode="Transparent" x="0" y="32" width="68" height="16" forecolor="#000000" backcolor="#FFFFFF"/>
+					<textElement textAlignment="Left" verticalAlignment="Top" rotation="None" lineSpacing="Single" markup="none">
+						<font fontName="SansSerif" size="10" isBold="true" isItalic="false" isUnderline="false" isStrikeThrough="false" pdfFontName="Helvetica-Bold" pdfEncoding="Cp1252" isPdfEmbedded="false"/>
+					</textElement>
+					<text><![CDATA[Responsable:]]></text>
+				</staticText>
+				<staticText>
+					<reportElement mode="Transparent" x="0" y="48" width="23" height="16" forecolor="#000000" backcolor="#FFFFFF"/>
+					<textElement textAlignment="Left" verticalAlignment="Top" rotation="None" lineSpacing="Single" markup="none">
+						<font fontName="SansSerif" size="10" isBold="true" isItalic="false" isUnderline="false" isStrikeThrough="false" pdfFontName="Helvetica-Bold" pdfEncoding="Cp1252" isPdfEmbedded="false"/>
+					</textElement>
+					<text><![CDATA[DNI:]]></text>
+				</staticText>
+				<staticText>
+					<reportElement mode="Transparent" x="348" y="2" width="117" height="16" forecolor="#000000" backcolor="#FFFFFF"/>
+					<textElement textAlignment="Left" verticalAlignment="Top" rotation="None" lineSpacing="Single" markup="none">
+						<font fontName="SansSerif" size="10" isBold="true" isItalic="false" isUnderline="false" isStrikeThrough="false" pdfFontName="Helvetica-Bold" pdfEncoding="Cp1252" isPdfEmbedded="false"/>
+					</textElement>
+					<text><![CDATA[Conforme: Firma y sello]]></text>
+				</staticText>
+				<textField pattern="###0" isBlankWhenNull="true">
+					<reportElement mode="Transparent" x="70" y="32" width="118" height="16" forecolor="#000000" backcolor="#FFFFFF"/>
+					<textElement textAlignment="Left" verticalAlignment="Top" rotation="None" lineSpacing="Single" markup="none">
+						<font fontName="SansSerif" size="10" isBold="false" isItalic="false" isUnderline="false" isStrikeThrough="false" pdfFontName="Helvetica" pdfEncoding="Cp1252" isPdfEmbedded="false"/>
+					</textElement>
+					<textFieldExpression class="java.lang.String"><![CDATA[$F{nombre_transportista}]]></textFieldExpression>
+				</textField>
+				<textField pattern="###0" isBlankWhenNull="true">
+					<reportElement mode="Transparent" x="24" y="49" width="118" height="16" forecolor="#000000" backcolor="#FFFFFF"/>
+					<textElement textAlignment="Left" verticalAlignment="Top" rotation="None" lineSpacing="Single" markup="none">
+						<font fontName="SansSerif" size="10" isBold="false" isItalic="false" isUnderline="false" isStrikeThrough="false" pdfFontName="Helvetica" pdfEncoding="Cp1252" isPdfEmbedded="false"/>
+					</textElement>
+					<textFieldExpression class="java.lang.String"><![CDATA[$F{DNI_transportista}]]></textFieldExpression>
+				</textField>
+				<textField pattern="###0" isBlankWhenNull="true">
+					<reportElement mode="Transparent" x="51" y="17" width="118" height="16" forecolor="#000000" backcolor="#FFFFFF"/>
+					<textElement textAlignment="Left" verticalAlignment="Top" rotation="None" lineSpacing="Single" markup="none">
+						<font fontName="SansSerif" size="10" isBold="false" isItalic="false" isUnderline="false" isStrikeThrough="false" pdfFontName="Helvetica" pdfEncoding="Cp1252" isPdfEmbedded="false"/>
+					</textElement>
+					<textFieldExpression class="java.lang.String"><![CDATA[$F{matricula_transporte}]]></textFieldExpression>
+				</textField>
+				<rectangle>
+					<reportElement mode="Transparent" x="267" y="1" width="268" height="64"/>
+				</rectangle>
+			</frame>
+		</band>
+	</columnFooter>
+	<pageFooter>
+		<band height="17">
+			<textField isBlankWhenNull="false">
+				<reportElement key="pagina" positionType="Float" x="420" y="0" width="85" height="14" isPrintWhenDetailOverflows="true"/>
+				<box>
+					<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+				</box>
+				<textElement textAlignment="Right"/>
+				<textFieldExpression class="java.lang.String"><![CDATA["Página " + $V{PAGE_NUMBER} + " de "]]></textFieldExpression>
+			</textField>
+			<textField evaluationTime="Report" isBlankWhenNull="false">
+				<reportElement key="total-pagina" positionType="Float" x="505" y="0" width="30" height="14"/>
+				<box>
+					<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+				</box>
+				<textElement/>
+				<textFieldExpression class="java.lang.String"><![CDATA[" " + $V{PAGE_NUMBER}]]></textFieldExpression>
+			</textField>
+			<textField>
+				<reportElement key="label-cod-factura-pie" positionType="Float" x="0" y="0" width="143" height="14" isPrintWhenDetailOverflows="true"/>
+				<textElement markup="none">
+					<font isBold="true" pdfFontName="Helvetica-Bold"/>
+				</textElement>
+				<textFieldExpression class="java.lang.String"><![CDATA[$F{clase}]]></textFieldExpression>
+			</textField>
+			<textField isStretchWithOverflow="true" isBlankWhenNull="true">
+				<reportElement key="cod-factura-pie" positionType="Float" x="143" y="0" width="146" height="14" isPrintWhenDetailOverflows="true"/>
+				<box>
+					<topPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					<leftPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					<bottomPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+					<rightPen lineWidth="0.0" lineStyle="Solid" lineColor="#000000"/>
+				</box>
+				<textElement>
+					<font isBold="true" pdfFontName="Helvetica-Bold"/>
+				</textElement>
+				<textFieldExpression class="java.lang.String"><![CDATA[$F{cod_factura}]]></textFieldExpression>
+			</textField>
+		</band>
+	</pageFooter>
+</jasperReport>

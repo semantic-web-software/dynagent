@@ -1,0 +1,829 @@
+package dynagent.ruleengine.src.ruler.ERPrules;
+import dynagent.common.basicobjects.*;
+import dynagent.ruleengine.src.ruler.ERPrules.*;
+import dynagent.ruleengine.src.ruler.ERPrules.datarules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+
+global DataModelAdapter dma;
+
+rule "CALCULO IMPORTE SOLICITUD DE COMPRA"
+salience 100
+	agenda-group "rules" when 
+	
+	FactHierarchy(claseLinea:CLASS,CLASSSUP=="SOLICITUD_DE_COMPRA")
+	DatValue(CLASSNAME==claseLinea,idLinea:ID, idoLinea:IDO,PROPNAME=="cantidad",cantidad:QMIN!=null,idtoLinea:IDTO) 
+	Lock(ID==idLinea,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	DatValue(ID==idLinea, PROPNAME=="precio", precio:QMIN!=null)
+then
+	Double importe=precio*cantidad;
+	dma.printRule("\n\n=================CALCULO IMPORTE SOLICITUD DE COMPRA.  cantidad="+cantidad+" precio="+precio+"  importecalculado="+importe);
+	dma.setValue(idoLinea,idtoLinea,"importe", new DoubleValue(Auxiliar.redondea(importe,2)));
+end
+
+rule "ASIGNACIÓN PROYECTO A LINEAS DE DOCUMENTO COMERCIAL SI SE SELECCIONA PROYECTO EN EL DOCUMENTO"
+salience 100
+	agenda-group "rules" when 
+	
+	FactHierarchy(claseDoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	Lock(CLASSNAME==claseDoc,idoDoc:IDO!=null, idtoDoc:IDTO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(IDO==idoDoc,PROPNAME=="proyecto",idoProy:IDOVALUE!=null,idtoProy:VALUECLS)
+	ObjValue(IDO==idoDoc,PROPNAME=="línea",idoLinea:IDOVALUE!=null,idtoLinea:VALUECLS)
+	not(ObjValue(IDO==idoLinea,PROPNAME=="proyecto",IDOVALUE==idoProy))
+then
+	dma.printRule("\n\n=================ASIGNACIÓN PROYECTO A LINEAS DE DOCUMENTO COMERCIAL SI SE SELECCIONA PROYECTO EN EL DOCUMENTO  idoProy="+idoProy+" idoDoc="+idoDoc);
+	dma.setValue(idoLinea,idtoLinea,"proyecto", new ObjectValue(idoProy,idtoProy));
+	//dma.printRule("\n DEBUG PROYECTO EN LINEA TRAS SET REGLA:"+dma.getValue(idoLinea,idtoLinea,"proyecto"));
+end
+
+
+rule "ASIGNACIÓN PARTE TRABAJO A TAREA"
+	agenda-group "rules" when 
+	
+	FactHierarchy(idtoParte:IDTO,CLASSSUP=="PARTE_TRABAJO")
+	ObjValue(IDTO==idtoParte, idoParte:IDO,PROPNAME=="tarea",idoTask:IDOVALUE!=null,idtoTask:VALUECLS)					
+	not(ObjValue(IDO==idoTask,PROPNAME=="ejecutado",IDOVALUE==idoParte))
+then
+	dma.printRule("=================ASIGNACIÓN PARTE TRABAJO A TAREA");
+	dma.addValue(idoTask,idtoTask,"ejecutado", new ObjectValue(idoParte,idtoParte));
+end
+
+rule "CONTRIBUCION PARTES TRABAJO A REALIZACION TAREA"
+	agenda-group "rules" when 
+ 	ddm:DataModelAdapter()
+  	FactHierarchy(CLASSSUP=="TAREA",idtoTask:IDTO)	
+	Individual(idoTask:IDO,idTask:ID,IDTO==idtoTask,STATE==Constants.INDIVIDUAL_STATE_READY)		
+		
+	contributionProdINIT: Double() 
+    	from accumulate((and							    	
+    							FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA_SERVICIO")
+						    	ObjValue(ID==idTask,PROPNAME=="ejecutado",idParte:INITIALVALOR!=null,VALUECLS==idtoLinea)						    								
+								DatValue(ID==idParte,PROPNAME=="cantidad",cantidad:INITIALDOUBLE!=null)),
+											
+                      sum(cantidad))         
+
+	contributionProdCURR: Double() //No contemplo la contrib inicial, no se almacenar trabajos sin confirmar
+    	from accumulate((and	
+						    	FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA_SERVICIO")
+						    	ObjValue(ID==idTask,PROPNAME=="ejecutado",idParte:VALOR,VALUECLS==idtoLinea)						    								
+								DatValue(ID==idParte,PROPNAME=="cantidad",cantidad:QMAX!=null)),
+											
+                      sum(cantidad))         
+                  
+then
+		ddm.printRule("=====CONTRIBUCION PARTES TRABAJO A REALIZACION TAREA");	 
+	 	dma.setIncrementalValue(idoTask,idtoTask,ddm.getIdProperty("cantidad_realizada"),contributionProdCURR-contributionProdINIT,2);	
+end	
+
+rule "PORCENTAJE REALIZACION DE TAREA"
+	agenda-group "rules" when 
+	ddm:DataModelAdapter()
+  	FactHierarchy(name:CLASS,CLASSSUP=="TAREA",idtoTask:IDTO)		
+	Model(CLASSNAME==name,PROPNAME=="porcentaje_realización",OP==Constants.OP_INTERSECTION)		
+	DatValue(idoTask:IDO,IDTO==idtoTask,PROPNAME=="cantidad_realizada", qRealizada:QMAX!=null)
+		
+	horasProg:  Double() from accumulate((and 	FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA_SERVICIO")						    	
+						    								ObjValue(IDO==idoTask,PROPNAME=="programación",idoLinea:IDOVALUE!=null,VALUECLS==idtoLinea)
+															Individual(IDO==idoLinea, STATE==Constants.INDIVIDUAL_STATE_READY)	
+															DatValue(IDO==idoLinea,PROPNAME=="porcentaje_realización",porcen:DOUBLEVALUE)					    	
+															DatValue(IDO==idoLinea,PROPNAME=="cantidad",cantidad:QMAX!=null)),											
+								                      sum(cantidad*(1-porcen/100)))
+     
+then
+	ddm.printRule("============PORCENTAJE REALIZACION DE TAREA");
+	ddm.setValue(idoTask,idtoTask,"porcentaje_realización", new DoubleValue(Auxiliar.redondea((qRealizada/(qRealizada+horasProg))*100,2)));
+end
+
+rule "PRECARGA TAREA PARA REALIZACION"
+	salience 100
+	agenda-group "rules"
+	when
+		ddm:DataModelAdapter()
+		FactHierarchy(CLASSSUP=="PARTE_TRABAJO", idtoParte:IDTO)		
+		//LOGICA IDO NEGATIVOS POSITIVOS
+		//sustuida "tarea" por nueva propiedad  "consumido_por" que es inversa de ejecutado
+		//ObjValue(IDTO==idtoParte,idoParte:IDO, PROPNAME=="tarea",idoTarea:IDOVALUE>0, idtoTarea:VALUECLS)
+		ObjValue(IDTO==idtoParte,idoParte:IDO, PROPNAME=="consumido_por",idoTarea:IDOVALUE>0, idtoTarea:VALUECLS)
+		not(DatValue(IDO==idoTarea, PROPNAME=="rdn"))
+	then
+		ddm.printRule("\n\n =========== PRECARGA TAREA PARA REALIZACION");
+		ddm.ruleGetFromServer(idoTarea,idtoTarea,1,false);	
+end
+
+rule "PRECARGA PROYECTO PARA REVISION"
+	salience 100
+	agenda-group "rules"
+	when
+		ddm:DataModelAdapter()
+		ObjValue(idto:IDTO,ido:IDO, PROPNAME=="proyecto",idoProyecto:IDOVALUE!=null&&>0, idtoProyecto:VALUECLS)
+		not(DatValue(IDO==ido, PROPNAME=="rdn"))
+	then
+		ddm.printRule("PRECARGA PROYECTO PARA REVISION");
+		ddm.ruleGetFromServer(ido,idto,1,false);	
+end
+
+rule "PARTE DE TRABAJO NO PUEDE CERTIFICAR MAS CANTIDAD QUE SU PERIODO HABIL"
+	salience 100
+	agenda-group "rules"
+	when
+		FactHierarchy(idtoParte:IDTO,CLASSSUP=="PARTE_TRABAJO"||=="LÍNEA_SERVICIO")
+		//ObjValue(idTask:IDO,PROPNAME=="ejecutado",idoParte:IDOVALUE,VALUECLS==idtoLinea)
+		DatValue(IDTO==idtoParte,idoParte:IDO, PROPNAME=="fecha_inicio", fIni:QMAX!=null,iniChanged:hasCHANGED)
+		Lock(IDO==idoParte,LOCKEDBYUSER==true)
+	    DatValue(IDO==idoParte, PROPNAME=="fecha_fin", fFin:QMAX!=null,endChanged:hasCHANGED)						    										
+		
+		cantidad:DoubleChanged() from accumulate(DatValue(IDO==idoParte,PROPNAME=="cantidad",q:QMAX!=null, qCh:hasCHANGED),												
+												init(DoubleChanged res= new DoubleChanged(null,false);),
+												action( res=new DoubleChanged(q,qCh);),
+								                result(res))
+								                		
+		ObjValue(IDO==idoParte, PROPNAME=="recurso", idoRecurso:IDOVALUE!=null,recChanged:hasCHANGED)
+		ObjValue(IDO==idoRecurso, PROPNAME=="calendario", idoCalendario:IDOVALUE!=null)
+		DatValue(IDO==idoCalendario, PROPNAME=="rdn", rdnCalendario:VALOR!=null)
+      	calendario:CalendarioHabil(ID==rdnCalendario)			      	
+      	eval(iniChanged||endChanged||recChanged||cantidad.isChanged())
+	then
+		dma.printRule("PARTE DE TRABAJO NO PUEDE CERTIFICAR MAS CANTIDAD QUE SU PERIODO HABIL");
+		if( cantidad.getValor()!=null && calendario.getHorasHabilesRelativas(fIni.longValue(),fFin.longValue())<cantidad.getValor().intValue())
+			throw new OperationNotPermitedException("Las horas habiles máximas justificables son "+calendario.getHorasHabilesRelativas(fIni.longValue(),fFin.longValue()));
+		//if(cantidad.getValor()==null)
+			dma.setValue(idoParte,idtoParte,"cantidad",new DoubleValue(calendario.getHorasHabilesRelativas(fIni.longValue(),fFin.longValue())));
+end
+
+rule "PROGRAMACION: LA PARTE REALIZADA SE TRANSFORMA EN CONSUMIDA"
+	salience 100
+	agenda-group "rules"
+	when	
+		ObjValue(idoTarea:IDO,idtoTarea:IDTO, prop:PROPNAME=="programación"||=="subtarea", idoLinea:IDOVALUE,ovLinea:OBJECTVALUE)			    
+	    DatValue(IDO==idoLinea, idtoLinea:IDTO,PROPNAME=="porcentaje_realización", porc:DOUBLEVALUE>0)	    		    	
+	    DatValue(IDO==idoLinea, PROPNAME=="cantidad", q:DOUBLEVALUE!=null)	
+	    ObjValue(IDO==idoLinea,PROPNAME=="producto", idtoProducto:VALUECLS)
+    	FactHierarchy(IDTO==idtoProducto, claseProducto:CLASSSUP=="GÉNERO"||=="SERVICIO")					    										
+	then
+		dma.printRule("================= PROGRAMACION: LA PARTE REALIZADA SE TRANSFORMA EN CONSUMIDA");		
+		
+		if(porc.doubleValue()==100.0){
+			dma.delValue(idoTarea,idtoTarea,prop,ovLinea);
+		}		
+		String claseLinea="PARTE_TRABAJO";
+	
+		Domain dNewLinea= dma.cloneIndividual(idoLinea,idtoLinea, dma.getIdClass(claseLinea),"documento#porcentaje_realización#tarea#recurso_resuelto"); 
+		dma.addValue(idoTarea,idtoTarea,"ejecutado",new ObjectValue(dNewLinea));	
+		if(!claseProducto.equals("GÉNERO")){
+			if(!claseLinea.equals("PARTE_TRABAJO"))	dma.setValue(dNewLinea.getIdo(),dNewLinea.getIdto(),"porcentaje_realización",new DoubleValue(100.0));		
+			if(prop.equals("subtarea")){
+				long sgActual=dma.getServerDate();
+				dma.setValue(dNewLinea.getIdo(),dNewLinea.getIdto(),"fecha_fin",new TimeValue(sgActual));			
+				dma.setValue(dNewLinea.getIdo(),dNewLinea.getIdto(),"fecha_inicio",new TimeValue(sgActual));
+			}
+			if(porc.doubleValue()<100.0){
+				double realizado=q*porc/100;
+				dma.setValue(dNewLinea,"cantidad",new DoubleValue( realizado ));
+				if(!claseLinea.equals("PARTE_TRABAJO")) dma.setValue(idoLinea,idtoLinea,"porcentaje_realización",new DoubleValue( 0.0 ));
+				dma.setValue(idoLinea,idtoLinea,"cantidad",new DoubleValue( q-realizado ));
+			}
+		}		 	
+end
+
+rule "REVISION LINEAS ES LA DEL PROYECTO O TAREA"
+	agenda-group "rules" when 
+	ddm:DataModelAdapter()
+							  
+	ObjValue(idtoTarea:IDTO, idoTarea:IDO,PROPNAME=="programación"||=="consumo"||=="ejecutado"||=="línea"||=="subtarea",idoLinea:IDOVALUE!=null,idtoLinea:VALUECLS)
+	Model(IDTO==idtoLinea,PROPNAME=="revisión",OP==Constants.OP_INTERSECTION)
+	not(DatValue(IDO==idoLinea,PROPNAME=="revisión",VALOR!=null))
+		
+	revisionPro:Double() from accumulate((and 	FactHierarchy(CLASSSUP=="PROYECTO", idtoProyecto:IDTO)	
+												DatValue(IDTO==idtoProyecto,PROPNAME=="revisión",revision:INTVALUE!=null)
+												//O el doc (como la tarea) o la linea (como un presupuesto) son de un proyecto
+												ObjValue(IDO==idoTarea||==idoLinea,PROPNAME=="proyecto",idoProyecto:IDOVALUE!=null)),
+												max(revision))
+												
+	revisionTask:Double() from accumulate((and 	DatValue(IDO==idoTarea,PROPNAME=="revisión",revision:INTVALUE!=null)),												
+												max(revision))												
+
+then
+	ddm.printRule("============REVISION LINEAS ES LA DEL PROYECTO o TAREA");
+	int revision=Math.max(revisionTask.intValue(),revisionPro.intValue());
+	if( revision>0 )	ddm.setValue(idoLinea,idtoLinea,"revisión", new IntValue(revision));
+end
+
+rule "PRODUCTO POR DEFECTO EN PARTE DE TRABAJO"
+	agenda-group "rules" when 
+	ddm:DataModelAdapter()
+	FactHierarchy(CLASSSUP=="PARTE_TRABAJO", idtoParte:IDTO)	
+	ObjValue(idoParte:IDO, IDTO==idtoParte, PROPNAME=="recurso", idoRecurso:IDOVALUE!=null)	
+	not(ObjValue(IDO==idoParte,PROPNAME=="producto",VALOR!=null))
+						    	
+	ObjValue(idoTarea:IDO,PROPNAME=="programación",idoLinea:IDOVALUE!=null)	
+	ObjValue(IDO==idoLinea, PROPNAME=="recurso", IDOVALUE==idoRecurso)
+	ObjValue(IDO==idoLinea, PROPNAME=="producto", obProducto:OBJECTVALUE!=null)			
+then
+	ddm.printRule("============PRODUCTO POR DEFECTO EN PARTE DE TRABAJO");
+	ddm.setValue(idoParte,idtoParte,"producto", obProducto);
+end
+
+rule "LINEA SERVICIO: PRODUCTO POR DEFECTO"
+	agenda-group "rules" when 
+	ddm:DataModelAdapter()
+	FactHierarchy(CLASSSUP=="LÍNEA_SERVICIO", idtoLinea:IDTO)	
+	ObjValue(idoLinea:IDO, IDTO==idtoLinea, PROPNAME=="recurso", idoRecurso:IDOVALUE!=null)	
+	not(ObjValue(IDO==idoLinea,PROPNAME=="producto",VALOR!=null))
+						    	
+	capacidades:ArrayList(size==1) from collect(ObjValue(IDO==idoRecurso, PROPNAME=="capacidad", IDOVALUE!=null))			
+then
+	ddm.printRule("============LINEA SERVICIO: PRODUCTO POR DEFECTO");
+	ObjValue servicio=(ObjValue)capacidades.get(0);
+	ddm.setValue(idoLinea,idtoLinea,"producto", servicio.getOBJECTVALUE());
+end
+/*
+COMENTADA PARA SABER SI REGLA FILTRADO CUANDO USUARIO SE LE FILTRA ES SUFICIENTE 
+
+
+rule "EMPLEADO LOGADO EN LINEA GASTO y PARTE TRABAJO"
+salience -100
+no-loop true
+ agenda-group "rules" when 
+  	 DocDataModel(user:USER!=null)
+  	 FactHierarchy(nameDoc:CLASS, CLASSSUP=="PARTE_TRABAJO"||=="LÍNEA_GASTO")	 
+	 Individual(CLASSNAME==nameDoc, ido:IDO!=null, idto:IDTO)
+	 DatValue(CLASSNAME=="USER", idUser:ID, PROPNAME==Constants.PROP_RDN,VALOR==user)
+	 FactHierarchy(CLASSSUP=="EMPLEADO", idtoEmpleado:IDTO)
+	 ObjValue(IDTO==idtoEmpleado, idoEmpleado:IDO!=null,idtoEmpleado:IDTO, PROPNAME=="usuario", VALOR==idUser)
+	 Model(IDTO==idto,idProp:PROP,propuser:PROPNAME=="responsable"||=="empleado"||=="recurso")
+	 not(ObjValue(IDO==ido, PROPNAME==propuser, VALOR!=null))
+then
+ 	dma.printRule("\n\n============EMPLEADO LOGADO EN LINEA GASTO y PARTE TRABAJO="+nameDoc);
+ 	dma.setValue(ido, idto, propuser, new ObjectValue(idoEmpleado,idtoEmpleado));
+end
+*/
+
+
+rule "Liquidar_subvenciones_productos_proyecto: lanzar querys y cargar en motor info sobre productos consumidos o comprados  para el proyecto"  
+agenda-group "rules" when
+   	jb:JBossEngine()
+    ddm:DocDataModel()
+   	ObjValue(typetask:CLASSNAME=="Liquidar_subvenciones_productos_proyecto", idoUTask:IDO ,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoSubvencion:IDOVALUE!=null,idtoSubvencion:VALUECLS,objsubvencion:OBJECTVALUE!=null)
+  	ObjValue(IDO==idoSubvencion, PROPNAME=="proyecto",idoProyecto:IDOVALUE!=null,idtoProyecto:VALUECLS,objproyecto:OBJECTVALUE!=null)    
+    ObjValue(IDO==idoUTask, PROPNAME=="params",idparams:VALUE!=null)
+    ObjValue(IDO==idoSubvencion, PROPNAME=="producto_subvencionable",idoProductoSubvencion:IDOVALUE!=null,idtoProductoSubvencion:VALUECLS)
+    
+    eval(dma.preload(idoProductoSubvencion,idtoProductoSubvencion))
+    not(ArticuloProyecto())//para no precargar 2 veces lo mismo
+    DatValue(ID==idparams, PROPNAME=="fecha_inicio",fechaInicio:DATE!=null)
+    DatValue(ID==idparams, PROPNAME=="fecha_fin",fechaFin:DATE!=null)
+then
+    dma.printRule("\n\n ============Liquidar_subvenciones_productos_proyecto: lanzar querys y cargar en motor info sobre productos consumidos o comprados para el proyecto. \nproyecto:"+idoProyecto+"  fechaInicio:"+fechaInicio+" fechaFin:"+fechaFin);
+    ArrayList parametroproyectoYFechas=new ArrayList();
+    parametroproyectoYFechas.add(objproyecto);
+    parametroproyectoYFechas.add(fechaInicio);
+    parametroproyectoYFechas.add(fechaFin);
+    ArrayList<Object> acargarmotor=new ArrayList<Object>(); 
+    ArrayList<Object>  infoarticulosconsumidos=Query.getResultsAssociatedToQuery(ddm,Query.cantidadesPrecioArticuloProyecto,parametroproyectoYFechas);
+ 	ArrayList<Object>  infoarticulosProgramadoConsumo=Query.getResultsAssociatedToQuery(ddm,Query.cantidadesProgramadasPrecioArticuloProyecto,parametroproyectoYFechas);    
+    acargarmotor.addAll(infoarticulosconsumidos);
+	acargarmotor.addAll(infoarticulosProgramadoConsumo);    
+    jb.insertFactDatasRule(acargarmotor);
+end
+
+rule "LIQUIDAR SUBVENCIONES ARTICULOS PROYECTO: POR CADA PRODUCTO DEL PROYECTO SUBVENCIONABLE UNA LÍNEA SUBVENCIONABLE"  
+agenda-group "rules" when
+   	ObjValue(typetask:CLASSNAME=="Liquidar_subvenciones_productos_proyecto", idoUTask:IDO ,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+ 	ObjValue(IDO==idoUTask, PROPNAME=="params",idparams:VALUE!=null)    
+  	DatValue(ID==idparams, PROPNAME=="fecha_inicio",fechaInicio:DATE!=null)
+    DatValue(ID==idparams, PROPNAME=="fecha_fin",fechaFin:DATE!=null)    
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoSubvencion:IDOVALUE!=null,idtoSubvencion:VALUECLS,objsubvencion:OBJECTVALUE!=null)
+	ObjValue(IDO==idoSubvencion, PROPNAME=="proyecto",idoProyecto:IDOVALUE!=null,idtoProyecto:VALUECLS,objproyecto:OBJECTVALUE!=null)    
+    ObjValue(IDO==idoSubvencion, PROPNAME=="producto_subvencionable",filtroProductoSubvencionable:IDOVALUE!=null)
+    DatValue(IDO==filtroProductoSubvencionable,porcentaje:DOUBLEVALUE!=null)
+    
+    ArticuloProyecto(idoArticulo:IDOARTICULO,idtoArticulo:IDTOARTICULO,cantidad:CANTIDAD,PROYECTO==idoProyecto,precio:PRECIO!=null, incurrido:INCURRIDO!=null)//IMPTE FILTRAR POR PROYECTO
+    forall(
+    	ObjValue(IDO==filtroProductoSubvencionable, PROPNAME=="producto",IDOVALUE!=null)
+    	ObjValue(IDO==filtroProductoSubvencionable, PROPNAME=="producto",IDOVALUE==idoArticulo)
+    )    	
+    forall(
+    	ObjValue(IDO==filtroProductoSubvencionable, propfiltro:PROPNAME=="familia"||=="subfamilia"||=="marca",valorfiltro:VALOR!=null)
+    	ObjValue(IDO==idoArticulo, PROPNAME==propfiltro,VALOR==valorfiltro)
+    )
+    
+    Liquidaciones:ArrayList() from collect (ObjValue(IDO==idoUTask, PROPNAME=="targetClass",idoLiquidacion:IDOVALUE!=null))
+then
+   dma.printRule("\n\n ======LIQUIDAR SUBVENCIONES ARTICULOS PROYECTO: POR CADA PRODUCTO DEL PROYECTO SUBVENCIONABLE UNA LÍNEA SUBVENCIONABLE"); 
+   dma.printRule("..idoPROYECTO:"+idoProyecto+" idoArticulo:"+idoArticulo+"  precio:"+precio+"  cantidad"+cantidad+" porcentaje:"+porcentaje);
+   Domain lineaLiquidacion=dma.creaIndividualOfClass("LÍNEA_LIQUIDACIÓN_SUBVENCIÓN");
+   dma.setValue(lineaLiquidacion,"producto", new ObjectValue(idoArticulo,idtoArticulo));
+   dma.setValue(lineaLiquidacion,"precio", new DoubleValue(precio));   
+   dma.setValue(lineaLiquidacion,"cantidad", new DoubleValue(cantidad));	
+   dma.setValue(lineaLiquidacion,"porcentaje", new DoubleValue(porcentaje));   
+   
+   Domain Liquidacion=null;
+   
+   if(Liquidaciones.size()==0){//CUANDO NO EXISTE SOLAMENTE SE CREA, Y SE CREA SIN LINEAS 
+      
+      Liquidacion=dma.creaIndividualOfClass("LIQUIDACIÓN_SUBVENCIÓN_PROYECTO");
+      dma.setValue(Liquidacion,"incentivo_solicitado", new ObjectValue(idoSubvencion,idtoSubvencion));
+	  dma.setValue(Liquidacion,"fecha", new TimeValue(Auxiliar.getFechaActual()));
+	  dma.setValue(Liquidacion,"fecha_inicio", new TimeValue(fechaInicio));
+	  dma.setValue(Liquidacion,"fecha_fin", new TimeValue(fechaFin));	  
+	  //se añade a la accion
+	  dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(Liquidacion)); 
+	  dma.printRule("..no existia aun liquidacion_subvencion_proyecto se creado y añadido a la acción: liquidacion:"+Liquidacion);     
+   }else{//UNA VEZ TOMADA LA LIQUIDACION ES CUANDO SE AÑADEN LAS LÍNEAS
+   		Liquidacion=new Domain(((ObjValue)Liquidaciones.get(0)).getIDOVALUE(),((ObjValue)Liquidaciones.get(0)).getVALUECLS());
+   		dma.printRule("..ya existe la liquidacion :"+Liquidacion);
+   		//añadir a la liquidacion
+	   //1. si es un consumo ya incurrido va como línea
+	   	if(incurrido){
+	   		dma.addValue(Liquidacion,"línea",new ObjectValue(lineaLiquidacion));
+	   		LinkedList<Value> lineas=dma.getValues(Liquidacion,"línea");
+	   		dma.printRule("..producto ya incurrido---> se añade a través de LINEA: values tras añadir en linea: \n"+lineas);
+	   	}
+	   //2. si es un consumo no incurrido pero programado va la programacion
+	   else {
+	   		dma.addValue(Liquidacion,"programación",new ObjectValue(lineaLiquidacion));
+	   		LinkedList<Value> lineas=dma.getValues(Liquidacion,"programación");
+			dma.printRule("..producto NO incurrido---> se añade a través de PROGRAMACION");
+	   		dma.printRule("..producto ya incurrido---> se añade a través de LINEA: values tras añadir en programacion: \n"+lineas);
+	   	}
+   }
+end
+
+rule "CARGA DE PRODUCTOS EN LIQUIDACION SUBVENCION"
+salience 100
+ agenda-group "rules" when 
+	productos: HashSet(size>0) 
+           	from accumulate(
+            				 (and 
+    							ArticuloProyecto(idoArticulo:IDOARTICULO,idtoArticulo:IDTOARTICULO)
+								not(Individual(IDO==idoArticulo))
+             			
+             				  ),
+                              init	( 
+                              	HashSet<ObjectValue> productos2 = new HashSet<ObjectValue>();
+                              ),
+                              action( productos2.add(new ObjectValue(idoArticulo,idtoArticulo));),     
+                              reverse(;),                       
+                              result(productos2))
+then
+ 	dma.printRule("\n\n$$$$$$$$$$$$$ PRECARGA_RULE: CARGA DE PRODUCTOS EN LIQUIDACION SUBVENCION: productos="+productos);
+ 	dma.ruleGetFromServer((HashSet<IDIndividual>)productos,1,false);
+end
+
+
+rule "CALCULO BASE DE UN LIQUIDACION SUBVENCION PROYECTO"
+salience 10
+agenda-group "rules" when 
+	fh:FactHierarchy(nameDoc:CLASS,CLASSSUP=="LIQUIDACIÓN_SUBVENCIÓN_PROYECTO")
+	Lock(CLASSNAME==nameDoc,idDoc:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK,idoDoc:IDO,idtoDoc:IDTO)
+	FactProp(propiedadlinea:NAME=="línea"||=="programación")
+	sumaimporteslineas : Double() 
+             from accumulate(
+             				 (and 
+             					  ObjValue(ID==idDoc, PROPNAME==propiedadlinea, idLinea:VALOR)
+             				  	  DatValue(ID==idLinea,idoLinea:IDO ,PROPNAME=="precio" ,precio:DOUBLEVALUE!=null)
+								  DatValue(ID==idLinea,PROPNAME=="cantidad" ,cantidad:DOUBLEVALUE!=null)             				  	  
+             				  ),
+                              sum(precio*cantidad))
+then
+	dma.printRule("\n\n-------------- CALCULO BASE DE UN LIQUIDACION SUBVENCION PROYECTO  sumaimporteslineas="+sumaimporteslineas);
+	String propiedadbase=null;
+	if(propiedadlinea.equals("línea")){
+		propiedadbase="base";
+	}else{
+		propiedadbase="base_programada";
+	}
+	
+	dma.setDataValue(idoDoc,idtoDoc,propiedadbase,Auxiliar.redondea(sumaimporteslineas,3).toString());
+end
+
+rule "CALCULO IMPORTE DE UN LIQUIDACION SUBVENCION PROYECTO"
+salience 10
+agenda-group "rules" when 
+	fh:FactHierarchy(nameDoc:CLASS,CLASSSUP=="LIQUIDACIÓN_SUBVENCIÓN_PROYECTO")
+	Lock(CLASSNAME==nameDoc,idDoc:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK,idoDoc:IDO,idtoDoc:IDTO)
+	FactProp(propiedadlinea:NAME=="línea"||=="programación")	
+	sumaimporteslineas : Double() 
+             from accumulate(
+             				 (and 
+             					  ObjValue(ID==idDoc, PROPNAME==propiedadlinea, idLinea:VALOR)
+             				  	  DatValue(ID==idLinea,idoLinea:IDO ,PROPNAME=="precio" ,precio:DOUBLEVALUE!=null)
+								  DatValue(ID==idLinea,PROPNAME=="cantidad" ,cantidad:DOUBLEVALUE!=null)             				  	  
+								  DatValue(ID==idLinea,PROPNAME=="porcentaje" ,porcentaje:DOUBLEVALUE!=null)								  
+             				  ),
+                              sum(precio*porcentaje*cantidad*0.01D))
+then
+	dma.printRule("\n\n-------------- CALCULO IMPORTE DE UN LIQUIDACION SUBVENCION PROYECTO  sumaimporteslineas="+sumaimporteslineas);
+	String propiedadimporte=null;
+	if(propiedadlinea.equals("línea")){
+		propiedadimporte="importe";
+	}else{
+		propiedadimporte="importe_programado";
+	}
+	dma.setDataValue(idoDoc,idtoDoc,propiedadimporte,Auxiliar.redondea(sumaimporteslineas,3).toString());
+end
+
+
+rule "CALCULO IMPORTE_LINEA_GASTO"
+salience 100
+agenda-group "rules" when 
+	FactHierarchy(claseLinea:CLASS,CLASSSUP=="LÍNEA_GASTO")
+	f1:DatValue(CLASSNAME==claseLinea,idLinea:ID, idoLinea:IDO,PROPNAME=="cantidad",cantidad:QMIN!=null) 
+	Lock(ID==idLinea,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	DatValue(ID==idLinea, idtoLinea:IDTO,PROPNAME=="coste_unitario", precio:QMIN!=null)
+	DatValue(CLASSNAME=="MI_EMPRESA"||=="APLICACIÓN",PROPNAME=="n._dígitos_en_importe_linea", idigitos:INTVALUE!=null)
+then
+	Double importe=0.0;
+	importe=precio*cantidad;
+	dma.printRule("\n\n============ CALCULO IMPORTE_LINEA_GASTO. cantidad="+cantidad+"  coste_unitario="+precio+"  importecalculado="+importe);
+	dma.setValue(idoLinea,idtoLinea,"importe", new DoubleValue(Auxiliar.redondea(importe,idigitos.intValue())));
+end
+
+rule "ASIGNACION PROYECTO A LÍNEA GASTO" 
+ agenda-group "rules" when 
+	ObjValue(idoProd:IDO!=null,PROPNAME=="ejecutado",consumo:VALOR!=null,tipoConsumo:RANGENAME,idoLinea:IDOVALUE,idtoLinea:VALUECLS)
+	FactHierarchy(CLASS==tipoConsumo,CLASSSUP=="LÍNEA_GASTO")
+	ObjValue(IDO==idoProd,PROPNAME=="proyecto",proyecto:VALOR!=null,ovproyecto:OBJECTVALUE)
+	not(exists(ObjValue(IDO==idoLinea,PROPNAME==proyecto,VALOR==proyecto)))
+then
+ 	System.err.println("\n\n  =================>>ASIGNACION PROYECTO A LÍNEA GASTO");
+ 	dma.setValue(idoLinea,idtoLinea,"proyecto",ovproyecto);
+end
+
+
+rule "ARTICULO EN UTASK  Task_Artículos_catálogo_gastos TIENE CATALOGO GASTOS"
+agenda-group "rules" when
+   ObjValue(CLASSNAME=="Task_Artículos_catálogo_gastos", PROPNAME=="targetClass",idoArt:IDOVALUE!=null,idtoarticulo:VALUECLS)
+   DatValue(CLASSNAME=="CATÁLOGO", idcatalogo:ID,idoCatalogo:IDO!=null,idtoCat:IDTO,PROPNAME=="rdn",catalogo:VALOR=="Catálogo_Gastos")
+   not(ObjValue(IDO==idoArt, PROPNAME=="catálogo",IDOVALUE==idoCatalogo))
+   
+then
+   dma.printRule("\n\n ===========ARTICULO EN UTASK  Task_Artículos_catálogo_gastos TIENE CATALOGO GASTOS");
+   dma.addValue(idoArt,idtoarticulo,"catálogo",new ObjectValue(idoCatalogo,idtoCat));
+end
+
+
+rule "FACTURAR TAREAS"
+agenda-group "rules" when
+    FactHierarchy(CLASSSUP=="Facturar_Tareas",clsAccion:CLASS)
+    ObjValue(CLASSNAME==clsAccion,idoUTask:IDO,idtoUTask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+   	sources: ArrayList(size>0) from collect (ObjValue(IDO==idoUTask, PROPNAME=="sourceClass", VALOR!=null))
+   	Model(CLASSNAME=="LÍNEA_SERVICIO",idtoLineaServicio:IDTO,OP=="AND",PROPNAME=="rdn")
+   	Model(CLASSNAME=="PARTE_TRABAJO",idtoLineaParteTrabajo:IDTO,OP=="AND",PROPNAME=="rdn")
+   	Model(CLASSNAME=="LÍNEA_MATERIA",idtoLineaMateria:IDTO,OP=="AND",PROPNAME=="rdn")
+   	Model(CLASSNAME=="LÍNEA_ARTÍCULOS_SERVICIO",idtoLineaArtServicio:IDTO,OP=="AND",PROPNAME=="rdn")
+   	Model(CLASSNAME=="LÍNEA_ARTÍCULOS_MATERIA",idtoLineaArtMateria:IDTO,OP=="AND",PROPNAME=="rdn")
+then
+ 	dma.printRule("\n\n=================>>FACTURAR TAREAS");
+ 	Domain domFactura=dma.creaIndividualOfClass("FACTURA_A_CLIENTE");
+ 	Value cliente=null;
+ 	for(int i=0;i<sources.size();i++){
+ 		ObjectValue tarea=((ObjValue)sources.get(i)).getOBJECTVALUE();
+ 		ObjectValue proyectoTarea=(ObjectValue)dma.getValue(tarea.getValue(),tarea.getValueCls(),"proyecto");
+ 		cliente=dma.getValue(proyectoTarea.getValue(),proyectoTarea.getValueCls(),"cliente");
+ 		//HAY QUE AÑADIRLE A LA FACTURA TODOS LOS CONSUMOS DE LAS TAREAS SELECCIONADAS
+		Iterator<Value> lineas=dma.getValues(tarea.getValue(),tarea.getValueCls(),"ejecutado").iterator();
+		while(lineas.hasNext()){
+			ObjectValue consumo=(ObjectValue)lineas.next();
+			int idtoDestino=0;
+			if(consumo.getValueCls()==idtoLineaServicio.intValue()||consumo.getValueCls()==idtoLineaParteTrabajo){
+				idtoDestino=idtoLineaArtServicio;
+			}
+			else if(consumo.getValueCls()==idtoLineaMateria.intValue()){
+				idtoDestino=idtoLineaArtMateria;
+			}
+			else{
+				dma.printRule("\n\n ... ERROR: Caso no contemplado en rule FACTURAR TAREAS para consumo"+consumo);
+			}
+			//todo clonar y añadir clon
+			Domain lineaFactura=dma.cloneIndividual(consumo.getValue(),consumo.getValueCls(), idtoDestino,"consumido_por");
+			dma.setValue(lineaFactura,"proyecto", proyectoTarea);
+			dma.addValue(domFactura,"línea", new ObjectValue(lineaFactura));
+		}
+	}
+	//si hay cliente indicado en el proyecto se pone en la factura.
+	if(cliente!=null){
+		dma.setValue(domFactura,"cliente", cliente);
+	}
+	//POR ULTIMO ENLAZAMOS LA FACTURACON LA ACCIÓN
+	dma.addValue(idoUTask,idtoUTask,"targetClass",new ObjectValue(domFactura));
+end
+
+rule "CALCULO COSTE INCURRIDO EN PROYECTO"
+//DE MOMENTO NO SOPORTAMOS CAMBIO EN TOTAL VENDIDO POR RECTFICACIONES DE FACTURAS
+salience -200
+ agenda-group "rules" when 
+  	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="PROYECTO")
+	Lock(IDTO==idto,idProy:ID,idoProy:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_READY||==Constants.INDIVIDUAL_STATE_LOCK)
+	contributionInitCompra: Double() 
+	    	from accumulate((and	
+						    	FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="FACTURA_PROVEEDOR")
+								ObjValue(CLASSNAME==classdoc,iddoc:ID!=null,PROPNAME=="línea",idlineaInit:INITIALVALOR!=null)
+								ObjValue(ID==idlineaInit,PROPNAME=="proyecto",INITIALVALOR==idProy)							
+								DatValue(ID==idlineaInit, PROPNAME=="importe",importeInitial:INITIALDOUBLE!=null)
+							),
+	                      sum(importeInitial))
+		contributionCurrCompra: Double() 
+	    	from accumulate((and
+						    	FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="FACTURA_PROVEEDOR")
+								Individual(CLASSNAME==classdoc,iddoc:ID!=null,STATE==Constants.INDIVIDUAL_STATE_READY)
+								ObjValue(ID==iddoc,PROPNAME=="línea",idLinea:VALOR!=null)
+								ObjValue(ID==idLinea,PROPNAME=="proyecto",VALOR==idProy)																																											
+								DatValue(ID==idLinea, PROPNAME=="importe",importeCurrent:DOUBLEVALUE!=null)
+							),
+	                      sum(importeCurrent))                			                        
+
+
+		contributionInitConsumidoProduccion: Double()
+		//1. NO COMPUTAMOS COMO CONSUMO LOS GASTOS PQ TIENEN UNA PARTE EN LA REGLA EXPLICITA PARA LINEA_GASTO
+		//2: NO COMPUTAMOS LOS CONSUMOS DE LÍNEAS SERVICIO DE RECURSOS EXTERNOS PQ YA COMPUTARAN LAS FACTURAS PROVEEDOR
+    	from accumulate((and	
+					    	FactHierarchy(idtoProd:IDTO,clssup:CLASSSUP=="PRODUCCIÓN")
+							ObjValue(IDTO==idtoProd,idoProd:IDO!=null,PROPNAME=="proyecto",INITIALVALOR==idProy)					    	
+							ObjValue(IDO==idoProd,PROPNAME=="ejecutado",idlinea:INITIALVALOR!=null,tipoConsumo:RANGENAME)
+							//1. NO COMPUTAMOS COMO CONSUMO LOS GASTOS PQ TIENEN UNA PARTE EN LA REGLA EXPLICITA PARA LINEA_GASTO
+							not(FactHierarchy(CLASS==tipoConsumo,CLASSSUP=="LÍNEA_GASTO"))
+							//2 NO COMPUTAMOS LOS CONSUMOS DE LÍNEAS SERVICIO DE RECURSOS EXTERNOS PQ YA COMPUTARAN LAS FACTURAS PROVEEDOR
+							not((and
+								ObjValue(ID==idlinea,PROPNAME=="recurso",idlRecurso:INITIALVALOR!=null,tipoRecurso:RANGENAME)
+								FactHierarchy(CLASS==tipoRecurso,CLASSSUP=="TRABAJADOR_EXTERNO")
+							))
+							DatValue(ID==idlinea, PROPNAME=="coste_unitario",costeUnitarioInitial:INITIALDOUBLE!=null)
+							DatValue(ID==idlinea, PROPNAME=="cantidad",cantidadInitial:INITIALDOUBLE!=null)							
+							
+						),                                             		            		
+                      sum(cantidadInitial*costeUnitarioInitial))  
+
+		contributionCurrConsumidoProduccion: Double() 
+		//NO COMPUTAMOS COMO CONSUMO LOS GASTOS PQ TIENEN UNA PARTE EN LA REGLA EXPLICITA PARA LINEA_GASTO
+		    	from accumulate((and
+							    	FactHierarchy(idtoProd:IDTO,clssup:CLASSSUP=="PRODUCCIÓN")
+									Individual(IDTO==idtoProd,idoProd:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_READY)
+									ObjValue(IDO==idoProd,PROPNAME=="proyecto",VALOR==idProy)																																		    
+									ObjValue(IDO==idoProd,PROPNAME=="ejecutado",idlinea:VALOR!=null,tipoConsumo:RANGENAME)
+									//1. NO COMPUTAMOS COMO CONSUMO LOS GASTOS PQ TIENEN UNA PARTE EN LA REGLA EXPLICITA PARA LINEA_GASTO
+									not(FactHierarchy(CLASS==tipoConsumo,CLASSSUP=="LÍNEA_GASTO"))
+								
+									//2 NO COMPUTAMOS LOS CONSUMOS DE LÍNEAS SERVICIO DE RECURSOS EXTERNOS PQ YA COMPUTARAN LAS FACTURAS PROVEEDOR
+									not((and
+										ObjValue(ID==idlinea,PROPNAME=="recurso",idRecurso:VALOR!=null,tipoRecurso:RANGENAME)
+										FactHierarchy(CLASS==tipoRecurso,CLASSSUP=="TRABAJADOR_EXTERNO")
+									))
+									
+									
+									DatValue(ID==idlinea, PROPNAME=="coste_unitario",costeUnitarioCurrent:DOUBLEVALUE!=null)
+									DatValue(ID==idlinea, PROPNAME=="cantidad",cantidadCurrent:DOUBLEVALUE!=null)							
+								),
+		                      sum(costeUnitarioCurrent*cantidadCurrent))
+		                      
+		contributionInitLineaGasto: Double()
+    	from accumulate((and	
+					    	FactHierarchy(idtoLinea:IDTO,clssup:CLASSSUP=="LÍNEA_GASTO")
+							ObjValue(IDTO==idtoLinea,idoLinea:IDO!=null,PROPNAME=="proyecto",INITIALVALOR==idProy)					    	
+							DatValue(IDO==idoLinea, idlinea:ID,PROPNAME=="importe",importe:INITIALDOUBLE!=null)							
+							
+						),
+                      sum(importe))
+		
+		contributionCurrentLineaGasto: Double()
+    	from accumulate((and	
+					    	FactHierarchy(idtoLinea:IDTO,clssup:CLASSSUP=="LÍNEA_GASTO")
+					    	Individual(IDTO==idtoLinea,idoLinea:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_READY)	
+							ObjValue(IDO==idoLinea,PROPNAME=="proyecto",VALOR==idProy)					    	
+							DatValue(IDO==idoLinea, idlinea:ID,PROPNAME=="importe",importe:DOUBLEVALUE!=null)															
+							
+						),
+                      sum(importe))                       
+                      
+then
+	dma.printRule("\n\n ===========  CALCULO COSTE INCURRIDO PROYECTO idProy="+idProy);
+	//dma.printRule("...debug costeProyecto 	contributionInitCompra:"+contributionInitCompra+" contributionCurrCompra:"+contributionCurrCompra);
+	//dma.printRule("...debug costeProyecto 	contributionInitConsumidoProduccion:"+contributionInitConsumidoProduccion+"  contributionCurrConsumidoProduccion:"+contributionCurrConsumidoProduccion);
+	//dma.printRule("...debug costeProyecto 	contributionInitLineaGasto:"+contributionInitLineaGasto+"  contributionCurrentLineaGasto:"+contributionCurrentLineaGasto);
+	 
+	dma.setIncrementalValue(idoProy,idto,dma.getIdProperty("coste_incurrido"),
+							contributionCurrCompra+contributionCurrConsumidoProduccion+contributionCurrentLineaGasto-(contributionInitCompra+contributionInitConsumidoProduccion+contributionInitLineaGasto),3);
+end
+
+rule "CALCULO COSTE PLANIFICADO EN PROYECTO"
+//DE MOMENTO NO SOPORTAMOS CAMBIO EN TOTAL VENDIDO POR RECTFICACIONES DE FACTURAS
+salience -200
+ agenda-group "rules" when 
+  	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="PROYECTO")
+	Lock(IDTO==idto,idProy:ID,idoProy:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_READY||==Constants.INDIVIDUAL_STATE_LOCK)
+	contributionInitCompra: Double() 
+	    	from accumulate((and	
+						    	FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="PRESUPUESTO_COMPRA")
+								ObjValue(CLASSNAME==classdoc,iddoc:ID!=null,PROPNAME=="línea",idlineaInit:INITIALVALOR!=null)
+								ObjValue(ID==idlineaInit,PROPNAME=="proyecto",INITIALVALOR==idProy)							
+								DatValue(ID==idlineaInit, PROPNAME=="importe",importeInitial:INITIALDOUBLE!=null)
+							),
+	                      sum(importeInitial))
+	                      
+		contributionCurrCompra: Double() 
+	    	from accumulate((and
+						    	FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="PRESUPUESTO_COMPRA")
+								Individual(CLASSNAME==classdoc,iddoc:ID,STATE==Constants.INDIVIDUAL_STATE_READY)
+								ObjValue(ID==iddoc,PROPNAME=="línea",idLinea:VALOR!=null)
+								ObjValue(ID==idLinea,PROPNAME=="proyecto",IDOVALUE==idoProy)										
+																																	
+								DatValue(ID==idLinea, PROPNAME=="importe",importeCurrent:DOUBLEVALUE!=null)
+							),
+	                      sum(importeCurrent))
+	                        
+		contributionInitConsumidoProduccion: Double()
+		 
+    	from accumulate((and	
+					    	FactHierarchy(idtoProd:IDTO,clssup:CLASSSUP=="PRODUCCIÓN")
+							ObjValue(IDTO==idtoProd,idoProd:IDO!=null,PROPNAME=="proyecto",INITIALVALOR==idProy)					    	
+							ObjValue(IDO==idoProd,PROPNAME=="programación",idlinea:INITIALVALOR!=null)
+							DatValue(ID==idlinea, PROPNAME=="coste_unitario",costeUnitarioInitial:INITIALDOUBLE!=null)
+							DatValue(ID==idlinea, PROPNAME=="cantidad",cantidadInitial:INITIALDOUBLE!=null)							
+							
+						),                                             		            		
+                      sum(cantidadInitial*costeUnitarioInitial))  
+
+		contributionCurrConsumidoProduccion: Double() 
+		    	from accumulate((and
+							    	FactHierarchy(idtoProd:IDTO,clssup:CLASSSUP=="PRODUCCIÓN")
+									Individual(IDTO==idtoProd,idoProd:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+									ObjValue(IDO==idoProd,PROPNAME=="proyecto",IDOVALUE==idoProy)																																		    	
+									ObjValue(IDO==idoProd,PROPNAME=="programación",idlinea:VALOR!=null)
+									DatValue(ID==idlinea, PROPNAME=="coste_unitario",costeUnitarioCurrent:DOUBLEVALUE!=null)
+									DatValue(ID==idlinea, PROPNAME=="cantidad",cantidadCurrent:DOUBLEVALUE!=null)							
+								),
+		                      sum(costeUnitarioCurrent*cantidadCurrent))
+		                           
+then
+	dma.printRule("\n\n ===========  CALCULO COSTE INCURRIDO PROYECTO idProy="+idProy);
+	//dma.printRule("...debug costeProyecto 	contributionInitCompra:"+contributionInitCompra+" contributionCurrCompra:"+contributionCurrCompra);
+	//dma.printRule("...debug costeProyecto 	contributionInitConsumidoProduccion:"+contributionInitConsumidoProduccion+"  contributionCurrConsumidoProduccion:"+contributionCurrConsumidoProduccion);
+
+	dma.setIncrementalValue(idoProy,idto,dma.getIdProperty("coste_planificado"),contributionCurrCompra+contributionCurrConsumidoProduccion-(contributionInitCompra+contributionInitConsumidoProduccion),3);
+end
+
+rule "CALCULO INGRESOS PROYECTO"
+//DE MOMENTO NO SOPORTAMOS CAMBIO EN TOTAL VENDIDO POR RECTFICACIONES DE FACTURAS
+salience -200
+ agenda-group "rules" when 
+  	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="PROYECTO")
+	Lock(IDTO==idto,idProy:ID,idoProy:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_READY||==Constants.INDIVIDUAL_STATE_LOCK)
+
+	contributionInitVenta: Double() 
+    	from accumulate((and	
+					    	FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="FACTURA_A_CLIENTE")
+					    	not(FactHierarchy(CLASS==classdoc,CLASSSUP=="RECTIFICACIÓN"))
+							ObjValue(CLASSNAME==classdoc,iddoc:ID!=null,PROPNAME=="proyecto",INITIALVALOR==idProy)							
+							DatValue(ID==iddoc, PROPNAME=="importe",importeInitial:INITIALDOUBLE!=null)
+						),
+                      sum(importeInitial))
+                      
+	contributionCurrVenta: Double() 
+    	from accumulate((and
+					    	FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="FACTURA_A_CLIENTE")
+					    	not(FactHierarchy(CLASS==classdoc,CLASSSUP=="RECTIFICACIÓN"))
+							ObjValue(CLASSNAME==classdoc,iddoc:ID!=null,PROPNAME=="proyecto",VALOR==idProy)							
+							Individual(ID==idProy,STATE==Constants.INDIVIDUAL_STATE_READY)																								    								
+							DatValue(ID==iddoc, PROPNAME=="importe",importeCurrent:DOUBLEVALUE!=null)
+						),
+                      sum(importeCurrent))               
+then
+	dma.printRule("\n\n ===========  CALCULO INGRESOS PROYECTO idProy="+idProy);
+	 
+	dma.setIncrementalValue(idoProy,idto,dma.getIdProperty("ingresos"),contributionCurrVenta-contributionInitVenta,3);
+end
+
+    
+rule "PRESUPUESTAR TAREAS"
+salience 100 
+agenda-group "rules" when
+    FactHierarchy(accion:CLASSSUP=="Generar_presupuesto"||=="Generar_factura",clsAccion:CLASS)
+    ObjValue(CLASSNAME==clsAccion, idoUTask:IDO,idtoUtask:IDTO,claseAccion:CLASSNAME!=null,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+ 	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO) 	
+	
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoAlbaran:IDOVALUE,albaran:OBJECTVALUE)
+	cliente:ArrayList() from collect(ObjValue(IDO==idoAlbaran,PROPNAME=="sujeto", idoSujeto:IDOVALUE!=null, ovCliente:OBJECTVALUE))
+	
+    ObjValue(IDO==idoAlbaran,classAlb:CLASSNAME,proLineaSource:PROPNAME=="subtarea"||=="ejecutado", idoLinea:IDOVALUE!=null,idtoLinea:VALUECLS,linea:OBJECTVALUE)
+    
+    eval( accion.equals("Generar_factura")&&proLineaSource.equals("ejecutado") ||  accion.equals("Generar_presupuesto")&&proLineaSource.equals("subtarea"))
+    
+    ObjValue(IDO==idoLinea,PROPNAME=="producto", idtoProducto:VALUECLS)
+    FactHierarchy(IDTO==idtoProducto, claseProducto:CLASSSUP=="GÉNERO"||=="SERVICIO")
+    
+   
+	not((and	ObjValue(IDO==idoLinea,PROPNAME=="documento", idtoRangoDoc:VALUECLS,IDOVALUE!=idoAlbaran)
+				FactHierarchy(CLASSSUP=="PRESUPUESTO_VENTA",IDTO==idtoRangoDoc)))
+	
+	FactHierarchy(empresaIDTO:IDTO, CLASSSUP=="MI_EMPRESA")//debe ser una mi empresa porque al final se lo asignamos a la factura
+	ObjValue(IDO==idoAlbaran,PROPNAME=="mi_empresa",idEmpresa:IDOVALUE!=null,empresa:OBJECTVALUE,VALUECLS==empresaIDTO)
+
+	ObjValue(IDO==idoUTask, PROPNAME=="params",idoParams:IDOVALUE!=null)
+	
+	forall(	DatValue(IDO==idoParams, PROPNAME=="revisión_inicio",revIni:DOUBLEVALUE!=null)
+			DatValue(IDO==idoLinea, PROPNAME=="revisión",DOUBLEVALUE>=revIni))
+
+	forall(	DatValue(IDO==idoParams, PROPNAME=="revisión_fin",revFin:DOUBLEVALUE!=null)
+			DatValue(IDO==idoLinea, PROPNAME=="revisión",DOUBLEVALUE<=revFin))
+		
+	idFactura:Domain() from accumulate( (and	ObjValue(IDO==idoUTask, PROPNAME=="targetClass",idFacturaTmp:IDOVALUE,idtoFactura:VALUECLS)																												
+												ObjValue(IDO==idFacturaTmp, PROPNAME=="mi_empresa",IDOVALUE==idEmpresa)	
+												forall(	ObjValue(IDO==idoAlbaran,PROPNAME=="sujeto", idoSujeto:IDOVALUE!=null)																									
+														ObjValue(IDO==idFacturaTmp, PROPNAME=="cliente",IDOVALUE==idoSujeto))																								
+										), 
+											init( Domain resId= new Domain(0,0)),
+											action( resId= new Domain(idFacturaTmp,idtoFactura);),
+											result(resId))	
+then
+	dma.printRule("========::: PRESUPUESTAR TAREAS "+accion+" idoLinea "+idoLinea+" "+idFactura.getIdo());
+	Domain domFactura=idFactura;
+	if(domFactura.getIdo()==0){
+		String targetClass="PRESUPUESTO_VENTA";
+		
+		if(accion.equals("Generar_factura")) targetClass="FACTURA_A_CLIENTE";
+
+		String excluproperties="observaciones_a_imprimir#línea#subtarea#ejecutado#fecha#emitido#almacén#cobro_anticipo#archivos#cliente";
+		
+		domFactura=dma.cloneIndividual(albaran.getValue(),albaran.getValueCls(), dma.getIdClass(targetClass), excluproperties);	
+				
+		if(cliente.size()>0){
+			ObjValue obCliente=(ObjValue)cliente.get(0);
+			dma.setValue(domFactura,"cliente",obCliente.getOBJECTVALUE());
+		}
+		dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(domFactura));
+		//ejecutado las condiciones que disparan reglas de valores por defecto de precios y descuentos, ya que debe respetarse los valores acordados en el documento fuente
+		dma.consumirEventoCambio(domFactura.getIdo(),"cliente");		
+		dma.consumirEventoCambio(domFactura.getIdo(),"mi_empresa");
+		dma.setValue(albaran.getValue(),albaran.getValueCls(),"facturado",new BooleanValue(true));
+	}			
+	String claseLinea="LÍNEA_ARTÍCULOS_SERVICIO";
+	if(claseProducto.equals("GÉNERO")) claseLinea="LÍNEA_ARTÍCULOS_MATERIA";
+	
+	Domain domLinea=dma.cloneIndividual(idoLinea,idtoLinea, dma.getIdClass(claseLinea),"documento#consumido_por");
+	dma.printRule("creada linea "+domLinea);
+	
+	dma.addValue(domFactura, "línea", new ObjectValue(domLinea));
+	dma.consumirEventoCambio(domFactura.getIdo(),"línea",linea.getValue(),linea.getValueCls());
+end
+
+
+rule "EDITAR TAREA PADRE"
+salience 100 
+agenda-group "rules" when
+    FactHierarchy(accion:CLASSSUP=="Editar_tarea_padre",clsAccion:CLASS)
+    ObjValue(CLASSNAME==clsAccion, idoUTask:IDO,idtoUtask:IDTO,claseAccion:CLASSNAME!=null,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null) 	 	
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoSubtarea:IDOVALUE!=null)
+    ObjValue(IDO==idoSubtarea, PROPNAME=="tarea",doc:OBJECTVALUE,idoTarea:IDOVALUE!=null)
+    not(ObjValue(IDO==idoUTask, PROPNAME=="targetClass",IDOVALUE==idoTarea))
+	then
+		dma.printRule("========::: EDITAR TAREA PADRE");
+		dma.addValue(idoUTask,idtoUtask,"targetClass",doc);
+end
+
+rule "MOVER SUBTAREA"
+salience 100 
+agenda-group "rules" when
+    FactHierarchy(accion:CLASSSUP=="Mover_subtarea",clsAccion:CLASS)
+    ObjValue(CLASSNAME==clsAccion, idoUTask:IDO,idtoUtask:IDTO,claseAccion:CLASSNAME!=null,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null) 	 	
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoSubtarea:IDOVALUE!=null,subtarea:OBJECTVALUE)
+    ObjValue(IDO==idoSubtarea, PROPNAME=="tarea",tareaOrigen:OBJECTVALUE,idoTareaOrigen:IDOVALUE!=null,idtoTareaOrigen:VALUECLS)
+    ObjValue(IDO==idoUTask, PROPNAME=="params",idoParams:IDOVALUE!=null)
+    ObjValue(IDO==idoParams, PROPNAME=="tarea_destino",tareaDestino:OBJECTVALUE!=null)
+    not(ObjValue(IDO==idoUTask, PROPNAME=="targetClass",OBJECTVALUE==tareaDestino))
+then
+		dma.printRule("========::: MOVER SUBTAREA");		
+		Domain newSubtarea=dma.cloneIndividual(idoSubtarea,subtarea.getValueCls(), subtarea.getValueCls(),"tarea");
+		dma.delValue(idoTareaOrigen,idtoTareaOrigen,"subtarea",subtarea);//si a la tarea elimino la subtarea, deduce quiero eliminar el individuo subtarea
+		dma.addValue(idoUTask,idtoUtask,"targetClass",tareaDestino);
+		dma.addValue(tareaDestino.getValue(),tareaDestino.getValueCls(),"subtarea",new ObjectValue(newSubtarea));
+end
+
+rule "MARCAR TAREA REALIZADA"
+salience 100 
+agenda-group "rules" when
+    FactHierarchy(accion:CLASSSUP=="Marcar_como_realizada",clsAccion:CLASS)
+    ObjValue(CLASSNAME==clsAccion, idoUTask:IDO,idtoUtask:IDTO,claseAccion:CLASSNAME!=null,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null) 	 	
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoSubtarea:IDOVALUE!=null,idtoSub:VALUECLS,ov:OBJECTVALUE)
+    ObjValue(IDO==idoSubtarea, PROPNAME=="tarea",doc:OBJECTVALUE)
+    not(ObjValue(IDO==idoUTask, PROPNAME=="targetClass",IDOVALUE==idoSubtarea))   
+	then
+		dma.printRule("========::: MARCAR TAREA REALIZADA");
+		dma.setValue(idoSubtarea,idtoSub,"porcentaje_realización",new DoubleValue(100.0));
+		dma.addValue(idoUTask,idtoUtask,"targetClass",doc);
+end

@@ -1,0 +1,2462 @@
+//created on: 09-may-2011
+
+package dynagent.ruleengine.src.ruler.ERPrules;
+import dynagent.ruleengine.src.ruler.ERPrules.datarules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.exceptions.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import org.drools.WorkingMemory;
+import dynagent.common.basicobjects.*;
+
+global DataModelAdapter dma;
+
+rule "PRECARGA DISPONIBILIDAD Y RECURSOS" 
+salience -50 
+no-loop true
+agenda-group "rules" when 
+  	exists(Model(CLASSNAME=="DISPONIBILIDAD"))
+  	exists(ObjValue(PROPNAME=="estadoRealizacion",idEstadotask:VALOR!=null))
+  	 
+	exists((and FactHierarchy(idtoTask:IDTO,CLASSSUP=="PRODUCCIÓN"||=="RECURSO")
+				Individual(IDTO==idtoTask)
+				not FactHierarchy(IDTO==idtoTask,CLASSSUP=="AGENTE_COMERCIAL_FIJO")))
+		
+	mapa:ArrayList()	from accumulate ((and ObjValue(PROPNAME=="miembros",idoMiembro:IDOVALUE!=null,miembro:OBJECTVALUE!=null)
+											  not((and FactHierarchy(idtoDispon:IDTO,CLASSSUP=="DISPONIBILIDAD")
+											  		   ObjValue(IDTO==idtoDispon,PROPNAME=="recurso",IDOVALUE==idoMiembro)))),
+											init(ArrayList res=new ArrayList();),
+											action(res.add(miembro);),
+											result(res))						
+	then
+		dma.printRule("\n\n ====================== PRECARGA DISPONIBILIDAD n. lineas:"+mapa.size());	
+	
+	HashMap<String, ArrayList<Value>> filtroPropiedadValor=null;
+	
+	if(mapa.size()>0){
+		filtroPropiedadValor= new HashMap<String, ArrayList<Value>>();
+		filtroPropiedadValor.put("recurso",mapa);	
+		instance  filerDispon=dma.buildInstanceWith("DISPONIBILIDAD",null,filtroPropiedadValor,null,null);
+		HashSet<IDIndividual> idosStockEncontrados=dma.loadIndividualsWithSatisficedFilter(filerDispon);
+		dma.printRule("\n...NUMERO DE DISPONIBILIDAD ENCONTRADOS : "+idosStockEncontrados.size());	
+	
+		dma.ruleGetFromServer(new HashSet(mapa),1,false);
+	}else{
+		dma.getDDM().loadInRulerFactsOfIndividualSpecializedOfClass(dma.getIdClass("DISPONIBILIDAD"),1);
+	}			
+end
+
+rule "PRECARGA RECURSO"
+salience -100 //Si se carga antes el almacen por defecto, gana prioridad 
+agenda-group "rules" when 
+	  
+	ObjValue(PROPNAME=="recurso",idoRecurso:IDOVALUE!=null,idtoRecurso:VALUECLS,recurso:OBJECTVALUE)
+	//eval(dma.preload(Integer.parseInt(idEntidad),idtoEntidad))
+	not(Individual(IDO==idoRecurso))
+then
+	dma.printRule("PRECARGA RECURSO");
+ 	dma.ruleGetFromServer(idoRecurso,idtoRecurso,1,false);
+end	
+
+rule "PRECARGA TAREA PREDECESORA"
+	salience 100
+	agenda-group "rules"
+	when			
+		ObjValue(PROPNAME=="predecesor",idoTask:IDOVALUE!=null,idtoTask:VALUECLS)
+        not(DatValue(IDO==idoTask,PROPNAME=="rdn"))        
+	then
+		dma.printRule("PRECARGA TAREA PREDECESORA");
+		dma.ruleGetFromServer(idoTask,idtoTask,1,false);	
+end
+
+rule "DISPONIBILIDAD: ESTADO LIBRE"
+	salience 100
+	agenda-group "rules"
+	when			
+		FactHierarchy(idtoDispon:IDTO,CLASSSUP=="DISPONIBILIDAD")				 		
+		DatValue(idoDispon:IDO,IDTO==idtoDispon,PROPNAME=="cantidad",qHabil:QMIN!=null)            
+	then
+		dma.printRule("==============DISPONIBILIDAD: ESTADO LIBRE");
+		dma.setValue(idoDispon,idtoDispon,"libre",new BooleanValue(qHabil>0.1));	
+end
+
+
+rule "PESO TAREA"
+	salience 100
+	agenda-group "rules"
+	when			
+		FactHierarchy(idtoTask:IDTO,CLASSSUP=="TAREA")
+		ObjValue(idoTask:IDO,IDTO==idtoTask,PROPNAME=="prioridad",idoPrior:IDOVALUE)
+		DatValue(IDO==idoPrior, PROPNAME=="peso_prioridad", pesoPrioridad:DOUBLEVALUE!=null) 
+		
+		total:Double() from accumulate( (and 	ObjValue(IDO==idoTask,PROPNAME=="subtarea",idoLineaIN:IDOVALUE)           									
+											DatValue(IDO==idoLineaIN, PROPNAME=="cantidad", q:QMAX!=null)    ), sum(q))
+		            
+	then
+		double log=Math.log10(total);
+		Double peso=0.0;
+		
+		if(log>0) peso= pesoPrioridad*8/(1+8*log);
+		else	peso=pesoPrioridad*8/(1+2.5*total);
+		dma.printRule("========================  PESO TAREA "+pesoPrioridad+" "+peso+" "+total);
+		dma.setValue(idoTask,idtoTask,"peso_prioridad",new DoubleValue(peso));	
+end
+
+rule "PESO SUBTAREA"
+	salience 100
+	agenda-group "rules"
+	when			
+		FactHierarchy(idtoTask:IDTO,CLASSSUP=="SUBTAREA")
+		ObjValue(idoTask:IDO,IDTO==idtoTask,PROPNAME=="prioridad",idoPrior:IDOVALUE,ch1:hasCHANGED)
+		DatValue(IDO==idoPrior, PROPNAME=="peso_prioridad", pesoPrioridad:DOUBLEVALUE!=null) 				          									
+		DatValue(IDO==idoTask, PROPNAME=="cantidad", q:QMAX!=null,ch2:hasCHANGED)
+		//eval(ch1||ch2) 		            
+	then
+		double log=Math.log10(q);
+		Double peso=0.0;
+		
+		pesoPrioridad= pesoPrioridad+1;
+		if(log>0) peso= pesoPrioridad*8/(1+8*log);
+		else	peso=pesoPrioridad*8/(1+2.5*q);
+		
+		dma.printRule("========================  PESO SUBTAREA ");
+		dma.setValue(idoTask,idtoTask,"peso_prioridad",new DoubleValue(peso));	
+end
+
+rule "PREDECESOR: LA TAREA DEBE SER POSTERIOR A SU PREDECESOR"
+	agenda-group "rules"
+	when	
+  		FactHierarchy(idtoRoot:IDTO,CLASSSUP=="TAREA")    	
+                
+		DatValue(IDTO==idtoRoot,idoTaskPre:IDO,PROPNAME=="fecha_fin",fechaFinPre:QMIN!=null)
+		ObjValue(idoTaskPost:IDO,PROPNAME=="predecesor",IDOVALUE==idoTaskPre)
+		ObjValue(IDO==idoTaskPost,PROPNAME=="programación",idoLinea:IDOVALUE)		
+		DatValue(IDO==idoLinea,idtoLinea:IDTO,PROPNAME=="fecha_inicio",QMIN<fechaFinPre)
+		DatValue(IDO==idoTaskPost,PROPNAME=="porcentaje_realización",QMIN==0)				            
+	then		
+		dma.printRule("======================= PREDECESOR: LA TAREA DEBE SER POSTERIOR A SU PREDECESOR");
+		dma.delValues(idoLinea, idtoLinea,"fecha_fin");
+		dma.delValues(idoLinea, idtoLinea,"fecha_inicio");	
+end
+
+rule "FECHAS DE TAREA"
+	agenda-group "rules"
+	when	
+  		FactHierarchy(idtoTask:IDTO,CLASSSUP=="TAREA")    	
+                
+		DatValue(IDTO==idtoTask,idoTask:IDO,PROPNAME=="rdn",VALOR!=null)
+		//not((and 	ObjValue(IDO==idoTask,PROPNAME=="programación",idoLinea:IDOVALUE!=null)
+		//		 	ObjValue(IDO==idoLinea, PROPNAME=="producto", idoProducto:IDOVALUE!=null)					          
+		//			ObjValue(PROPNAME=="capacidad", IDOVALUE==idoProducto)		
+		//			not(DatValue(IDO==idoLinea,PROPNAME=="fecha_fin",QMIN!=null))))													
+		
+		min:Double() from accumulate( (and 	ObjValue(IDO==idoTask,PROPNAME=="programación",idoLinea:IDOVALUE!=null) 											
+        									DatValue(IDO==idoLinea,PROPNAME=="fecha_inicio",fini:QMIN!=null)), min(fini))
+        									
+		max:Double() from accumulate( (and 	ObjValue(IDO==idoTask,PROPNAME=="programación",idoLinea:IDOVALUE!=null)   																						
+        									DatValue(IDO==idoLinea,PROPNAME=="fecha_fin",fmax:QMIN!=null)), max(fmax)) 
+        eval(max>=min)       											            
+	then		
+		dma.printRule("========================= FECHAS DE TAREA");
+		
+		dma.setValue(idoTask, idtoTask,"fecha_inicio", new TimeValue(min.longValue()));
+		dma.setValue(idoTask, idtoTask,"fecha_fin", new TimeValue(max.longValue()));	
+end
+
+rule "RECURSO DE SUBTAREA: RESOLUCION"
+	agenda-group "rules"
+	when	
+  		FactHierarchy(idtoTask:IDTO,CLASSSUP=="TAREA")    	
+                
+		ObjValue(IDTO==idtoTask,idoTask:IDO,PROPNAME=="subtarea",idoSub:IDOVALUE!=null,idtoSub:VALUECLS)
+		ObjValue(IDO==idoSub,PROPNAME=="producto",idoPro:IDOVALUE!=null)
+															
+		dedicacion:ArrayList() from accumulate( (and 	not(ObjValue(IDO==idoSub,PROPNAME=="recurso",IDOVALUE!=null))
+														ObjValue(IDO==idoTask,PROPNAME=="dedicación",idoDec:IDOVALUE!=null) 											
+        												ObjValue(IDO==idoDec,PROPNAME=="recurso",idoRecurso:IDOVALUE!=null,ov:OBJECTVALUE)												        																											 											
+        												ObjValue(IDO==idoRecurso,PROPNAME=="capacidad",IDOVALUE==idoPro)
+        													
+        												not(ObjValue(IDO==idoSub,PROPNAME=="recurso_resuelto",IDOVALUE==idoRecurso))),
+        												init(ArrayList lista=new ArrayList();),
+        												action(lista.add(ov);),
+        												result(lista))
+ 
+		recursoEspecifico:ArrayList() from accumulate((and 	ObjValue(IDO==idoSub,PROPNAME=="recurso",idoRecurso:IDOVALUE!=null,ov:OBJECTVALUE)
+															not(ObjValue(IDO==idoSub,PROPNAME=="recurso_resuelto",IDOVALUE==idoRecurso))),
+        												init(ArrayList lista=new ArrayList();),
+        												action(lista.add(ov);),
+        												result(lista))
+        
+        programadoLibre:ArrayList() from accumulate( (and 	not((and 	ObjValue(IDO==idoTask,PROPNAME=="subtarea",idoSubAny:IDOVALUE!=null)
+        																ObjValue(IDO==idoSubAny,PROPNAME=="recurso",IDOVALUE!=null)))
+															not(ObjValue(IDO==idoTask,PROPNAME=="dedicación",idoDec:IDOVALUE!=null))
+															ObjValue(IDO==idoTask,PROPNAME=="programación",idoProg:IDOVALUE!=null)
+															ObjValue(IDO==idoProg,PROPNAME=="recurso",idoRecurso:IDOVALUE!=null,ov:OBJECTVALUE)																														 											
+        													ObjValue(IDO==idoRecurso,PROPNAME=="capacidad",IDOVALUE==idoPro)
+        													not(ObjValue(IDO==idoSub,PROPNAME=="recurso_resuelto",IDOVALUE==idoRecurso))),
+        												init(ArrayList lista=new ArrayList();),
+        												action(lista.add(ov);),
+        												result(lista))												
+       	eval(dedicacion.size()>0||recursoEspecifico.size()>0||programadoLibre.size()>0)									            
+	then		
+		dma.printRule("========================= RECURSO DE SUBTAREA: RESOLUCION");
+		if(recursoEspecifico.size()>0){
+			ObjectValue f=(ObjectValue)recursoEspecifico.get(0);
+			dma.setValue(idoSub, idtoSub,"recurso_resuelto", f);
+		}else{
+			ArrayList lista=dedicacion;
+			if(lista.size()==0) lista=programadoLibre;
+		 
+			for(int i=0;i<lista.size();i++){
+				ObjectValue f=(ObjectValue)lista.get(i);
+				dma.addValue(idoSub, idtoSub,"recurso_resuelto", f);
+			}
+		}
+		
+end
+
+rule "RECURSO DE SUBTAREA: LIMPIEZA"
+	agenda-group "rules"
+	when	
+  		FactHierarchy(idtoTask:IDTO,CLASSSUP=="TAREA")    	
+                
+		ObjValue(IDTO==idtoTask,idoTask:IDO,PROPNAME=="subtarea",idoSub:IDOVALUE!=null,idtoSub:VALUECLS)			
+		ObjValue(IDO==idoSub,PROPNAME=="recurso_resuelto",idoRecurso:IDOVALUE!=null,ov:OBJECTVALUE)	
+											
+		not((and	ObjValue(IDO==idoTask,PROPNAME=="dedicación",idoDec:IDOVALUE!=null) 											
+        			ObjValue(IDO==idoDec,PROPNAME=="recurso",IDOVALUE==idoRecurso)))        		
+ 
+		not(ObjValue(IDO==idoSub,PROPNAME=="recurso",IDOVALUE==idoRecurso))
+			
+        (or not((and	ObjValue(IDO==idoTask,PROPNAME=="programación",idoProg:IDOVALUE!=null)
+						ObjValue(IDO==idoProg,PROPNAME=="recurso",IDOVALUE==idoRecurso)))
+
+			exists((and ObjValue(IDO==idoTask,PROPNAME=="subtarea",idoSub2:IDOVALUE!=idoSub) 											
+        				ObjValue(IDO==idoSub2,PROPNAME=="recurso",IDOVALUE==idoRecurso))))
+										            
+	then		
+		dma.printRule("========================= RECURSO DE SUBTAREA: LIMPIEZA");
+		dma.delValue(idoSub, idtoSub,"recurso_resuelto", ov);				
+end
+
+/*rule "RESET FECHAS TAREAS"
+	salience 200 //Maxima prioridad para que asignar sepa inmediatamente si una tarea predecesora se cumple es anterior. Y si la predecesora no tiene fecha, debe esperarle
+	agenda-group "rules"
+	when	
+  		FactHierarchy(idtoTask:IDTO,CLASSSUP=="TAREA")    	                
+		DatValue(IDTO==idtoTask,idoTask:IDO,PROPNAME=="rdn",VALOR!=null)
+		exists(DatValue(IDO==idoTask,PROPNAME=="fecha_fin",QMIN!=null))
+		
+		ObjValue(IDO==idoTask,PROPNAME=="programación",idoLinea:IDOVALUE!=null)
+		not(DatValue(IDO==idoLinea,PROPNAME=="fecha_fin",QMIN!=null))																	        											           
+	then		
+		dma.printRule("========================= RESET FECHAS DE TAREA");
+		
+		dma.delValues(idoTask, idtoTask,"fecha_inicio");
+		dma.delValues(idoTask, idtoTask,"fecha_fin");	
+end*/
+
+rule "SUBTAREA: FECHAS COMUN"
+	salience -200
+	agenda-group "rules"
+	when	
+  		FactHierarchy(idtoTask:IDTO,CLASSSUP=="TAREA")   		   	       		   	                
+		Lock(IDTO==idtoTask,idoTask:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+		 					
+		totalDedicacion: Double() from accumulate((and	ObjValue(IDO==idoTask,PROPNAME=="dedicación",idoDedAny:IDOVALUE) 						    							    						    								    							    					 																																						    
+														DatValue(IDO==idoDedAny,PROPNAME=="porcentaje_dedicación",ded:QMAX!=null)),							         
+                      								sum(ded/100))	 						
+		
+		subtareasAcum:TreeMap(size>0) from accumulate((and 	ObjValue(IDO==idoTask,PROPNAME=="subtarea",idoLinea:IDOVALUE!=null) 	
+														not(ObjValue(IDO==idoLinea,PROPNAME=="recurso",IDOVALUE!=null))		
+														ObjValue(IDO==idoLinea, PROPNAME=="producto", idoProductoAny:IDOVALUE!=null)                
+														ObjValue(PROPNAME=="capacidad", IDOVALUE==idoProductoAny)								
+        												DatValue(IDO==idoLinea,idtoLinea:IDTO,PROPNAME=="cantidad",q:QMIN!=null)
+        												DatValue(IDO==idoLinea,PROPNAME=="peso_prioridad",p:QMIN!=null)),
+        											init(TreeMap res=new TreeMap();),
+        											action(	String dato=""+idoLinea+";"+idtoLinea+";"+q;        											
+        													res.put(p*100000+idoLinea/1000,dato);),        													        													        													 
+        											result(res))
+        									
+		programaciones:HashMap(size>0) from accumulate((and ObjValue(IDO==idoTask,PROPNAME=="programación",idoProgAny:IDOVALUE!=null)
+															DatValue(IDO==idoProgAny, PROPNAME=="fecha_inicio", fini:QMIN!=null)
+															DatValue(IDO==idoProgAny, PROPNAME=="fecha_fin", ffin:QMIN!=null)
+															DatValue(IDO==idoProgAny, PROPNAME=="cantidad", q:QMIN)
+															DatValue(IDO==idoProgAny, PROPNAME=="porcentaje_dedicación", d:QMIN)  											        													
+        													ObjValue(IDO==idoProgAny,PROPNAME=="recurso",idoRecurso:IDOVALUE!=null)
+        													not((and 	ObjValue(IDO==idoTask,PROPNAME=="subtarea",idoSubAny:IDOVALUE!=null)
+        																ObjValue(IDO==idoSubAny,PROPNAME=="recurso",IDOVALUE==idoRecurso)))        													        														    													
+        													ObjValue(IDO==idoRecurso, PROPNAME=="calendario", idoCalendario:IDOVALUE!=null)
+															DatValue(IDO==idoCalendario, PROPNAME=="rdn", rdnCalendario:VALOR!=null)
+															calendario:CalendarioHabil(ID==rdnCalendario)
+															),
+        											init(HashMap res=new HashMap();),
+        											action( TreeMap mapa=(TreeMap)res.get(idoRecurso);
+        													if(mapa==null){
+        														mapa=new TreeMap();
+        														res.put(Math.abs(idoRecurso),mapa);
+        														res.put(-Math.abs(idoRecurso),calendario);
+        													}
+        													mapa.put(fini,""+ffin+";"+q+";"+d);
+        											),        													        													        													 
+        											result(res))
+	eval(!subtareasAcum.isEmpty())																	        											           
+	then		
+		dma.printRule("========================= SUBTAREA: FECHAS COMUN"+subtareasAcum.size()+" "+programaciones.size());
+				//si no clono al hacer remove se queda en acumulate
+		TreeMap subtareas= (TreeMap)subtareasAcum.clone();
+		long fechaFinOld=0;
+		long fechaFin=0;	
+		
+		Double peso=(Double)subtareas.lastKey();
+		while(peso!=null){
+			String datos=(String)subtareas.get(peso);
+			dma.printRule("DATOS "+datos);
+			String[] arr=datos.split(";");
+			dma.printRule("DATOS "+arr.length+" "+arr[0]+"-"+arr[1]+"-"+arr[2]);
+			int idoSub=new Integer(arr[0]);
+			int idtoSub=new Integer(arr[1]);
+			double q=new Double(arr[2]);
+
+			subtareas.remove(peso);
+			
+			
+			long maxFin=0,minIni=fechaFinOld;
+			
+			//Itero por recurso
+			int lastId=0;
+			Iterator itr=programaciones.keySet().iterator();
+			while(itr.hasNext()){
+				Integer id=(Integer)itr.next();
+				if(Math.abs(id.intValue())==lastId){
+					if(itr.hasNext()) id=(Integer)itr.next();
+					else break;
+				}
+				lastId=Math.abs(id);
+
+				CalendarioHabil calendario=(CalendarioHabil)programaciones.get(-Math.abs(id));
+				TreeMap mapa=(TreeMap)programaciones.get(Math.abs(id));
+				double qUbicada=0;
+				//Para este recurso, voy ubicando q horas desde el inicio
+				Iterator periodos=mapa.keySet().iterator();
+				while(periodos.hasNext()){
+					Double fini=(Double)periodos.next();
+
+					if(minIni==0){						
+						minIni=fini.longValue();
+					}
+				
+					String d=(String)mapa.get(fini);
+					Double ffin=new Double(d.split(";")[0]);
+					Double qProg=new Double(d.split(";")[1]);
+					Double dedicacion=new Double(d.split(";")[2])/100;
+					
+					long tmpFin=new Double(calendario.getFechaFin(Math.max(fechaFinOld,fini.longValue()),q-qUbicada,dedicacion)/1000.0).longValue();					
+
+					qUbicada+=qProg;
+					if(fini<fechaFinOld)	qUbicada-=calendario.getHorasHabiles(fini.longValue(),fechaFinOld)*dedicacion;
+				
+					if(tmpFin<ffin) qUbicada-=calendario.getHorasHabiles(tmpFin,ffin.longValue())*dedicacion;
+					
+					tmpFin=Math.min(tmpFin,ffin.longValue());
+										
+					minIni=Math.min(minIni,Math.max(fini.longValue(),fechaFinOld));
+					maxFin=Math.max(maxFin,tmpFin);
+					
+					if(qUbicada>=q) break;					
+				}				
+			}			
+			dma.setValue(idoSub,idtoSub,"fecha_inicio", new TimeValue(minIni));
+			dma.setValue(idoSub,idtoSub,"fecha_fin", new TimeValue(maxFin));
+			fechaFinOld=maxFin;	
+			if( !subtareas.isEmpty()) peso=(Double)subtareas.lastKey();	
+			else peso=null;	
+		}
+end
+
+rule "SUBTAREA: FECHAS ESPECIFICO"
+	salience -200
+	agenda-group "rules"
+	when	
+  		FactHierarchy(idtoTask:IDTO,CLASSSUP=="TAREA")   		   	       		   	                
+		Lock(IDTO==idtoTask,idoTask:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+		
+		//(or exists(ObjValue(IDO==idoTask,PROPNAME=="subtarea"||=="programación",hasCHANGED==true))
+	 	//	exists((and ObjValue(IDO==idoTask,PROPNAME=="subtarea"||=="programación",idoSub:IDOVALUE)
+	 	//				IndividualValue(IDO==idoSub,hasCHANGED==true))))	
+	 					
+		totalDedicacion: Double() from accumulate((and	ObjValue(IDO==idoTask,PROPNAME=="dedicación",idoDedAny:IDOVALUE) 						    							    						    								    							    					 																																						    
+														DatValue(IDO==idoDedAny,PROPNAME=="porcentaje_dedicación",ded:QMAX!=null)),							         
+                      								sum(ded/100))	 						
+		
+		FactHierarchy(CLASSSUP=="RECURSO",idtoRecurso:IDTO)			  
+		DatValue(IDTO==idtoRecurso,idoRecurso:IDO,PROPNAME=="rdn", rdnRec:VALOR)
+		  
+		subtareasAcum:TreeMap(size>0) from accumulate((and 	ObjValue(IDO==idoTask,PROPNAME=="subtarea",idoLinea:IDOVALUE!=null) 	
+														ObjValue(IDO==idoLinea,PROPNAME=="recurso",IDOVALUE==idoRecurso)										
+        												DatValue(IDO==idoLinea,idtoLinea:IDTO,PROPNAME=="cantidad",q:QMIN!=null)
+        												DatValue(IDO==idoLinea,PROPNAME=="peso_prioridad",p:QMIN!=null)),
+        											init(TreeMap res=new TreeMap();),
+        											action(	
+        													String dato=""+idoLinea+";"+idtoLinea+";"+q;
+															res.put(p*100000+idoLinea/1000,dato);     
+        													),        													        													        													 
+        											result(res))        								
+        											
+		programaciones:HashMap(size>0) from accumulate((and ObjValue(IDO==idoTask,PROPNAME=="programación",idoProgAny:IDOVALUE!=null)
+															DatValue(IDO==idoProgAny, PROPNAME=="fecha_inicio", fini:QMIN!=null)
+															DatValue(IDO==idoProgAny, PROPNAME=="fecha_fin", ffin:QMIN!=null)
+															DatValue(IDO==idoProgAny, PROPNAME=="cantidad", q:QMIN)
+															DatValue(IDO==idoProgAny, PROPNAME=="porcentaje_dedicación", d:QMIN)  											        													
+ 															ObjValue(IDO==idoProgAny,PROPNAME=="recurso",IDOVALUE==idoRecurso)         													        													        														    													
+        													ObjValue(IDO==idoRecurso, PROPNAME=="calendario", idoCalendario:IDOVALUE!=null)
+															DatValue(IDO==idoCalendario, PROPNAME=="rdn", rdnCalendario:VALOR!=null)
+															calendario:CalendarioHabil(ID==rdnCalendario)
+															),
+        											init(HashMap res=new HashMap();),
+        											action( TreeMap mapa=(TreeMap)res.get(idoRecurso);
+        													if(mapa==null){
+        														mapa=new TreeMap();
+        														res.put(Math.abs(idoRecurso),mapa);
+        														res.put(-Math.abs(idoRecurso),calendario);
+        													}
+        													mapa.put(fini,""+ffin+";"+q+";"+d);
+        											),        													        													        													 
+        											result(res))
+        											        											
+        eval(!subtareasAcum.isEmpty())																	        											           
+	then		
+		dma.printRule("========================= SUBTAREA: FECHAS ESPECIFICO"+subtareasAcum.size());
+		
+		//si no clono al hacer remove se queda en acumulate
+		TreeMap subtareas= (TreeMap)subtareasAcum.clone();
+		long fechaFinOld=0;
+		long fechaFin=0;	
+		
+		Double peso=(Double)subtareas.lastKey();
+		while(peso!=null){
+			String datos=(String)subtareas.get(peso);
+			dma.printRule("DATOS "+datos);
+			String[] arr=datos.split(";");
+			dma.printRule("DATOS "+arr.length+" "+arr[0]+"-"+arr[1]+"-"+arr[2]);
+			int idoSub=new Integer(arr[0]);
+			int idtoSub=new Integer(arr[1]);
+			double q=new Double(arr[2]);
+
+			subtareas.remove(peso);
+			
+			
+			long maxFin=0,minIni=fechaFinOld;
+			
+			//Itero por recurso
+			int lastId=0;
+			Iterator itr=programaciones.keySet().iterator();
+			while(itr.hasNext()){
+				Integer id=(Integer)itr.next();
+				if(Math.abs(id.intValue())==lastId){
+					if(itr.hasNext()) id=(Integer)itr.next();
+					else break;
+				}
+				lastId=Math.abs(id);
+
+				CalendarioHabil calendario=(CalendarioHabil)programaciones.get(-Math.abs(id));
+				TreeMap mapa=(TreeMap)programaciones.get(Math.abs(id));
+				double qUbicada=0;
+				//Para este recurso, voy ubicando q horas desde el inicio
+				Iterator periodos=mapa.keySet().iterator();
+				while(periodos.hasNext()){
+					Double fini=(Double)periodos.next();
+
+					if(minIni==0){						
+						minIni=fini.longValue();
+					}
+				
+					String d=(String)mapa.get(fini);
+					Double ffin=new Double(d.split(";")[0]);
+					Double qProg=new Double(d.split(";")[1]);
+					Double dedicacion=new Double(d.split(";")[2])/100;
+					
+					long tmpFin=new Double(calendario.getFechaFin(Math.max(fechaFinOld,fini.longValue()),q-qUbicada,dedicacion)/Constants.TIMEMILLIS).longValue();					
+
+					qUbicada+=qProg;
+					if(fini<fechaFinOld)	qUbicada-=calendario.getHorasHabiles(fini.longValue(),fechaFinOld)*dedicacion;
+				
+					if(tmpFin<ffin) qUbicada-=calendario.getHorasHabiles(tmpFin,ffin.longValue())*dedicacion;
+					
+					tmpFin=Math.min(tmpFin,ffin.longValue());
+										
+					minIni=Math.min(minIni,Math.max(fini.longValue(),fechaFinOld));
+					maxFin=Math.max(maxFin,tmpFin);
+					
+					if(qUbicada>=q) break;					
+				}				
+			}			
+			dma.setValue(idoSub,idtoSub,"fecha_inicio", new TimeValue(minIni));
+			dma.setValue(idoSub,idtoSub,"fecha_fin", new TimeValue(maxFin));
+			fechaFinOld=maxFin;	
+			if( !subtareas.isEmpty()) peso=(Double)subtareas.lastKey();	
+			else peso=null;	
+		}
+end
+
+/*rule "SUBTAREA: FECHAS"
+	salience -200 
+	agenda-group "rules"
+	when	
+  		FactHierarchy(idtoTask:IDTO,CLASSSUP=="TAREA")   		   	       		   	                
+		Lock(IDTO==idtoTask,idoTask:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+		
+		
+		//(or exists(ObjValue(IDO==idoTask,PROPNAME=="subtarea"||=="programación",hasCHANGED==true))
+	 	//	exists((and ObjValue(IDO==idoTask,PROPNAME=="subtarea"||=="programación",idoSub:IDOVALUE)
+	 	//				IndividualValue(IDO==idoSub,hasCHANGED==true))))	
+	 					
+		totalDedicacion: Double() from accumulate((and	ObjValue(IDO==idoTask,PROPNAME=="dedicación",idoDedAny:IDOVALUE!=null) 						    							    						    								    							    					 																																						    
+														DatValue(IDO==idoDedAny,PROPNAME=="porcentaje_dedicación",ded:QMAX!=null)),							         
+                      								sum(ded/100))	 						
+		
+		ObjValue(IDO==idoTask,PROPNAME=="subtarea",idoSub:IDOVALUE!=null) 											
+        DatValue(IDO==idoSub,idtoSub:IDTO,PROPNAME=="cantidad",horasSub:QMIN!=null)
+        DatValue(IDO==idoSub,PROPNAME=="peso_prioridad",peso:QMIN!=null)
+        ObjValue(IDO==idoSub,PROPNAME=="producto",producto:IDOVALUE!=null)
+        
+        recEspecifico:ArrayList() from collect(ObjValue(IDO==idoSub,PROPNAME=="recurso",IDOVALUE!=null))
+        
+        fechaMinProg: Double() from accumulate((and	ObjValue(IDO==idoTask,PROPNAME=="programación",idoProgAny:IDOVALUE!=null)
+        															ObjValue(IDO==idoProgAny,PROPNAME=="producto",IDOVALUE==producto)        														
+        															DatValue(IDO==idoProgAny, PROPNAME=="fecha_inicio", f:QMIN!=null)        																					    							    						    								    							    					 																																						    												
+																),							         
+                      											min(f))	
+        
+        fechaMin: Double() from accumulate((and	ObjValue(IDO==idoTask,PROPNAME=="subtarea",idoSubAny:IDOVALUE!=idoSub)						    							    						    								    							    					 																																						    
+												DatValue(IDO==idoSubAny,idto:IDTO,PROPNAME=="peso_prioridad",QMAX>=peso)
+												DatValue(IDO==idoSubAny,PROPNAME=="fecha_fin",f:QMAX!=null)
+												),
+												init(Double res=fechaMinProg;),
+												action( res=Math.max(res,f);),
+												result( res ))																	         
+                      							        
+        									
+        fechaMax: Double(doubleValue>1000) from accumulate((and	ObjValue(IDO==idoTask,PROPNAME=="programación",idoProgAny:IDOVALUE!=null)
+        														ObjValue(IDO==idoProgAny,PROPNAME=="recurso",idoRecurso:IDOVALUE!=null)
+        														DatValue(IDO==idoProgAny, PROPNAME=="fecha_inicio", QMIN<=fechaMin)        														    													
+        														ObjValue(IDO==idoRecurso, PROPNAME=="calendario", idoCalendario:IDOVALUE!=null)
+																DatValue(IDO==idoCalendario, PROPNAME=="rdn", rdnCalendario:VALOR!=null)
+      															calendario:CalendarioHabil(ID==rdnCalendario)							    							    						    								    							    					 																																						    												
+														),							         
+                      									max(calendario.getFechaFin(fechaMin.longValue(),horasSub,(recEspecifico.size()>0?1.0:totalDedicacion))/1000))	
+        eval(fechaMax>fechaMin)																        											           
+	then		
+		dma.printRule("========================= SUBTAREA: FECHAS "+Auxiliar.secToDate(fechaMin)+" "+Auxiliar.secToDate(fechaMax));
+		dma.setValue(idoSub,idtoSub,"fecha_inicio",new TimeValue(fechaMin.longValue()));
+		dma.setValue(idoSub,idtoSub,"fecha_fin",new TimeValue(fechaMax.longValue()));
+end*/
+
+rule "ASIGNAR DISPONIBILIDAD"
+//TODO: soportar porcentaje dedicacion que permitiria asignar mas de una tarea a un mismo dispon disponibilidad
+salience -200
+agenda-group "rules" when 
+
+        not((and 	ObjValue(CLASSNAME=="Programar_de_nuevo",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstadotask:VALOR!=null)		
+					DatValue(ID==idEstadotask,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_PREVALIDANDO)))
+		
+    	FactHierarchy(idtoRoot:IDTO,CLASSSUP=="PRODUCCIÓN"||=="SALIDA_ARTÍCULOS")
+    	not(FactHierarchy(IDTO==idtoRoot,CLASSSUP=="TRASPASO_ALMACENES"))
+        //Lock(IDTO==idtoRoot, idoRoot:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK, docLevel:LEVEL)
+		DatValue(IDTO==idtoRoot,idoRoot:IDO,PROPNAME=="rdn",rdnTask:VALOR)
+        			
+        ObjValue(IDO==idoRoot,propLinea:PROPNAME=="programación",idoLineaIN:IDOVALUE)     
+ 
+        //Si se trata de una disponibilidad, la lineaIN debe tener algun campo por asignar
+        not((and	DatValue(IDO==idoLineaIN, PROPNAME=="fecha_inicio", DATE!=null)
+	    			DatValue(IDO==idoLineaIN, PROPNAME=="fecha_fin", DATE!=null)
+	    			ObjValue(IDO==idoLineaIN, PROPNAME=="recurso", VALOR!=null))) 
+        
+        ObjValue(IDO==idoLineaIN,idtoLineaIN:IDTO,PROPNAME=="producto",idoProductoIN:IDOVALUE)
+		DatValue(IDO==idoLineaIN, PROPNAME=="cantidad", qProgramada:QMAX>0)    								           				
+		DatValue(IDO==idoRoot, PROPNAME=="fecha_mínima_inicio", fechaIniPlanifSc:QMAX!=null)
+		
+		fechaFinPredecesor:Double() from accumulate((and ObjValue(IDO==idoRoot,PROPNAME=="predecesor",idoTaskPre:IDOVALUE!=null)
+														 DatValue(IDO==idoTaskPre,PROPNAME=="fecha_fin",f:QMIN!=null)),
+														 max(f))
+		
+		peso:Double() from accumulate(DatValue(IDO==idoRoot,PROPNAME=="peso_prioridad",p:QMIN),sum(p))
+
+		//NO puede haber una línea de tarea mas prioritaria no asignada todavía
+	    not((and 	DatValue(idoRoot2:IDO!=idoRoot,PROPNAME=="peso_prioridad",QMIN>peso)
+			        ObjValue(IDO==idoRoot2,PROPNAME=="programación",idoLineaIN2:IDOVALUE!=null,idto2:VALUECLS)
+			        ObjValue(IDO==idoLineaIN2, PROPNAME=="producto", idoProductoAny:IDOVALUE!=null)                
+					ObjValue(PROPNAME=="capacidad", IDOVALUE==idoProductoAny)	    			        
+       				not((and	DatValue(IDO==idoLineaIN2, PROPNAME=="fecha_inicio", DATE!=null)
+	    						DatValue(IDO==idoLineaIN2, PROPNAME=="fecha_fin", DATE!=null)
+	    						ObjValue(IDO==idoLineaIN2, PROPNAME=="recurso", VALOR!=null)))))
+						
+        Lock(IDO==idoLineaIN,LOCKEDBYUSER==false,STATE!=Constants.INDIVIDUAL_STATE_INIT_LOCK&&!=Constants.INDIVIDUAL_STATE_END_LOCK)                              
+					
+		FactHierarchy(idtoDispon:IDTO,classDispon:CLASSSUP=="DISPONIBILIDAD")		
+		Individual(idoDispon:IDO!=idoLineaIN, IDTO==idtoDispon, STATE==Constants.INDIVIDUAL_STATE_READY)	
+        factDispon:DatValue(IDO==idoDispon,PROPNAME=="cantidad",qDispon:QMAX>0)
+
+        DatValue(IDO==idoDispon, IDTO==idtoDispon,PROPNAME=="total_horas",qDisponTotal:QMAX)      
+        
+           		                                      
+        DatValue(IDO==idoDispon,PROPNAME=="fecha_fin",fechaFinDisponSc:QMAX>fechaIniPlanifSc&&>fechaFinPredecesor)        			 								 				
+		not(DatValue(IDO==idoLineaIN, PROPNAME=="fecha_inicio", QMAX>=fechaFinDisponSc))
+					 									                    
+		ObjValue(IDO==idoDispon, PROPNAME=="recurso", idoRecurso:IDOVALUE)                
+		ObjValue(IDO==idoRecurso,idtoRecurso:IDTO, PROPNAME=="capacidad", IDOVALUE==idoProductoIN)
+
+		//Si la línea de programación tiene recurso, la disponibilidad seleccionada tiene que apuntar a ESE recurso.
+        not(ObjValue(IDO==idoLineaIN, PROPNAME=="recurso", IDOVALUE!=null&&!=idoRecurso))   					        			                		       		         		            		                                                						
+					 									    			
+		forall( IndividualValue(IDO==idoDispon,partidaProp:PROPNAME=="lote"||=="n._serie"||=="medida1"||=="medida2"||=="talla"||=="color", partidaIdent:VALOR!=null)
+                IndividualValue(IDO==idoLineaIN,PROPNAME==partidaProp, VALOR==partidaIdent))                							 			
+					 									      
+	//No puede haber otra disponibilidad que cumpla pero es anterior,               			                			
+	//u otra linea incluso de menor peso
+	   DatValue(IDO==idoDispon, PROPNAME=="fecha_inicio", fechaIniDisponSc:QMAX!=null)  
+       not((and  				
+        			FactHierarchy(idtoDispon2:IDTO,CLASSSUP=="DISPONIBILIDAD")
+        			Individual(idoDispon2:IDO!=idoDispon&&!=idoLineaIN, IDTO==idtoDispon2, STATE==Constants.INDIVIDUAL_STATE_READY)
+        			ObjValue(IDO==idoDispon2, PROPNAME=="recurso", idoRec2:IDOVALUE!=null)        			        			
+        			
+       				DatValue(IDO==idoDispon2,PROPNAME=="fecha_fin",fechaFinDisponSc2:QMIN>fechaIniPlanifSc&&>fechaFinPredecesor)       			       					 		    					 		  					        			        		        			       
+					DatValue(IDO==idoDispon2,PROPNAME=="cantidad",qDispon2:QMAX>0)		
+					not(ObjValue(IDO==idoLineaIN, PROPNAME=="recurso", IDOVALUE!=null&&!=idoRec2))  	  					    																				
+					//Que sean anterior
+					DatValue(IDO==idoDispon2, PROPNAME=="fecha_inicio", QMAX<fechaIniDisponSc)	
+					not(DatValue(IDO==idoLineaIN, PROPNAME=="fecha_inicio", QMAX>=fechaFinDisponSc2))	
+					forall( IndividualValue(IDO==idoDispon2,partidaProp:PROPNAME=="lote"||=="n._serie"||=="medida1"||=="medida2"||=="talla"||=="color", partidaIdent:VALOR!=null)
+                			IndividualValue(IDO==idoLineaIN,PROPNAME==partidaProp, VALOR==partidaIdent))                			
+             ))            
+		
+		DatValue(IDO==idoLineaIN, PROPNAME=="porcentaje_dedicación",porcientoDedicacion:QMAX!=null)        
+		// Tiene que estar cargado el calendario al que está asociado el recurso.
+		ObjValue(IDO==idoRecurso, PROPNAME=="calendario", idoCalendario:IDOVALUE!=null)
+		DatValue(IDO==idoCalendario, PROPNAME=="rdn", rdnCalendario:VALOR!=null)
+      	calendario:CalendarioHabil(ID==rdnCalendario)		                                                                                                       
+then
+		dma.printRule("==============ASIGNAR DISPONIBILIDAD linea "+idoLineaIN+ " dispon:" +idoDispon+" cantidad "+qProgramada);
+		//long cantidad_A_Consumir= Math.min(qDispon.longValue(),Math.max(qProgramada.longValue(),cantidadLinea.longValue()));
+		
+		if(classDispon.equals("LÍNEA")){
+			dma.printRule("==============ASIGNAR DISPON, TAREA "+rdnTask+" linea "+idoLineaIN+" ROBA POSICION a linea "+idoDispon); 
+			if(dma.getDDM().hasProperty(idtoDispon, dma.getIdProperty("fecha_fin")))					
+				dma.delValues(idoDispon, idtoDispon,"fecha_fin");
+			//reseteo esta línea para que pueda ser reasignada. En principio solo robará tareas de mismo recurso	
+			dma.delValues(idoLineaIN, idtoLineaIN,"fecha_fin");
+			dma.delValues(idoLineaIN, idtoLineaIN,"fecha_inicio");
+		}else{
+        Domain lineaIN=new Domain(idoLineaIN,idtoLineaIN);        
+        Domain dispon=new Domain(idoDispon,idtoDispon);                 
+
+		boolean yaFechaIniLinea=dma.getValue(lineaIN,"fecha_inicio")!=null;
+		    
+        Long fechaIniDemandaSc= Math.max(fechaFinPredecesor.longValue(),fechaIniPlanifSc.longValue());
+		TimeValue tFechaIniLinea=(TimeValue)dma.getValue(lineaIN,"fecha_inicio");
+		if(tFechaIniLinea!=null&&tFechaIniLinea.getRelativeSecondsMax()>fechaIniDemandaSc) 
+			fechaIniDemandaSc=tFechaIniLinea.getRelativeSecondsMax();
+        
+		TimeValue tFechaFinDemanda=(TimeValue)dma.getValue(new Domain(idoRoot,idtoRoot),"fecha_fin");            
+                
+        Long fechaIniSolape= fechaIniDisponSc.longValue();
+        double cantidadDisponResto=qDispon;
+        
+        if(fechaIniDemandaSc!=null)  fechaIniSolape=Math.max(fechaIniSolape,fechaIniDemandaSc);                	     
+ 	   	
+ 	   	  
+ 	   	double factorDisponibilidad=qDispon/qDisponTotal*100;
+ 	   	
+ 	   	double dedicacionAsignada=Math.min( porcientoDedicacion,factorDisponibilidad );
+ 	   	
+ 	    long fechaFinProgramada=calendario.getFechaFin(fechaIniSolape,qProgramada,dedicacionAsignada/100)/Constants.TIMEMILLIS; 	     	     	    
+ 	    //Puede ser que el calendario no tenga disponible la fecha fin que se necesitaria, y dicha fecha fin sea la final del calendario. En ese caso recortamos
+ 	    double horasPosibles= calendario.getHorasHabiles(fechaIniSolape,fechaFinProgramada);
+ 	    if(horasPosibles<qProgramada){
+ 	    	qProgramada=0.0+horasPosibles;
+ 	      	dma.setValue(lineaIN,"cantidad",new DoubleValue(horasPosibles));
+ 	    } 	    		
+		
+		if(fechaFinProgramada>fechaFinDisponSc){
+			double horasSolape= calendario.getHorasHabiles(fechaIniSolape,fechaFinDisponSc.longValue());
+			long parteFin_segundosIni=calendario.getIniToNextDay(fechaFinDisponSc.longValue()*Constants.TIMEMILLIS)/Constants.TIMEMILLIS; 
+			if(horasSolape>0){
+				String excluproperties="cantidad#importe#documento#fecha_inicio#fecha_fin";        		
+        		Domain lineaIN_target=dma.cloneIndividual(idoLineaIN,idtoLineaIN, idtoLineaIN, excluproperties);                
+        		dma.printRule("\nCrear linea cantidad "+lineaIN_target);                            			
+        	
+        		double newQIni=horasSolape*dedicacionAsignada/100;
+				dma.setValue(lineaIN_target,"cantidad",new DoubleValue(qProgramada-newQIni));
+			
+				
+				dma.setValue(lineaIN_target,"fecha_inicio",new TimeValue(parteFin_segundosIni)); 		    	
+        		dma.addValue(new Domain(idoRoot,idtoRoot),propLinea,new ObjectValue(lineaIN_target)); 
+        	
+        		dma.setValue(idoLineaIN,idtoLineaIN,"cantidad",new DoubleValue(newQIni));
+        		fechaFinProgramada=  fechaFinDisponSc.longValue();
+        		qProgramada=newQIni;
+        	}else{
+        		fechaIniSolape=parteFin_segundosIni;
+        	}
+		}
+		//Si hemos disparado, por ejemplo por un cambio de cantidad de la linea, pero ya estaba asignado el recurso horario,
+		//a la hora de partir disponibilidades debo descontar el programación de esta línea, sabiendo que despues será actualizado
+		//correctamente por la regla de actualizar disponibilidad como quede la linea. De lo contrario, puedo dejar una disponibilidad
+		// con una ocupación (por llamar a set value absoluto) irreal, por ejmplo si se ha reducido la cantidad de la línea
+				
+                     		      	    
+		dma.printRule("Dispon solape: dispon Q:"+qDispon+" hDispon:"+qDisponTotal+" INI:" +Auxiliar.secToDate(fechaIniDisponSc)+" fin "+  Auxiliar.secToDate(fechaFinDisponSc)+ " prog "+Auxiliar.secToDate(fechaFinProgramada)+ " "+dedicacionAsignada);
+		      		      	            		                 
+		//Si la fecha la linea sobrepasa la dispon, la cantidad de la linea supera lo asumible por el dispon, por tanto 
+		//el dispon quedará negativo y se partirá la primera linea que contribuye a dicho dispon
+		//if(fechaFinDisponSc!=null && timeFinNew.getRelativeSecondsMax()>fechaFinDisponSc)	timeFinNew=new TimeValue(fechaFinDisponSc);
+		   
+ 		//int horasSolape=calendario.getHorasHabiles(fechaIniSolape.longValue(),fechaFinSolape.longValue());	
+ 		//TODO, cuando haya porcentaje dedicación, ponderar por el el sisguiente set
+ 		//dma.setValue(lineaIN,"cantidad",new DoubleValue(0.0+horasSolape));
+ 			   		
+ 		//Puede haber una restriccion en el doc o la linea para que su fecha inicio sea mayor que la fecha inicio de la disponibilidad
+		dma.setValue(lineaIN,"fecha_inicio",new TimeValue(fechaIniSolape));
+		//la siguiente decha fin debería extenderse de acuerdo a una dedicación menor
+		//dma.setValue(lineaIN,"fecha_fin",new TimeValue(fechaIniSolape+(qProgramada.longValue()-1)*3600));//Puede superar a la disponibilidad, en cuyo caso 
+				
+		dma.setValue(lineaIN,"fecha_fin",new TimeValue(fechaFinProgramada));
+		//contribuirá sobre otra disponibilidad quizas sin cantidad disponible, y otra regla lo partirá
+		if(dma.getValue(lineaIN,"recurso") == null){
+			dma.setValue(lineaIN,"recurso",new ObjectValue(idoRecurso,idtoRecurso));
+			dma.printRule("ASIGNANDO " +fechaIniDisponSc+" recurso "+idoRecurso);			
+		}else
+			dma.printRule("ASIGNANDO " +fechaIniDisponSc+" recurso "+idoRecurso); 
+		}         
+end
+
+rule "PARTIR DISPONIBILIDAD"
+//Parte porque un extremo de una linea, tanto existente como eliminada, se posiciona entre medio de una disponibildiad
+//No se agrega porque agregar solo funciona en bddrules, si bien hay un patron definido posible que consiste en 
+//en recordar la fecha en que se parte, y no agregar lineas
+salience 150 //mas prioridad que actualizar dispon para estar seguro una asignacion de tarea todavía no ha roto homogeneidad dispon
+//TODO: soportar porcentaje dedicacion que permitiria asignar mas de una tarea a un mismo dispon disponibilidad
+agenda-group "rules" when         
+        
+        forall(	ObjValue(CLASSNAME=="Programar_de_nuevo",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstadotask:VALOR!=null)		
+				DatValue(ID==idEstadotask,PROPNAME=="rdn",VALOR!=Constants.INDIVIDUAL_PREVALIDANDO))	
+					
+        FactHierarchy(idtoLineaIN:IDTO,CLASSSUP=="LÍNEA_SERVICIO")
+        Individual(idoLineaIN:IDO,idLinea:ID,IDTO==idtoLineaIN,lineaState:STATE)
+        Lock(IDO==idoLineaIN,IDTO==idtoLineaIN,LOCKEDBYUSER==false)
+        //No exigo que la object property tenga valor porque la linea puede haber sido eliminada y tambien debe partir   
+
+        ObjValue(PROPNAME=="programación",INITIALVALOR==idLinea||IDOVALUE==idoLineaIN)
+        
+        //Si estamos en programar de nuevo, no se puede partir por eliminar una linea de programacion que ya existía
+        //por tanto la linea debe existir ahora, es decir, aqui fuerzo a que de las dos posibilidades de arriba, correlar programacion por initialvalor o idovalue, sea idovalue
+        forall(	ObjValue(CLASSNAME=="Programar_de_nuevo", PROPNAME=="estadoRealizacion",VALOR!=null)
+        		ObjValue(PROPNAME=="programación",IDOVALUE==idoLineaIN))        		
+        
+        ObjValue(IDO==idoLineaIN,PROPNAME=="producto",idoProductoIN:IDOVALUE)
+
+        //Pongo mayor igual que 1 para evitar ruido condecimales 0.0x
+		DatValue(IDO==idoLineaIN, PROPNAME=="cantidad", qProgramada:QMAX, qProgamadaInit:INITIALDOUBLE, qLineaChanged:hasCHANGED)    			   		         	
+        
+        eval(qProgramada.doubleValue()>=0.02)
+        
+       	DatValue(IDO==idoLineaIN, PROPNAME=="fecha_inicio", fechaIniPlanifSc:QMAX!=null,lineaINIChanged:hasCHANGED)
+       	DatValue(IDO==idoLineaIN, PROPNAME=="fecha_fin", fechaFinPlanifSc:QMAX!=null,lineaENDChanged:hasCHANGED)
+                                   
+
+		FactHierarchy(idtoRecurso:IDTO,CLASSSUP=="RECURSO")
+		ObjValue(IDTO==idtoRecurso, idoRecurso:IDO, PROPNAME=="capacidad", IDOVALUE==idoProductoIN)
+		
+		FactHierarchy(idtoDispon:IDTO,CLASSSUP=="DISPONIBILIDAD")	
+        Individual(idoDispon:IDO, IDTO==idtoDispon,STATE==Constants.INDIVIDUAL_STATE_READY)
+        ObjValue(IDO==idoDispon, PROPNAME=="recurso", IDOVALUE==idoRecurso,recursoChanged:hasCHANGED)
+		        	        
+        
+        //Si la línea de programación tiene recurso, la disponibilidad seleccionada tiene que apuntar a ESE recurso.
+        forall(	ObjValue(IDO==idoLineaIN, PROPNAME=="recurso", idoRecursoIN:IDOVALUE!=null)
+        		ObjValue(IDO==idoDispon, PROPNAME=="recurso", IDOVALUE==idoRecursoIN))                               
+        
+		DatValue(IDO==idoDispon,PROPNAME=="cantidad",qDispon:QMAX,qDisponInit:INITIALDOUBLE,qDisponChanged:hasCHANGED)		
+		DatValue(IDO==idoDispon,PROPNAME=="total_horas",qDisponTotal:QMAX)
+		
+		forall( IndividualValue(IDO==idoDispon,partidaProp:PROPNAME=="lote"||=="n._serie"||=="medida1"||=="medida2"||=="talla"||=="color", partidaIdent:VALOR!=null)
+                IndividualValue(IDO==idoLineaIN,PROPNAME==partidaProp, VALOR==partidaIdent))      
+           		 	
+		//HAY SOLAPE
+		DatValue(IDO==idoDispon, PROPNAME=="fecha_inicio", fechaIniDisponSc:QMAX<=fechaFinPlanifSc,disponINIChanged:hasCHANGED)		
+		DatValue(IDO==idoDispon, PROPNAME=="fecha_fin", fechaFinDisponSc:QMAX>=fechaIniPlanifSc,disponENDChanged:hasCHANGED)
+				
+		//Solo parte si algo relevante ha cambiado, o se acaba de eliminar una tarea que existia en BD, lo cual tambien modifica la homogeneidad de la dedicación a la disponibilidad
+		eval(idoLineaIN>0 && lineaState==Constants.INDIVIDUAL_STATE_DELETED || qLineaChanged||lineaINIChanged||lineaENDChanged||qDisponChanged||disponINIChanged||disponENDChanged||recursoChanged)	 						
+		//Un extremo de la linea queda en el interior de la disponibilidad, ques igual a que habiendo solape, la linea no exceda por ambos extremos a la dispon
+			
+		eval(!(fechaIniPlanifSc <= fechaIniDisponSc && fechaFinPlanifSc >= fechaFinDisponSc) )
+				
+		//el solape al menos mayor que un minuto
+		eval(Math.min(fechaFinDisponSc,fechaFinPlanifSc) -Math.max(fechaIniDisponSc,fechaIniPlanifSc)>=60)
+
+		// Tiene que estar cargado el calendario al que está asociado el recurso.
+		ObjValue(IDO==idoRecurso, PROPNAME=="calendario", idoCalendario:IDOVALUE!=null)
+		DatValue(IDO==idoCalendario, PROPNAME=="rdn", rdnCalendario:VALOR!=null)
+      	calendario:CalendarioHabil(ID==rdnCalendario)			           
+                                                                                                       
+then
+		dma.printRule("==============PARTIR DISPONIBILIDAD linea "+idoLineaIN+ " dispon:" +idoDispon+" cantidad "+qProgramada+ " ini linea "+Auxiliar.secToDate(fechaIniPlanifSc)+" ini dispon "+Auxiliar.secToDate(fechaIniDisponSc));
+		dma.printRule("============== ini linea "+fechaIniPlanifSc+" ini dispon "+fechaIniDisponSc);
+		//long cantidad_A_Consumir= Math.min(qDispon.longValue(),Math.max(qProgramada.longValue(),cantidadLinea.longValue()));
+        Domain lineaIN=new Domain(idoLineaIN,idtoLineaIN);        
+        Domain dispon=new Domain(idoDispon,idtoDispon);                                                                           	      	   	 	    
+		
+		Long fechaIniSolape= Math.max(fechaIniDisponSc.longValue(),fechaIniPlanifSc.longValue()); 
+		Long fechaFinSolape= Math.min(fechaFinDisponSc.longValue(),fechaFinPlanifSc.longValue()); 	       	   
+ 	                               
+        double periodoLinea=calendario.getHorasHabiles(fechaIniPlanifSc.longValue(),fechaFinPlanifSc.longValue());
+   		
+   		//qDispon total es el total de horas habiles de la disponibilidad para el período de solape
+   		double qTotalSolape=calendario.getHorasHabiles(fechaIniSolape,fechaFinSolape);
+   		//double qProgInit= qProgamadaInit==null ?0:qProgamadaInit;
+   		
+   		//double contribucionLinea=qProgramada-qProgInit;
+   		
+   		//Descuento la contribucion de la linea en la disponibilidad, que será actualizada mas tarde   		   	
+   		   			
+                                  		      	           
+        double factorOcupacionOriginal=qDispon/qDisponTotal;
+   		                      		             		      	    
+		dma.printRule("Dispon solape: dispon Q:"+qDispon+" hDispon:"+qDisponTotal+" INI:" +Auxiliar.secToDate(fechaIniDisponSc)+","+  Auxiliar.secToDate(fechaIniSolape)+" fin "+  Auxiliar.secToDate(fechaFinDisponSc)+","+  Auxiliar.secToDate(fechaFinSolape)+ " "+factorOcupacionOriginal);
+		boolean reemplazadaDispon=false;
+
+		       		     
+        if(fechaIniDisponSc<fechaIniSolape && fechaIniSolape-fechaIniDisponSc>1 ){        	
+			String excluproperties="rdn#cantidad#fecha_fin#fecha_alta#n._serie";
+    	    Domain disponPartIni=dma.cloneIndividual(idoDispon,idtoDispon, idtoDispon, excluproperties);
+    	    dma.setValue(disponPartIni,"rdn",new StringValue("&id"+disponPartIni.getIdo()+"&"));  	
+    	    //la nueva fecha inicio es la fecha fin anterior - 1 dia
+    	    
+    	    //pido la fecha del dia anterior (el dia anterior lo calculo restando 12 horas)
+    	    long parteIni_segundosFinal=calendario.getEndDiaPrevio( fechaIniSolape*Constants.TIMEMILLIS )/Constants.TIMEMILLIS;
+            dma.setValue(disponPartIni,"fecha_fin",new TimeValue(parteIni_segundosFinal));	            
+            //dma.setValue(disponPartIni,"fecha_inicio",new TimeValue(fechaIniDisponSc));	            
+                	           
+            double horasDisponTotal= qDisponTotal;
+            double horasDisponTotalIni=calendario.getHorasHabiles(fechaIniDisponSc.longValue(),parteIni_segundosFinal);
+            
+            double cantidadDisponResto= horasDisponTotal-horasDisponTotalIni;
+            double qA=horasDisponTotalIni*factorOcupacionOriginal;
+			dma.setValue(disponPartIni,"cantidad",new DoubleValue(0.0));//No puedo inicializar firstvalue, la contribucion proporcionara el valor correcto
+			dma.setValue(disponPartIni,"total_horas",new DoubleValue(horasDisponTotalIni));
+			//if(qDisponInit!=null){
+				//factDispon.addOffset( -qA );
+				dma.deleteObject(dispon);
+				dispon=dma.cloneIndividual(idoDispon,idtoDispon, idtoDispon, "rdn#cantidad#fecha_inicio#fecha_alta#n._serie#lote#total_horas"); 
+				idoDispon=dispon.getIdo();
+				dma.setValue(dispon,"rdn",new StringValue("&id"+dispon.getIdo()+"&"));
+				reemplazadaDispon=true;				
+			//}
+			//double factorOcupacionResto=(cantidadDisponResto*factorOcupacionOriginal+contribucionLinea)/cantidadDisponResto; 
+			  
+			dma.setValue(dispon,"cantidad",new DoubleValue(0.0));//No puedo inicializar firstvalue, la contribucion proporcionara el valor correcto
+			dma.setValue(dispon,"fecha_inicio",new TimeValue(fechaIniSolape));		
+			dma.setValue(dispon,"total_horas",new DoubleValue(cantidadDisponResto));
+			dma.printRule("DBG PARTIR INICIO "+qDispon+" fechas:"+Auxiliar.secToDate(fechaIniDisponSc)+" "+Auxiliar.secToDate(fechaIniSolape)+" "+Auxiliar.secToDate(fechaFinDisponSc));
+        }
+       
+		        		
+		if( fechaFinSolape<fechaFinDisponSc && fechaFinDisponSc-fechaFinSolape>1 ){
+			String excluproperties="rdn#cantidad#fecha_fin#fecha_alta#n._serie";
+    	    Domain disponPartIni=dma.cloneIndividual(idoDispon,idtoDispon, idtoDispon, excluproperties);  	
+			dma.setValue(disponPartIni,"rdn",new StringValue("&id"+disponPartIni.getIdo()+"&"));      
+    	    //la nueva fecha inicio es la fecha fin anterior - 1 dia
+            dma.setValue(disponPartIni,"fecha_fin",new TimeValue(fechaFinSolape));	
+            
+            double horasDisponTotal=calendario.getHorasHabiles(fechaIniSolape.longValue(),fechaFinDisponSc.longValue());
+        	double horasDisponTotalIni=calendario.getHorasHabiles(fechaIniSolape.longValue(),fechaFinSolape.longValue());     
+            
+            double cantidadDisponResto= horasDisponTotal-horasDisponTotalIni;
+
+			//double factorOcupacionInicial=(horasDisponTotalIni*factorOcupacionOriginal+contribucionLinea)/horasDisponTotalIni; 
+            double qA=horasDisponTotalIni*factorOcupacionOriginal;
+            
+			dma.setValue(disponPartIni,"cantidad",new DoubleValue(0.0));//No puedo inicializar firstvalue, la contribucion proporcionara el valor correcto
+			dma.setValue(disponPartIni,"total_horas",new DoubleValue(horasDisponTotalIni));
+			//if(qDisponInit!=null && !reemplazadaDispon){
+				//factDispon.addOffset( -qA );
+				dma.deleteObject(dispon);
+				dispon=dma.cloneIndividual(idoDispon,idtoDispon, idtoDispon, "rdn#cantidad#fecha_inicio#fecha_alta#n._serie#lote#total_horas");		
+				idoDispon=dispon.getIdo();				
+				dma.setValue(dispon,"rdn",new StringValue("&id"+dispon.getIdo()+"&"));															
+			//}
+			dma.setValue(dispon,"cantidad",new DoubleValue(0.0));//No puedo inicializar firstvalue, la contribucion proporcionara el valor correcto		
+			long parteFin_segundosInicio= calendario.getIniToNextDay(fechaFinSolape*Constants.TIMEMILLIS)/Constants.TIMEMILLIS;
+			dma.setValue(dispon,"fecha_inicio",new TimeValue(parteFin_segundosInicio));
+			dma.setValue(dispon,"total_horas",new DoubleValue(cantidadDisponResto));
+								            	
+            dma.printRule("DBG PARTIR FIN:"+horasDisponTotal+" "+cantidadDisponResto+" "+Auxiliar.secToDate(fechaIniSolape)+" "+Auxiliar.secToDate(fechaFinSolape)+" "+Auxiliar.secToDate(fechaFinDisponSc));
+		}		       
+end
+
+rule "PARTIR CONSUMO POR DISPONIBILIDAD"
+salience 50 //Menos prioridad que actualizar, de lo contrario si a una dispon contribuyen dos lineas, las dos se parten antes de saber si con la primera era suficiente
+//TODO: soportar porcentaje dedicacion que permitiria asignar mas de una tarea a un mismo dispon disponibilidad
+agenda-group "rules" when 
+        
+        FactHierarchy(idtoDispon:IDTO,CLASSSUP=="DISPONIBILIDAD")	
+        Individual(IDTO==idtoDispon, idoDispon:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)  
+        ObjValue(IDO==idoDispon,PROPNAME=="recurso", idoRecurso:IDOVALUE,idtoRecurso:VALUECLS) 		     
+                
+        DatValue(IDO==idoDispon,PROPNAME=="cantidad",qDispon:QMAX<=-1)      
+      	DatValue(IDO==idoDispon, PROPNAME=="fecha_inicio", fechaIniDisponSc:QMAX!=null)
+		DatValue(IDO==idoDispon, PROPNAME=="fecha_fin", fechaFinDisponSc:QMAX!=null)      	        
+        DatValue(IDO==idoDispon, PROPNAME=="total_horas", totalHDisponSc:QMAX!=null)   
+        
+        ObjValue(IDO==idoRecurso, PROPNAME=="calendario", idoCalendario:IDOVALUE!=null)
+		DatValue(IDO==idoCalendario, PROPNAME=="rdn", rdnCalendario:VALOR!=null)
+      	calendario:CalendarioHabil(ID==rdnCalendario)	
+        
+        ////////////        
+    	FactHierarchy(idtoRoot:IDTO,CLASSSUP=="PRODUCCIÓN")    	    	
+        ObjValue(IDTO==idtoRoot,idoRoot:IDO, propLinea:PROPNAME=="programación",idoLineaIN:IDOVALUE)     
+        DatValue(IDO==idoRoot, PROPNAME=="peso_prioridad",peso:DOUBLEVALUE!=null)
+        ObjValue(IDO==idoLineaIN,PROPNAME=="producto",idoProductoIN:IDOVALUE,proChanged:initialValuesChanged)
+		DatValue(IDO==idoLineaIN, PROPNAME=="cantidad", qProgramada:QMAX>0, qProgInit:INITIALDOUBLE)        
+		ObjValue(IDO==idoLineaIN, PROPNAME=="recurso",IDOVALUE==idoRecurso,recChanged:initialValuesChanged)         		
+      	
+        Lock(IDO==idoLineaIN,idtoLineaIN:IDTO,LOCKEDBYUSER==false,STATE!=Constants.INDIVIDUAL_STATE_INIT_LOCK&&!=Constants.INDIVIDUAL_STATE_END_LOCK)              		                          	         
+      	//Condicion hay solape		
+		DatValue(IDO==idoLineaIN, PROPNAME=="fecha_inicio", fechaIniLinSc:QMAX<=fechaFinDisponSc, initFechaIniLinea:INITIALDOUBLE)						
+		DatValue(IDO==idoLineaIN, PROPNAME=="fecha_fin", fechaFinLinSc:QMAX>=fechaIniDisponSc, initFechaFinLinea:INITIALDOUBLE)	
+		
+		//el solape al menos mayor que un minuto
+		eval(Math.min(fechaFinDisponSc,fechaFinLinSc) -Math.max(fechaIniDisponSc,fechaIniLinSc)>=120)				
+		
+        forall( IndividualValue(IDO==idoDispon,partidaProp:PROPNAME=="lote"||=="n._serie"||=="medida1"||=="medida2"||=="talla"||=="color", partidaIdent:VALOR!=null)
+                IndividualValue(IDO==idoLineaIN,PROPNAME==partidaProp, VALOR==partidaIdent))                                  
+               
+        //Que no haya otra linea que contribuye a la cantidad negativa, siendo de menor prioridad
+        not((and
+            		FactHierarchy(idtoRoot2:IDTO,CLASSSUP=="PRODUCCIÓN")    	    	
+        			ObjValue(IDTO==idtoRoot2,idoRoot2:IDO!=idoRoot, PROPNAME=="programación",idoLineaINAny:IDOVALUE)
+        			DatValue(IDO==idoRoot2, PROPNAME=="peso_prioridad",DOUBLEVALUE<peso)     
+					DatValue(IDO==idoLineaINAny, PROPNAME=="cantidad", QMAX>0)        
+					ObjValue(IDO==idoLineaINAny, PROPNAME=="recurso",IDOVALUE==idoRecurso)         		        			            		                          	         
+      				//Condicion hay solape		
+					DatValue(IDO==idoLineaINAny, PROPNAME=="fecha_inicio", fechaIniLinSc2:QMAX<=fechaFinDisponSc)						
+					DatValue(IDO==idoLineaINAny, PROPNAME=="fecha_fin", fechaFinLinSc2:QMAX>=fechaIniDisponSc)	
+		
+					//el solape al menos mayor que un minuto
+					eval(Math.min(fechaFinDisponSc,fechaFinLinSc2) -Math.max(fechaIniDisponSc,fechaIniLinSc2)>=120)				
+		
+        			forall( IndividualValue(IDO==idoDispon,partidaProp:PROPNAME=="lote"||=="n._serie"||=="medida1"||=="medida2"||=="talla"||=="color", partidaIdent:VALOR!=null)
+                			IndividualValue(IDO==idoLineaINAny,PROPNAME==partidaProp, VALOR==partidaIdent))
+          ))
+                                                                                                             
+then
+        dma.printRule("==============PARTIR CONSUMO POR DISPONIBILIDAD "+idoLineaIN+ " cant:"+qProgramada+" dispon:"+idoDispon+" q:"+qDispon);
+        //qProgramada esta sesion solo tendra sentido si dispon y linea coinciden en fechas, de lo contrario solo partire proporcionalmente a current valores a la espera que se actualice la disponibilidad
+        // y se vuelva a disparar esta regla ya coincidente gracias a haber partido
+        double qProgConsumidaEstaSesion=qProgramada;
+        if( qProgInit!=null ) qProgConsumidaEstaSesion=-qProgInit;
+        
+        //Caluclo el porcentaje dedicacion de 0 a 1 real, no el de la linea que es lo máximo asignable      
+        double horasPeriodoCurr=calendario.getHorasHabiles(fechaIniLinSc.longValue(),fechaFinLinSc.longValue());
+         
+        //horas habiles de diferencia entre los inicios. Ser coincidente equivale a no haber decalajae habil y tener misma duracion 
+        double horasHabilesDecalaje=0;
+        
+        if(fechaIniLinSc<fechaIniDisponSc) horasHabilesDecalaje=calendario.getHorasHabiles(fechaIniLinSc.longValue(),fechaIniDisponSc.longValue());
+        if(fechaIniDisponSc<fechaIniLinSc) horasHabilesDecalaje=calendario.getHorasHabiles(fechaIniDisponSc.longValue(),fechaIniLinSc.longValue());
+        
+        boolean sonCoincidentes= horasHabilesDecalaje<=0.02 && (Math.abs(totalHDisponSc-horasPeriodoCurr)<=0.01 || Math.abs(-totalHDisponSc+horasPeriodoCurr)<=0.01) ;
+        
+		double porcientoDedicacionReal=qProgramada/horasPeriodoCurr;  
+        dma.printRule(" COINCIDENTE "+sonCoincidentes);
+        //if(qProgConsumidaEstaSesion>0.02){
+        	Domain lineaIN=new Domain(idoLineaIN,idtoLineaIN);        
+        	Domain dispon=new Domain(idoDispon,idtoDispon);         
+            
+        	Long fechaIniSolape= Math.max(fechaIniDisponSc.longValue(),fechaIniLinSc.longValue()); 
+  			Long fechaFinSolape=Math.min(fechaFinDisponSc.longValue(),fechaFinLinSc.longValue());
+                
+        	double cantidadLineaResto=qProgramada;                    
+            
+        	if(fechaIniLinSc<fechaIniSolape){     
+        		long parteIni_segundosFin=calendario.getEndDiaPrevio(fechaIniSolape*Constants.TIMEMILLIS)/Constants.TIMEMILLIS;
+				double horasA=0.0+calendario.getHorasHabiles(fechaIniLinSc.longValue(),parteIni_segundosFin)*porcientoDedicacionReal;
+ 				double totalHoras=qProgramada;
+ 				double horasB=totalHoras-horasA;				
+				if( horasA>=0.02 && horasB>=0.02){  
+
+ 			 		cantidadLineaResto=horasB; 			 	        	
+                
+        			String excluproperties="cantidad#importe#documento#fecha_fin";
+        			//Notar que lineaIN puede haber cambiado al partir, y representa la parte del solape
+        			Domain lineaIN_A=dma.cloneIndividual(lineaIN.getIdo(),idtoLineaIN, idtoLineaIN, excluproperties);                
+        	
+					dma.setValue(lineaIN_A,"cantidad",new DoubleValue(horasA));
+                	dma.setValue(lineaIN_A,"fecha_fin",new TimeValue(parteIni_segundosFin));
+                        	
+					dma.printRule("\nPARTIR INICIO, Crea linea "+lineaIN_A.getIdo()+ " qA:"+horasA+" aB:"+horasB);        	         			
+					dma.setValue(lineaIN,"cantidad",new DoubleValue(horasB));    	
+        			dma.addValue(new Domain(idoRoot,idtoRoot),propLinea,new ObjectValue(lineaIN_A));        
+        			dma.setValue(lineaIN,"fecha_inicio",new TimeValue(fechaIniSolape)); 
+        		}       	
+        	}
+		        		
+			if( fechaFinSolape<fechaFinLinSc){
+				double horasA=0.0+calendario.getHorasHabiles(fechaIniSolape.longValue(),fechaFinSolape)*porcientoDedicacionReal;
+				double totalHoras=cantidadLineaResto;
+ 				double horasB=totalHoras-horasA;
+				if( horasA>=0.02 && horasB>=0.02 ){  
+ 			 		cantidadLineaResto=horasA; 			 	        	
+                
+                	long parteFin_segundosIni=calendario.getIniToNextDay(fechaFinSolape*Constants.TIMEMILLIS)/Constants.TIMEMILLIS;
+        			String excluproperties="cantidad#importe#documento#fecha_inicio";
+        			//Notar que lineaIN puede haber cambiado al partir, y representa la parte del solape
+        			Domain lineaIN_B=dma.cloneIndividual(lineaIN.getIdo(),idtoLineaIN, idtoLineaIN, excluproperties);                
+        	
+					dma.setValue(lineaIN_B,"cantidad",new DoubleValue(horasB));
+                	dma.setValue(lineaIN_B,"fecha_inicio",new TimeValue(parteFin_segundosIni));
+                        	
+					dma.printRule("\nPARTIR FIN, Crea linea "+lineaIN_B.getIdo()+ " qA:"+horasA+" aB:"+horasB);  	         			
+					dma.setValue(lineaIN,"cantidad",new DoubleValue(horasA));    	
+        			dma.addValue(new Domain(idoRoot,idtoRoot),propLinea,new ObjectValue(lineaIN_B));        
+        			dma.setValue(lineaIN,"fecha_fin",new TimeValue(fechaFinSolape));
+        		}    								
+			}		
+       
+       		if(sonCoincidentes){
+	   		
+	   		long parteFin_segundosIni=calendario.getIniToNextDay(fechaFinSolape*Constants.TIMEMILLIS)/Constants.TIMEMILLIS;
+	   		
+	   		if(qProgConsumidaEstaSesion<=-qDispon){
+	   			dma.printRule("\nReset linea "+lineaIN);
+   				//dma.delValues(lineaIN,"fecha_inicio");
+   				dma.delValues(lineaIN,"fecha_fin");
+   				//No puedo quitarle el recurso, porque si no se dispara "cantidad programada acorde a dedicacion" ya que ve no hay bastante progr para lo demandado
+   				//dma.delValues(lineaIN,"recurso");
+   				dma.setValue(lineaIN,"fecha_inicio",new TimeValue(parteFin_segundosIni));
+   			}else{          
+   				//Parto una nueva linea sin fecha ni recurso. lineaIN apunta ahora a la parte de linea de solape ya con fechas partidas    
+   				
+   				double cantidadAMinorar= Math.min(qProgConsumidaEstaSesion,-qDispon);                   	     	    		                
+        		dma.setValue(lineaIN,"cantidad",new DoubleValue(cantidadLineaResto-cantidadAMinorar));//Cantidad dispon es negativo, por tanto resta lo que falta
+        		
+        		dma.setValue(idoDispon,idtoDispon,"cantidad",new DoubleValue(qDispon+cantidadAMinorar));//Anticipo como se se verá modificada dispon, para evitar
+        		//que se dispare partir de nuevo con la nueva linea a crear, debido a que partir tiene mayor prioridad que actualizar
+                           
+        		String excluproperties="recurso#cantidad#importe#documento#fecha_inicio#fecha_fin";
+        		//Notar que lineaIN puede haber cambiado al partir, y representa la parte del solape
+        		Domain lineaIN_target=dma.cloneIndividual(lineaIN.getIdo(),idtoLineaIN, idtoLineaIN, excluproperties);                
+        		dma.printRule("\nCrear linea cantidad "+lineaIN_target.getIdo() +" " +cantidadAMinorar);                            			
+				dma.setValue(lineaIN_target,"cantidad",new DoubleValue(cantidadAMinorar));
+				dma.setValue(lineaIN_target,"fecha_inicio",new TimeValue(parteFin_segundosIni)); 		    	
+        		dma.addValue(new Domain(idoRoot,idtoRoot),propLinea,new ObjectValue(lineaIN_target));      
+      		}
+      		}
+      	//}                
+end
+
+
+rule "ACTUALIZAR CANTIDAD DISPONIBLE"
+salience 100
+ agenda-group "rules" when 
+  	
+  	FactHierarchy(CLASSSUP=="DISPONIBILIDAD",idtoDispon:IDTO)	
+	ObjValue(idoDispon:IDO,IDTO==idtoDispon,PROPNAME=="recurso",idRecurso:VALOR!=null)
+	DatValue(ID==idRecurso, PROPNAME=="nombre", nombreRecurso:VALOR!=null)
+	
+	ObjValue(ID==idRecurso, PROPNAME=="calendario", idoCalendario:IDOVALUE!=null)
+	DatValue(IDO==idoCalendario, PROPNAME=="rdn", rdnCalendario:VALOR!=null)
+    calendario:CalendarioHabil(ID==rdnCalendario)
+    eval( calendario.getHorasHabiles() > 0)
+	DatValue(IDO==idoDispon, PROPNAME=="fecha_inicio",fechaIniDispon:QMIN!=null, fIni:DATE)	    				
+	DatValue(IDO==idoDispon, PROPNAME=="fecha_fin",fechaFinDispon:QMIN!=null, fFin:DATE)
+	
+	Individual(IDO==idoDispon,STATE==Constants.INDIVIDUAL_STATE_READY)
+	contributionProdINIT: Double() //No contemplo la contrib inicial, no se almacenar trabajos sin confirmar
+    	from accumulate((and	
+						    	FactHierarchy(CLASSSUP=="PRODUCCIÓN",idtoProduccion:IDTO)
+								ObjValue(IDTO==idtoProduccion,idTask:ID!=null,propLinea:PROPNAME=="programación",idLineaFeed:INITIALVALOR)
+								ObjValue(ID==idLineaFeed,PROPNAME=="recurso",INITIALVALOR==idRecurso)								 
+								forall(	ObjValue(IDO==idoDispon,PROPNAME=="producto", idProducto:INITIALVALOR!=null)								
+										ObjValue(ID==idLineaFeed,PROPNAME=="producto", INITIALVALOR==idProducto))
+								DatValue(ID==idLineaFeed,PROPNAME=="cantidad",cantidad:INITIALDOUBLE!=null)
+								DatValue(ID==idLineaFeed, PROPNAME=="fecha_inicio",fechaIniLin:INITIALDOUBLE<=fechaFinDispon)
+								DatValue(ID==idLineaFeed, PROPNAME=="fecha_fin",fechaFinLin:INITIALDOUBLE>=fechaIniDispon)),								
+											
+					sum( -calendario.contribucionLinea(cantidad,fechaIniLin,fechaIniDispon,fechaFinLin,fechaFinDispon))) 
+					
+
+	contributionProdCURR: Double() //No contemplo la contrib inicial, no se almacenar trabajos sin confirmar
+    	from accumulate((and	
+						    	FactHierarchy(CLASSSUP=="PRODUCCIÓN",idtoProduccion:IDTO)
+								ObjValue(IDTO==idtoProduccion,idTask:ID!=null,propLinea:PROPNAME=="programación",idLineaFeed:VALOR) 						    							    						    								    							    
+					    		ObjValue(ID==idLineaFeed,PROPNAME=="recurso",VALOR==idRecurso)		
+					    		Individual(ID==idLineaFeed, STATE==Constants.INDIVIDUAL_STATE_READY)						 
+								forall(	ObjValue(IDO==idoDispon,PROPNAME=="producto", idProducto:VALOR!=null)
+										ObjValue(ID==idLineaFeed,PROPNAME=="producto", VALOR==idProducto))																					    
+								DatValue(ID==idLineaFeed,PROPNAME=="cantidad",cantidad:QMAX!=null)															
+								DatValue(ID==idLineaFeed, PROPNAME=="fecha_inicio",fechaIniLin:QMAX<=fechaFinDispon)	    				
+								DatValue(ID==idLineaFeed, PROPNAME=="fecha_fin",fechaFinLin:QMAX>=fechaIniDispon)),
+							         
+                      sum( -calendario.contribucionLinea(cantidad,fechaIniLin,fechaIniDispon,fechaFinLin,fechaFinDispon)))
+                      
+
+	descuadre: Double() 
+    	from accumulate((and	
+						    	FactHierarchy(CLASSSUP=="DISPONIBILIDAD",idtoDisponD:IDTO)	
+								ObjValue(idoDisponD:IDO>0&&!=idoDispon,IDTO==idtoDisponD,PROPNAME=="recurso",INITIALVALOR==idRecurso)							    							    						    								    							   
+					    		Individual(IDO==idoDisponD, STATE==Constants.INDIVIDUAL_STATE_DELETED)						 
+								forall(	ObjValue(IDO==idoDisponD,PROPNAME=="producto", idProducto:INITIALVALOR!=null)
+										ObjValue(IDO==idoDispon,PROPNAME=="producto", VALOR==idProducto))																					    
+								DatValue(IDO==idoDisponD,PROPNAME=="cantidad",cantidad:INITIALDOUBLE!=null)								
+								DatValue(IDO==idoDisponD, PROPNAME=="fecha_inicio",fechaIniLin:INITIALDOUBLE<=fechaFinDispon)	    				
+								DatValue(IDO==idoDisponD, PROPNAME=="fecha_fin",fechaFinLin:INITIALDOUBLE>=fechaIniDispon)),
+								
+						sum( calendario.contribucionLinea(cantidad,fechaIniLin,fechaIniDispon,fechaFinLin,fechaFinDispon)))                  
+                  		
+then
+		//Dado que las disponibilidades nuevas al partir son creadas inicializadas con first value, no debe tener en cuenta contribution INIT
+		Double incr=descuadre+contributionProdCURR-contributionProdINIT;
+		dma.printRule("=====ACTUALIZAR CANTIDAD DISPONIBLE. IDDISPON:"+incr+" ido:"+idoDispon+" Recurso: "+nombreRecurso+", diponibilidad: ("+fIni.toString()+" - "+fFin.toString());	 		 	 	
+		dma.printRule( "descuadre "+descuadre+" "+contributionProdCURR+" "+contributionProdINIT);	 	
+		dma.setIncrementalValue(idoDispon,idtoDispon,dma.getIdProperty("cantidad"),incr,null);
+	
+end
+
+rule "LIMITACION: DEDICACION COMUN NO PUEDE SER CERO"
+salience 100
+ agenda-group "rules" when
+   	FactHierarchy(CLASSSUP=="PRODUCCIÓN",idtoProduccion:IDTO)
+ 	ObjValue(IDTO==idtoProduccion,idoTask:IDO,PROPNAME=="dedicación",idoDedicacion:IDOVALUE) 						
+	DatValue(IDO==idoDedicacion,PROPNAME=="porcentaje_dedicación",QMAX<=0)
+then
+	throw new OperationNotPermitedException("La dedicacion comun debe ser positiva");
+end
+
+rule "LIMITACION: RECURSO EN DEDICACION COMUN NO ADMITE DEDICACION ESPECIFICA EN SUBTAREA"
+salience 100
+ agenda-group "rules" when
+   	FactHierarchy(CLASSSUP=="PRODUCCIÓN",idtoProduccion:IDTO)
+ 	ObjValue(IDTO==idtoProduccion,idoTask:IDO,PROPNAME=="dedicación",idoDedicacion:IDOVALUE) 										
+	ObjValue(IDO==idoDedicacion,PROPNAME=="recurso", idoRecurso:IDOVALUE!=null)
+	ObjValue(IDO==idoTask,PROPNAME=="subtarea",idoSub:IDOVALUE) 										
+	ObjValue(IDO==idoSub,PROPNAME=="recurso", IDOVALUE==idoRecurso)
+then
+	throw new OperationNotPermitedException("Un mismo recurso no puede estar a la vez en dedicación común y en una subtarea");
+end
+
+rule "RECURSO DUPLICADO EN DEDICACION"
+salience 100
+ agenda-group "rules" when
+   	FactHierarchy(CLASSSUP=="PRODUCCIÓN",idtoProduccion:IDTO)
+ 	ObjValue(IDTO==idtoProduccion,idoTask:IDO,PROPNAME=="dedicación",idoDedicacion:IDOVALUE) 										
+	ObjValue(IDO==idoDedicacion,PROPNAME=="recurso", idoRecurso:IDOVALUE!=null)
+	ObjValue(IDO==idoTask,PROPNAME=="dedicación",idoDedicacion2:IDOVALUE!=idoDedicacion) 										
+	ObjValue(IDO==idoDedicacion2,PROPNAME=="recurso", IDOVALUE==idoRecurso)
+then
+	throw new OperationNotPermitedException("Recurso duplicado");
+end
+
+rule "CANTIDAD PROGRAMADA ACORDE A DEDICACION"
+salience 200
+ //mas prioridad que actualizar
+ agenda-group "rules" when   	
+  	FactHierarchy(CLASSSUP=="PRODUCCIÓN",idtoProduccion:IDTO)
+  	Individual(IDTO==idtoProduccion,idoTask:IDO)
+	//DatValue(IDTO==idtoProduccion,idoTask:IDO, PROPNAME=="fecha_mínima_inicio", fechaIniPlanifSc:QMAX!=null)
+		
+	ObjValue(IDO==idoTask,PROPNAME=="estado",idoEstado:IDOVALUE!=null)
+	DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR=="Programado"||=="Realizado",chEst:initialValuesChanged)
+	 		
+	Individual(IDO==idoTask,STATE==Constants.INDIVIDUAL_STATE_READY)
+	FactHierarchy(claseSupArticulo:CLASSSUP=="GÉNERO"||=="SERVICIO",idtoArticulo:IDTO)
+	DatValue(IDTO==idtoArticulo,idoArt:IDO,PROPNAME=="rdn",rdnArt:VALOR!=null)
+  
+	FactHierarchy(CLASSSUP=="RECURSO",idtoRecurso:IDTO)			  
+	DatValue(IDTO==idtoRecurso,idoRecurso:IDO,PROPNAME=="rdn", rdnRec:VALOR)  							    						    								    							    					 																															    
+
+	exists(ObjValue(IDO==idoRecurso,PROPNAME=="capacidad",IDOVALUE==idoArt))				
+
+	dedicacionRecursoComun:Double() from accumulate((and 	ObjValue(IDO==idoTask,PROPNAME=="dedicación",idoDedicacion:IDOVALUE) 						
+															ObjValue(IDO==idoDedicacion,PROPNAME=="recurso", IDOVALUE==idoRecurso)
+															DatValue(IDO==idoDedicacion,PROPNAME=="porcentaje_dedicación",dedicacion:QMAX!=null)),
+											sum(dedicacion))
+	//
+	//Si es produccion material puede existir un escandallo con una subtarea base.
+ 
+	demanda_Subtask_Esc:Double() from accumulate((and 	Individual(idoEsc:IDO,idtoEsc:IDTO,CLASSNAME=="ESCANDALLO")
+														ObjValue(IDO== idoEsc,PROPNAME=="salida",idoEsc_agregado:IDOVALUE)											
+														ObjValue(IDO== idoEsc_agregado,PROPNAME=="producto",idoProductoAg:IDOVALUE!=null)
+														ObjValue(IDO== idoTask,PROPNAME=="línea", idoAgTask:IDOVALUE)		
+														ObjValue(IDO== idoAgTask,PROPNAME=="producto",IDOVALUE==idoProductoAg)
+														DatValue(IDO== idoEsc_agregado,PROPNAME=="cantidad",qEsc_Ag:QMIN!=null)
+														DatValue(IDO== idoAgTask,PROPNAME=="cantidad",qTask_Ag:QMIN!=null)
+														ObjValue(IDO== idoEsc,PROPNAME=="subtarea_base",idoEsc_sub:IDOVALUE)
+														ObjValue(IDO== idoEsc_sub,PROPNAME=="producto",IDOVALUE==idoArt)
+														DatValue(IDO== idoEsc_sub,PROPNAME=="cantidad",qEsc_sub:QMIN!=null)											
+												),
+												sum(qTask_Ag/qEsc_Ag*qEsc_sub))									
+	//
+	
+	demandaEspecifica: Double()
+    	from accumulate((and	ObjValue(IDO==idoTask,PROPNAME=="subtarea",idoSub:IDOVALUE) 	
+    							ObjValue(IDO==idoSub,PROPNAME=="recurso",IDOVALUE==idoRecurso)					    							    						    								    							    
+					    		Individual(IDO==idoSub, STATE==Constants.INDIVIDUAL_STATE_READY)						 
+								ObjValue(IDO==idoSub,PROPNAME=="producto", IDOVALUE==idoArt)																																							  
+								DatValue(IDO==idoSub,PROPNAME=="cantidad",cantidad:QMAX!=null)),							         
+                      sum(cantidad))
+	
+	//eval(!dedicacionRecursoComun.equals(0.0)||!demandaEspecifica.equals(0.0)||!demanda_Subtask_Esc.equals(0.0))
+
+	demandaArticuloComun: Double()
+    	from accumulate((and	ObjValue(IDO==idoTask,PROPNAME=="subtarea",idoSub:IDOVALUE) 						    							    						    								    							    
+					    		Individual(IDO==idoSub, STATE==Constants.INDIVIDUAL_STATE_READY)						 
+								ObjValue(IDO==idoSub,PROPNAME=="producto", IDOVALUE==idoArt)	
+								not(ObjValue(IDO==idoSub,PROPNAME=="recurso",IDOVALUE!=null))																														    
+								DatValue(IDO==idoSub,PROPNAME=="cantidad",cantidad:QMAX!=null)),							         
+                      sum(cantidad))                  
+	                      	
+	totalDedicacion: Double()
+    	from accumulate((and	ObjValue(IDO==idoTask,PROPNAME=="dedicación",idoDedAny:IDOVALUE) 						    							    						    								    							    					 																																						    
+								DatValue(IDO==idoDedAny,PROPNAME=="porcentaje_dedicación",ded:QMAX!=null)),							         
+                      sum(ded))                   
+                    
+	programado: Double()
+    	from accumulate((and	ObjValue(IDO==idoTask,PROPNAME=="programación",idoProg:IDOVALUE) 						    							    						    								    							    
+					    		ObjValue(IDO==idoProg,PROPNAME=="recurso",IDOVALUE==idoRecurso)												
+								ObjValue(IDO==idoProg,PROPNAME=="producto", IDOVALUE==idoArt)																																					    
+								DatValue(IDO==idoProg,PROPNAME=="cantidad",cantidad:QMAX!=null))	
+						,							         
+                      sum(cantidad))    
+	programadoArticulo: Double()
+    	from accumulate((and	ObjValue(IDO==idoTask,PROPNAME=="programación",idoProg:IDOVALUE) 						    							    						    								    							    					    													
+								ObjValue(IDO==idoProg,PROPNAME=="producto", IDOVALUE==idoArt)																																					    
+								DatValue(IDO==idoProg,PROPNAME=="cantidad",cantidad:QMAX!=null))	
+						,							         
+                      sum(cantidad))     
+                                
+   eval( !(
+   			!demanda_Subtask_Esc.equals(0.0) &&
+   			 Math.abs(demanda_Subtask_Esc.doubleValue()-programadoArticulo.doubleValue())<0.01
+   		))
+	
+	factsLastAsign_recurso:ArrayList() from accumulate((and 	ObjValue(IDO==idoTask,PROPNAME=="programación",idoProg:IDOVALUE!=null,ov:OBJECTVALUE)
+																ObjValue(IDO==idoProg,PROPNAME=="recurso",IDOVALUE==idoRecurso)
+																not(DatValue(IDO==idoProg,PROPNAME=="porcentaje_realización",DOUBLEVALUE!=0.0))	
+																								
+																not((and 	DatValue(IDO==idoProg,PROPNAME=="fecha_inicio",fMin:QMIN!=null)
+																			ObjValue(IDO==idoTask,PROPNAME=="programación",idoProg2:IDOVALUE!=idoProg)	
+																			DatValue(IDO==idoProg2,PROPNAME=="porcentaje_realización",DOUBLEVALUE==0.0)
+																			DatValue(IDO==idoProg2,PROPNAME=="fecha_inicio",QMIN>fMin)))													
+																			ObjValue(IDO==idoProg,PROPNAME=="producto", IDOVALUE==idoArt)),
+										   init(ArrayList lista=new ArrayList();),
+										   action(lista.add(ov);),
+										   result(lista))   	
+	factsArticulo:ArrayList() from accumulate((and 	ObjValue(IDO==idoTask,PROPNAME=="programación",idoProg:IDOVALUE!=null,ov:OBJECTVALUE)
+													ObjValue(IDO==idoProg,PROPNAME=="producto", IDOVALUE==idoArt)),																																																																												
+										   init(ArrayList lista=new ArrayList();),
+										   action(lista.add(ov);),
+										   result(lista))  										   
+  		 																													   
+	eval( Math.abs(
+			+Math.abs(totalDedicacion.equals(0.0)&&demandaEspecifica.equals(0.0)&&demanda_Subtask_Esc.equals(0.0)?programadoArticulo:programado)			
+		 	-Math.abs(
+		 				(totalDedicacion.equals(0.0)?0:1)*demandaArticuloComun*dedicacionRecursoComun/(totalDedicacion.equals(0.0)?1:totalDedicacion)
+		 				+demanda_Subtask_Esc
+		 				+demandaEspecifica
+		 				+(totalDedicacion.equals(0.0)&&demandaEspecifica.equals(0.0)&&demanda_Subtask_Esc.equals(0.0)?1:0)*demandaArticuloComun
+		 			)
+		 )
+		 																																								>0.01
+		 )  
+	                           		
+then		
+	dma.printRule("===== CANTIDAD PROGRAMADA ACORDE A DEDICACION "+rdnRec+" dem Esp "+demandaEspecifica+" prog:"+programado+" dedic:"+dedicacionRecursoComun+" demCom:"+demandaArticuloComun);	 	
+	
+	dma.printRule("programado:"+Math.abs(totalDedicacion.equals(0.0)&&demandaEspecifica.equals(0.0)&&demanda_Subtask_Esc.equals(0.0)?programadoArticulo:programado));
+	dma.printRule("demanda dedic:"+(totalDedicacion.equals(0.0)?0:1)*demandaArticuloComun*dedicacionRecursoComun/(totalDedicacion.equals(0.0)?1:totalDedicacion));
+	dma.printRule("demanda subt:"+demandaEspecifica);
+	dma.printRule("demanda sin recu:"+(totalDedicacion.equals(0.0)&&demandaEspecifica.equals(0.0)&&demanda_Subtask_Esc.equals(0.0)?1:0)*demandaArticuloComun);
+	dma.printRule("total:"+Math.abs(
+			+Math.abs(totalDedicacion.equals(0.0)&&demandaEspecifica.equals(0.0)&&demanda_Subtask_Esc.equals(0.0)?programadoArticulo:programado)			
+		 	-Math.abs(
+		 				(totalDedicacion.equals(0.0)?0:1)*demandaArticuloComun*dedicacionRecursoComun/(totalDedicacion.equals(0.0)?1:totalDedicacion)
+		 				+demanda_Subtask_Esc
+		 				+demandaEspecifica
+		 				+(totalDedicacion.equals(0.0)&&demandaEspecifica.equals(0.0)&&demanda_Subtask_Esc.equals(0.0)?1:0)*demandaArticuloComun
+		 			)
+		 ));
+	//la demanda no es un porcentaje,es el total de horas a acometer. Si se demanda 100horas de un producto, y hay una dedicacion 100% pepe y una dedicacion 100% juan
+	//cada dia se ejecutan 16 horas, pero pepe solo ejecuta la mitad del trabajo demandado, por tanto pepe tiene que ejecutar 50horas al 100% dedicacion (8 horas diarias)
+	double demandaRecurso=demandaEspecifica+demanda_Subtask_Esc;
+	if(totalDedicacion>0) demandaRecurso+=demandaArticuloComun*dedicacionRecursoComun/totalDedicacion;
+	else if(demandaRecurso==0.0){
+		demandaRecurso=demandaArticuloComun;
+		programado=programadoArticulo;//no hay recurso asignado ni en dedicacion ni en subtarea, con lo cual se creara programacion sin recuros para que se asigen la primera disponibilidad posible
+	}
+	
+
+	double oldQ=0;
+	
+	if(factsArticulo.size()>0 && demandaRecurso>=programado){
+		for(ObjectValue prog:(ArrayList<ObjectValue>)factsArticulo){
+			if(prog.getValue().doubleValue()<0 ){							
+				double dv=dma.getDoubleValue(prog,"cantidad",true);
+				oldQ+=dv;			
+				ObjectValue rec=(ObjectValue)dma.getValue(prog.getValue(),prog.getValueCls(),"recurso");
+				boolean mismoRecurso=rec!=null&&rec.getValue().intValue()==idoRecurso;
+				if(totalDedicacion.equals(0.0)&&demandaEspecifica.equals(0.0)&&(rec==null||mismoRecurso)||mismoRecurso){
+					//Siendo lineas nuevas no ajusto cantidades, eliminamos directamente, si es de este recurso
+					dma.delValue(idoTask,idtoProduccion,"programación",prog);
+					dma.deleteObject(prog);
+					dma.printRule(" eliminando linea "+prog.getValue()+" recurso "+(rec==null?0:rec.getValue())+ " idoRecurso:"+idoRecurso);
+				}
+			}
+		}
+						
+	}
+	
+	if(factsLastAsign_recurso.size()>0 && demandaRecurso<programado){
+		ObjectValue prog=(ObjectValue)factsLastAsign_recurso.get(0);							
+		double dv=dma.getDoubleValue(prog,"cantidad",true);
+		oldQ=dv;			
+		//No ajusto cantidades, eli
+		dma.delValue(idoTask,idtoProduccion,"programación",prog);
+		//Si el exceso de horas programadas a eliminar ya coincide con la cantidad de la linea, basta con eliminar la linea
+		dma.printRule(" eliminando linea exceso");										
+	}
+	
+	if( demandaRecurso>programado-oldQ){	
+		Domain newProg=dma.creaIndividualOfClass(claseSupArticulo.equals("SERVICIO")?"LÍNEA_SERVICIO":"LÍNEA_MATERIA");
+		if(!dedicacionRecursoComun.equals(0.0)||!demandaEspecifica.equals(0.0)||!demanda_Subtask_Esc.equals(0.0)){
+			dma.setValue(newProg,"recurso",new ObjectValue(idoRecurso,idtoRecurso));
+		}
+		dma.setValue(newProg,"cantidad",new DoubleValue(oldQ+ demandaRecurso-programado));
+		dma.printRule(" creando linea root:"+idoTask+" lin:"+newProg.getIdo()+" rec:"+rdnRec+" "+(oldQ+ demandaRecurso-programado)+" oldQ:"+oldQ);
+		dma.setValue(newProg,"producto",new ObjectValue(idoArt,idtoArticulo));
+		//dedicacion comun no puede ser cero, en cuyo caso se trata de una subtarea
+		double ded= dedicacionRecursoComun.equals(0.0)?100.0:dedicacionRecursoComun;
+		dma.setValue(newProg,"porcentaje_dedicación",new DoubleValue(ded));
+		dma.addValue(new Domain(idoTask,idtoProduccion),"programación", new ObjectValue(newProg) );
+	}
+end
+		
+rule "RESET PROGRAMACION NO PROGRAMADA"
+salience 100
+ agenda-group "rules" when   	
+ 	not(ObjValue(CLASSNAME=="Planificar_Pedidos", PROPNAME=="estadoRealizacion",idEstado:VALUE!=null))//en ese caso la dedicacion es automatica
+  	FactHierarchy(CLASSSUP=="TAREA",idtoTask:IDTO)
+	ObjValue(IDTO==idtoTask,idoTask:IDO,PROPNAME=="estado",idoEstado:IDOVALUE!=null)
+	DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR!="Programado"&&!="Realizado")
+				 						    							    						    								    							    					 
+	programaciones:ArrayList() from collect(ObjValue(IDO==idoTask,PROPNAME=="programación",IDOVALUE!=null)) 						    							    						    								    							    					   										
+	subtareas:ArrayList() from collect(ObjValue(IDO==idoTask,PROPNAME=="subtarea",IDOVALUE!=null))
+then		
+	dma.printRule("===== RESET PROGRAMACION NO PROGRAMADA "+subtareas.size());
+	for(int i=0;i<programaciones.size();i++){
+		ObjValue ob=(ObjValue)programaciones.get(i);	 						
+		dma.delValue(idoTask,idtoTask,"programación",ob.getOBJECTVALUE());
+	}
+	for(int i=0;i<subtareas.size();i++){
+		ObjValue ob=(ObjValue)subtareas.get(i);	 						
+		dma.delValues(ob.getIDOVALUE(),ob.getVALUECLS(),"fecha_inicio");
+		dma.delValues(ob.getIDOVALUE(),ob.getVALUECLS(),"fecha_fin");
+	}		
+	dma.delValues(idoTask,idtoTask,"fecha_inicio");
+	dma.delValues(idoTask,idtoTask,"fecha_fin");					 	
+end
+
+rule "RECURSOS PROGRAMADO DEBEN PERTENECER A DEDICACION DECLARADA, SI HAY"
+salience 100
+ agenda-group "rules" when   	
+  	FactHierarchy(CLASSSUP=="PRODUCCIÓN",idtoProduccion:IDTO)
+	DatValue(IDTO==idtoProduccion,idoTask:IDO, PROPNAME=="fecha_mínima_inicio", fechaIniPlanifSc:QMAX!=null)
+
+	(or exists(ObjValue(IDO==idoTask,PROPNAME=="subtarea"||=="dedicación",hasCHANGED==true))
+	 	exists((and ObjValue(IDO==idoTask,PROPNAME=="subtarea"||=="dedicación",idoSub:IDOVALUE)
+	 				IndividualValue(IDO==idoSub,hasCHANGED==true))))
+	 		
+	Individual(IDO==idoTask,STATE==Constants.INDIVIDUAL_STATE_READY)
+				 						    							    						    								    							    					 
+	ObjValue(IDO==idoTask,PROPNAME=="programación",idoProg:IDOVALUE, ovProg:OBJECTVALUE) 						    							    						    								    							    					   										
+	ObjValue(IDO==idoProg,idtoProg:IDTO,PROPNAME=="recurso", idoRecurso:IDOVALUE!=null)
+	DatValue(IDO==idoRecurso,PROPNAME=="rdn", rdnRec:VALOR)
+
+	DatValue(IDO==idoProg,PROPNAME=="porcentaje_realización", pr:QMIN!=null&&<100)
+	DatValue(IDO==idoProg,PROPNAME=="cantidad", q:QMIN!=null)
+			
+	//debe existir algun recurso definido, de lo contrario se asigna el primero disponible y no aplica esta regla. Notar que si una tarea no tiene dedciacion, y solo alguna subtarea tiene recurso,
+	// el resto de subtareas no se programan puesto que esta regla lo eliminara
+	
+	not((and 	ObjValue(IDO==idoTask,PROPNAME=="dedicación"||=="subtarea",idoDedicacion:IDOVALUE)
+				ObjValue(IDO==idoDedicacion,PROPNAME=="recurso", IDOVALUE==idoRecurso)))	   
+	
+	//por la condicion de arriba no existe dedicacion para este recurso, y por la siguiente tampoco existiria subtarea sin definir recurso			
+	not((and 	ObjValue(IDO==idoTask,PROPNAME=="subtarea",idoDedicacion:IDOVALUE)
+				not(ObjValue(IDO==idoDedicacion,PROPNAME=="recurso", IDOVALUE!=null))))				                            		
+then		
+	dma.printRule("===== RECURSOS PROGRAMADO DEBEN PERTENECER A DEDICACION DECLARADA, SI HAY "+rdnRec);	 						
+	double qRealizado=q*pr/100;		
+	if(pr==0){
+		dma.delValue(idoTask,idtoProduccion,"programación",ovProg);				
+	}else{
+		dma.setValue(idoProg,idtoProg,"cantidad",new DoubleValue(qRealizado));
+		dma.setValue(idoProg,idtoProg,"porcentaje_realización",new DoubleValue(100.0));
+	}		 	 
+end
+/*
+rule "DEBUG LIN FANTASMA"
+salience 200
+agenda-group "rules" when 
+	
+	
+	ObjValue(propLinea:PROPNAME=="programación",idLineaFeed:VALOR!=null,ov:OBJECTVALUE) 						    							    						    								    							    
+	DatValue(ID==idLineaFeed,PROPNAME=="cantidad",cantidad:QMAX!=null)
+	rdnRec:String() from accumulate((and 	ObjValue(ID==idLineaFeed,PROPNAME=="recurso",idoRec:IDOVALUE)
+											DatValue(IDO==idoRec,PROPNAME=="rdn",rdn:VALOR)),
+											init(String res="";),
+											action(res=rdn;),
+											result(res))
+	lista:ArrayList() from collect(DatValue(ID==idLineaFeed,PROPNAME=="fecha_inicio"||=="fecha_fin"))
+	then
+	Domain d=new Domain(ov);
+	Date ini=dma.getValue(d,"fecha_inicio")==null?null:((TimeValue)dma.getValue(d,"fecha_inicio")).getDate();
+	Date fin=dma.getValue(d,"fecha_fin")==null?null:((TimeValue)dma.getValue(d,"fecha_fin")).getDate();
+	
+	dma.printRule("=====DEBUG LIN FANTASMA "+idLineaFeed+" "+cantidad +" INI:"+ini+" FIN:"+fin+" "+rdnRec);
+end 				    		
+
+rule "DEBUG DISP FANTASMA"
+salience 200
+agenda-group "rules" when 
+	
+	DatValue(id:ID,CLASSNAME=="DISPONIBILIDAD",PROPNAME=="rdn",rdn:VALOR)						    							    						    								    							    
+	DatValue(ID==id,PROPNAME=="cantidad",cantidad:QMAX!=null)
+	DatValue(ID==id,PROPNAME=="fecha_inicio",ini:DATE)
+	DatValue(ID==id,PROPNAME=="fecha_fin",fin:DATE)
+	ObjValue(ID==id,PROPNAME=="recurso",idoRec:IDOVALUE)
+	DatValue(IDO==idoRec,PROPNAME=="rdn",rdnRec:VALOR)
+	DatValue(ID==id,PROPNAME=="total_horas",qDisponTotal:QMAX)
+	Lock(ID==id,estado:STATE)		
+	then
+	dma.printRule("=====DEBUG DISP FANTASMA "+rdn+" id:"+id+" "+cantidad+" INI:"+ini+" FIN:"+fin +" totalH "+qDisponTotal+" estado:"+estado+" "+rdnRec);
+end
+
+rule "DEBUG SOURCE"
+salience 200
+agenda-group "rules" when 
+	
+	FactHierarchy(idto:IDTO, CLASSSUP=="TAREA")					    							    						    								    							    
+	DatValue(IDTO==idto,idoval:IDO,PROPNAME=="rdn",tarea:VALOR)
+	Lock(IDO==idoval,estado:STATE)		
+	then
+	dma.printRule("=====DEBUG SOURCE "+tarea+" estado:"+estado);
+end
+*/
+
+rule "AGREGAR LINEAS TEMPORALES"
+salience -150
+agenda-group "rules" when
+	
+
+	FactHierarchy(idtoLinea:IDTO,claseSup:CLASSSUP=="LÍNEA_SERVICIO")
+	ObjValue(IDTO==idtoLinea,PROPNAME=="recurso",idoRec:IDOVALUE,	idoLinea1:IDO,claseLinea:CLASSNAME)
+	ObjValue(PROPNAME=="recurso",IDOVALUE==idoRec, IDTO==idtoLinea, idoLinea2:IDO!=idoLinea1)
+
+	//forall porque disponibilidad no tiene objeto dominio del que cuelga
+	ObjValue(idoDominio:IDO,idtoDominio:IDTO,propOP:PROPNAME=="línea"||=="programación",IDOVALUE==idoLinea1)
+	ObjValue(IDO==idoDominio,	PROPNAME==propOP,IDOVALUE==idoLinea2)
+			
+	Lock(IDO==idoLinea1,level1:LEVEL,LOCKEDBYUSER==null||==false)
+	Lock(IDO==idoLinea2,level2:LEVEL,LOCKEDBYUSER==null||==false)
+
+	//El siguiente forall afecta a todas las ObjPro producto documento almacén_origen almacén_destino iva lote color talla n._serie		
+	forall(	ObjValue(ido1:IDO==idoLinea1||==idoLinea2,propiedad:PROPNAME,detalle:VALOR!=null)
+			ObjValue(IDO!=ido1,IDO==idoLinea1||==idoLinea2,PROPNAME==propiedad,VALOR==detalle))
+	
+	forall(	DatValue(ido1:IDO==idoLinea1||==idoLinea2,propiedad:PROPNAME=="precio"||=="descuento"||=="concepto",detalle:VALOR!=null)
+			DatValue(IDO!=ido1,IDO==idoLinea1||==idoLinea2,PROPNAME==propiedad,VALOR==detalle))			
+		
+	DatValue(IDO==idoLinea1,PROPNAME=="fecha_inicio",fechaIni1:QMAX!=null)
+	DatValue(IDO==idoLinea1,PROPNAME=="fecha_fin",fechaFin1:QMAX!=null)
+	DatValue(IDO==idoLinea1, PROPNAME=="porcentaje_dedicación",porcientoDedicacion:QMAX!=null)		
+	DatValue(IDO==idoLinea2,PROPNAME=="fecha_inicio",fechaIni2:QMAX>=fechaFin1)
+	DatValue(IDO==idoLinea2,PROPNAME=="fecha_fin",fechaFin2:QMAX!=null)
+	DatValue(IDO==idoLinea1, PROPNAME=="porcentaje_dedicación",QMAX==porcientoDedicacion)		
+	
+	forall( DatValue(IDO==idoLinea1,PROPNAME=="revisión",revision:QMAX!=null)	
+			DatValue(IDO==idoLinea2,PROPNAME=="revisión",QMAX==revision))
+			
+	FactQ1:DatValue(IDO==idoLinea1,PROPNAME=="cantidad",cantidad1:DOUBLEVALUE!=null)
+	FactQ2:DatValue(IDO==idoLinea2,PROPNAME=="cantidad",cantidad2:DOUBLEVALUE!=null)
+	
+	ObjValue(IDO==idoRec, PROPNAME=="calendario", idoCalendario:IDOVALUE!=null)
+	DatValue(IDO==idoCalendario, PROPNAME=="rdn", rdnCalendario:VALOR!=null)
+	calendario:CalendarioHabil(ID==rdnCalendario)	
+		
+	eval(fechaIni1.equals(fechaIni2)&& fechaFin1.equals(fechaFin2) || calendario.getHorasHabiles(fechaFin1.longValue(),fechaIni2.longValue())<=(10.0/3600))	
+	//solape de fechas correlativas y dedicacion horaria coincidentes en uno por mil
+	eval(Math.abs(cantidad1/calendario.getHorasHabiles(fechaIni1.longValue(),fechaFin1.longValue())-cantidad2/calendario.getHorasHabiles(fechaIni2.longValue(),fechaFin2.longValue()))<0.01)
+	
+	then
+	dma.printRule("\n\n===================AGREGAR LINEAS TEMPORALES "+fechaIni1+" "+fechaIni2+" "+fechaFin1+" "+fechaFin2+" "+cantidad1+" "+cantidad2+ " lin1:"+idoLinea1+" "+idoLinea2);
+	
+	//agregas en la linea que hemos llamado idlinea1 la cantidad de la segunda y borramos la segunda linea
+	
+	//dma.printRule(" correlacion "+fechaIni2.equals(fechaFin1+24*3600)+" "+ Math.abs((cantidad1/(fechaFin1-fechaIni1)-cantidad2/(fechaFin2-fechaIni2))));
+	
+	Integer lineaToDelete=null;
+	Integer lineaQueAgrega=null;
+	DatValue FactQAgregado=null;
+	DatValue FactQToDelete=null;
+	int parteMantengo=1;
+	if(level1==2)
+	{//Sabemos que level 2 es prototype y 3 es individual por tanto si uno de ellos es individual hay que eliminar el otro.
+		lineaToDelete=idoLinea1;
+		lineaQueAgrega=idoLinea2;
+		FactQAgregado=FactQ2;
+		FactQToDelete=FactQ1;
+		parteMantengo=2;		
+	}else
+	{
+		lineaToDelete=idoLinea2;
+		lineaQueAgrega= idoLinea1;
+		FactQAgregado=FactQ1;	
+		FactQToDelete=FactQ2;
+	}
+	dma.printRule(" borrando "+lineaToDelete+" "+idtoLinea);
+	dma.delValue(idoDominio,idtoDominio,propOP,new ObjectValue(lineaToDelete,idtoLinea));
+	//dma.deleteObject(lineaToDelete,idtoLinea);//Importante que este el deleteObject antes que el setValue para que no se avise del cambio del setValue que puede dar algun problema
+	//dma.setValue(lineaToDelete,idtoLinea,propQ,new DoubleValue(0.0));//Se pone a 0 la línea porque si no luego otra regla impide el borrado cuando acabe esta regla.
+	//FactQToDelete.consumirEventoCambio();
+	
+	dma.setValue(lineaQueAgrega,idtoLinea,"cantidad",new DoubleValue(cantidad1+cantidad2));
+	if( !fechaIni1.equals(fechaIni2) || !fechaFin1.equals(fechaFin2)){
+		if( parteMantengo==2 ) dma.setValue(lineaQueAgrega,idtoLinea,"fecha_inicio",new TimeValue(fechaIni1.longValue()));	
+		else	dma.setValue(lineaQueAgrega,idtoLinea,"fecha_fin",new TimeValue(fechaFin2.longValue()));
+	}
+	FactQAgregado.consumirEventoCambio();
+end
+
+/*
+	Se encarga de.
+		a) 	Inyectar en motor el calendario cuando alguien lo apunta y no existe, por ejemplo,
+			cuando se está creando un recurso o cuando se está creando.
+		b)	Actualizar un calendario ya existente en caso de que se añada algún periodo nuevo
+			o exclusión.
+			
+	En cualquiera de los casos, tras ellos, siempre actualiza el valor del total_horas del 
+	calendario.
+*/
+rule "[DISPONIBILIDAD][INSTALACION] INSTALACION DEL CALENDARIO HABIL EN MOTOR SI NO EXISTE"
+	salience 200 
+	agenda-group "rules" 
+	when 
+		
+		FactHierarchy(CLASSSUP=="CALENDARIO_HÁBIL", idtoCalendario:IDTO)
+		Individual(idoCalendario:IDO!=null,IDTO==idtoCalendario,STATE==Constants.INDIVIDUAL_STATE_READY)
+		DatValue(IDO==idoCalendario, PROPNAME=="rdn", rdnCalendario:VALOR!=null)
+		
+		
+		//Acumulamos los calendarios con ese ID, lo normal es que haya 0 ó 1. Si hay más, es un error
+		//que se controla en el consecuente.
+		listaCalendarios: LinkedList()
+			from accumulate(
+					factCalendario:CalendarioHabil(ID==rdnCalendario),
+				init( LinkedList<CalendarioHabil> lista = new LinkedList<CalendarioHabil>(); ),
+				action( lista.add(factCalendario); ),
+				result( lista )
+			)
+		
+		//Lista de periodos hábiles, al ser estructurales, siempre estarán en motor.		
+		periodos: HashMap(size>0)
+			from accumulate(
+					(and
+						ObjValue(IDO==idoCalendario, PROPNAME=="periodos", idoPeriodo:IDOVALUE!=null)
+						DatValue(IDO==idoPeriodo, PROPNAME=="rdn", rdnPeriodo:VALOR!=null)
+						DatValue(IDO==idoPeriodo, PROPNAME=="horas_lunes", horasLunes:INTVALUE!=null)
+						DatValue(IDO==idoPeriodo, PROPNAME=="horas_martes", horasMartes:INTVALUE!=null)
+						DatValue(IDO==idoPeriodo, PROPNAME=="horas_miércoles", horasMiercoles:INTVALUE!=null)
+						DatValue(IDO==idoPeriodo, PROPNAME=="horas_jueves", horasJueves:INTVALUE!=null)
+						DatValue(IDO==idoPeriodo, PROPNAME=="horas_viernes", horasViernes:INTVALUE!=null)
+						DatValue(IDO==idoPeriodo, PROPNAME=="horas_sábado", horasSabado:INTVALUE!=null)
+						DatValue(IDO==idoPeriodo, PROPNAME=="horas_domingo", horasDomingo:INTVALUE!=null)
+						DatValue(IDO==idoPeriodo, PROPNAME=="fecha_inicio", fechaInicio:DATE!=null)
+						DatValue(IDO==idoPeriodo, PROPNAME=="fecha_fin", fechaFin:DATE!=null)
+					),
+				init( HashMap<String, Periodo> lista = new HashMap<String, Periodo>(); ),
+				action( 
+					//Sólo lo insertamos si no existe previamente:
+					if(lista.get(rdnPeriodo) == null){
+						Periodo p = new Periodo(rdnPeriodo, fechaInicio.getTime(), fechaFin.getTime(), horasLunes, horasMartes, horasMiercoles, 
+												horasJueves, horasViernes, horasSabado, horasDomingo);
+						lista.put(rdnPeriodo, p);
+					}
+				),
+				result( lista )
+			)
+	
+		//Lista de exclusiones, al ser estructurales, siempre estarán en motor.
+		exclusiones: HashMap()
+			from accumulate(
+					(and
+						ObjValue(IDO==idoCalendario, PROPNAME=="periodos_excluídos", idoExclusion:IDOVALUE!=null, idtoExclusion:VALUECLS)				
+						DatValue(IDO==idoExclusion, PROPNAME=="rdn", rdnExclusion:VALOR!=null)
+						DatValue(IDO==idoExclusion, PROPNAME=="fecha_inicio", fechaInicio:DATE!=null)
+						DatValue(IDO==idoExclusion, PROPNAME=="fecha_fin", fechaFin:DATE!=null)
+					),
+				init( HashMap<String, Exclusion> lista = new HashMap<String, Exclusion>(); ),
+				action( 
+					//Sólo lo insertamos si no existe previamente:
+					if(lista.get(rdnExclusion) == null){
+						Exclusion e = new Exclusion(rdnExclusion, fechaInicio, fechaFin);
+						lista.put(rdnExclusion, e);
+					}
+				),
+				result( lista )
+			)
+
+	then
+		dma.printRule("[DISPONIBILIDAD][INSTALACION] INSTALACION DEL CALENDARIO HABIL EN MOTOR: "+rdnCalendario);
+		
+		CalendarioHabil calendario = null;
+		
+		if(listaCalendarios.size() == 0){
+			//Si no hay calendarios, lo creamos e insertamos en motor.
+			calendario = new CalendarioHabil(rdnCalendario, dma.getDDM());
+		}else if(listaCalendarios.size() == 1){
+			//Si hay un solo calendario, lo metemos en la variables para trabajar con el.
+			calendario = (CalendarioHabil)listaCalendarios.get(0);
+		}else{
+			dma.showMessage("Se han encontrado varios facts de CalendarioHabil con el mismo ID.");
+		}
+
+		//Añadimos los periodos al calendario (existiesen o no antes, addPeriodo se encarga de 
+		//insertar nuevo o actualizar en caso de existir ya)
+		Iterator itPeriodos = periodos.keySet().iterator();
+		while(itPeriodos.hasNext()){
+			String key = (String)itPeriodos.next();
+			Periodo p = (Periodo)periodos.get(key);
+			calendario.addPeriodo(p);
+		}
+
+		//Añadimos las exclusiones al calendario (existiesen o no antes, addExclusiones se encarga de 
+		//insertar nuevo o actualizar en caso de existir ya)
+		Iterator itExclusiones = exclusiones.keySet().iterator();
+		while(itExclusiones.hasNext()){
+			String key = (String)itExclusiones.next();
+			Exclusion e = (Exclusion)exclusiones.get(key);
+			calendario.addExclusion(e);
+		}
+		
+		//Actualizamos el total de horas del calendario.
+		dma.setValue(idoCalendario, idtoCalendario, "total_horas", new DoubleValue((double)calendario.getHorasHabiles()));
+		
+		dma.printRule(calendario.toString());
+		if(listaCalendarios.size() == 0){
+			//Si no existía, lo insertamos en el motor, retrasamos esta acción al máximo para evitar que otras
+			//reglas se disparen antes de estar completamente actualizado.
+			dma.getDDM().getRuleEngine().insertFact(calendario);
+		}
+end
+
+rule "FECHA FIN EN PERÍODO"
+salience -100
+agenda-group "rules" when
+ 		
+ 		FactHierarchy(idtoPeriodo:IDTO,CLASSSUP=="PERIODO_HÁBIL")
+ 		DatValue(IDTO==idtoPeriodo,idoPeriodo:IDO,PROPNAME=="fecha_fin",ffin:QMIN!=null)
+		DatValue(IDO==idoPeriodo, PROPNAME=="horas_lunes", horasLunes:INTVALUE!=null)
+		DatValue(IDO==idoPeriodo, PROPNAME=="horas_martes", horasMartes:INTVALUE!=null)
+		DatValue(IDO==idoPeriodo, PROPNAME=="horas_miércoles", horasMiercoles:INTVALUE!=null)
+		DatValue(IDO==idoPeriodo, PROPNAME=="horas_jueves", horasJueves:INTVALUE!=null)
+		DatValue(IDO==idoPeriodo, PROPNAME=="horas_viernes", horasViernes:INTVALUE!=null)
+		DatValue(IDO==idoPeriodo, PROPNAME=="horas_sábado", horasSabado:INTVALUE!=null)
+		DatValue(IDO==idoPeriodo, PROPNAME=="horas_domingo", horasDomingo:INTVALUE!=null)
+		DatValue(IDO==idoPeriodo, PROPNAME=="fecha_inicio", fechaInicio:DATE!=null)
+	then
+		dma.printRule("\n\n================  FECHA FIN EN PERÍODO");
+		Calendar c = Calendar.getInstance();
+		c.setTimeInMillis(ffin.longValue()*Constants.TIMEMILLIS);
+		int diaSemana=c.get(Calendar.DAY_OF_WEEK);
+		
+		dma.printRule(" dia semana "+diaSemana+" "+Calendar.WEDNESDAY);		
+		
+		int horas=0;
+		if(diaSemana==Calendar.MONDAY)	horas=horasLunes;
+		if(diaSemana==Calendar.TUESDAY)	horas=horasMartes;
+		if(diaSemana==Calendar.WEDNESDAY) horas=horasMiercoles;
+		if(diaSemana==Calendar.THURSDAY) horas=horasJueves;
+		if(diaSemana==Calendar.FRIDAY)	horas=horasViernes;
+		if(diaSemana==Calendar.SATURDAY) horas=horasSabado;
+		if(diaSemana==Calendar.SUNDAY)	;			
+		
+		c.set(Calendar.HOUR_OF_DAY,Math.max(0,horas));
+		c.set(Calendar.MINUTE,0);
+		c.set(Calendar.SECOND,0);
+		TimeValue tValue = new TimeValue(c.getTimeInMillis()/Constants.TIMEMILLIS);
+		dma.setValue(idoPeriodo, idtoPeriodo, "fecha_fin", tValue);
+end
+
+/*
+	Por comodidad, cuando se crea un periodo, ponemos por defecto 8 horas habiles a cada día de la semana y 0 horas
+	hábiles a cada día del fin de semana.
+*/
+rule "[DISPONIBILIDAD][DEFVALUE]  8 HORAS POR DEFECTO EN CADA DIA DE LA SEMANA DE LOS PERIODOS"
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(CLASSSUP=="CALENDARIO_HÁBIL", idtoCalendario:IDTO)
+		ObjValue(idoCalendario:IDO!=null, IDTO==idtoCalendario, PROPNAME=="periodos", idoPeriodo:IDOVALUE!=null, idtoPeriodo:VALUECLS)
+		not(
+			(and
+				DatValue(IDO==idoPeriodo, prop:PROPNAME, VALOR!=null)
+				eval( prop.startsWith("horas_"))
+			)
+		)
+		
+	then
+		dma.printRule("[DISPONIBILIDAD][DEFVALUE]  8 HORAS POR DEFECTO EN CADA DIA DE LA SEMANA DE LOS PERIODOS");
+		String horasEntreSemana[] = {"horas_lunes", "horas_martes", "horas_miércoles", "horas_jueves", "horas_viernes"};
+		String horasFinDeSemana[] = {"horas_sábado", "horas_domingo"};
+		
+		//8 horas de lunes a viernes:
+		for(int i=0 ; i<horasEntreSemana.length ; i++){
+			dma.setValue(idoPeriodo, idtoPeriodo, horasEntreSemana[i], new IntValue(8));
+		}
+		
+		//0 horas el sábado y el domingo.
+		for(int i=0 ; i<horasFinDeSemana.length ; i++){
+			dma.setValue(idoPeriodo, idtoPeriodo, horasFinDeSemana[i], new IntValue(0));
+		}		 
+end
+
+rule "[DISPONIBILIDAD]ACTUALIZACION TOTAL HORAS CALENDARIO"
+	salience 200 
+	agenda-group "rules" 
+	when 
+		
+		FactHierarchy(CLASSSUP=="CALENDARIO_HÁBIL", idtoCalendario:IDTO)
+		Lock(idoCalendario:IDO!=null,IDTO==idtoCalendario,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+		DatValue(IDO==idoCalendario, PROPNAME=="rdn", rdnCalendario:VALOR!=null)
+      	calendario:CalendarioHabil(ID==rdnCalendario)	
+	then
+		dma.printRule("[DISPONIBILIDAD]ACTUALIZACION TOTAL HORAS CALENDARIO: "+rdnCalendario);			
+		//Actualizamos el total de horas del calendario.
+		dma.setValue(idoCalendario, idtoCalendario, "total_horas", new DoubleValue((double)calendario.getHorasHabiles()));	
+end
+/*
+	Al eliminar un periodo del calendario hábil, lo eliminamos del objeto Java que hemos metido
+	en el motor. Luego actualizamos las horas totales del calendario (ya sin el periodo
+	eliminado).
+*/
+rule "[DISPONIBILIDAD][BORRADO] ELIMINACION DE PERIODOS DEL CALENDARIO HABIL"
+	agenda-group "rules" 
+	when 
+		
+		FactHierarchy(CLASSSUP=="CALENDARIO_HÁBIL", idtoCalendario:IDTO)
+		Individual(idoCalendario:IDO!=null, IDTO==idtoCalendario)
+		DatValue(IDO==idoCalendario, PROPNAME=="rdn", rdnCalendario:VALOR!=null)
+		calendario:CalendarioHabil(ID==rdnCalendario)
+		
+		ObjValue(IDO==idoCalendario, prop:PROPNAME=="periodos"||=="periodos_excluídos", idPeriodo:PREVALOR!=null, VALOR==null, idtoPeriodo:VALUECLS)
+		DatValue(ID==idPeriodo, PROPNAME=="rdn", rdnPeriodo:VALOR!=null)
+	
+	then
+		dma.printRule("[DISPONIBILIDAD][BORRADO] ELIMINACION DE PERIODOS DEL CALENDARIO HABIL. RDN: "+rdnPeriodo);
+		
+		if(prop.equals("periodos")){
+			calendario.removePeriodo(rdnPeriodo);
+		}else{
+		
+			if(prop.equals("periodos_excluídos")){
+				calendario.removeExclusion(rdnPeriodo);
+			}
+		}
+		
+		//Actualizamos el total de horas del calendario
+		dma.setValue(idoCalendario, idtoCalendario, "total_horas", new DoubleValue((double)calendario.getHorasHabiles()));
+		dma.printRule(calendario.toString());
+		
+end
+
+/*
+	No tiene sentido crear periodos solapados en un calendario. Lo evitamos con esta regla.
+*/
+rule "[DISPONIBILIDAD][ERROR]  LOS PERIODOS HABILES DE UN CALENDARIO NO SE PUEDEN SOLAPAR"
+	salience 100
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(CLASSSUP=="CALENDARIO_HÁBIL", idtoCalendario:IDTO)
+		ObjValue(idoCalendario:IDO!=null, IDTO==idtoCalendario, PROPNAME=="periodos", idoPeriodo1:IDOVALUE!=null)		
+		DatValue(IDO==idoPeriodo1, PROPNAME=="fecha_inicio", fechaInicio1:DATE!=null)
+		DatValue(IDO==idoPeriodo1, PROPNAME=="fecha_fin", fechaFin1:DATE!=null)
+
+		exists( 
+			(and
+				ObjValue(IDO==idoCalendario, PROPNAME=="periodos", idoPeriodo2:IDOVALUE!=null&&!=idoPeriodo1)
+				DatValue(IDO==idoPeriodo2, PROPNAME=="fecha_inicio"||=="fecha_fin", DATE>=fechaInicio1&&<=fechaFin1)
+			)
+		)
+			
+	then
+		dma.printRule("[DISPONIBILIDAD][ERROR]  LOS PERIODOS HABILES DE UN CALENDARIO NO SE PUEDEN SOLAPAR");
+		throw new OperationNotPermitedException("No puede haber dos periodos que se solapen.");
+end
+
+/*
+	Evita que se creen periodos con fecha de fin inferior (aunque se permite que sea igual) a la fecha
+	de inicio.
+*/
+rule "[DISPONIBILIDAD][ERROR]  LA FECHA FIN DEL PERIODO DEBE SER MAYOR O IGUAL A LA DE INICIO"
+	salience 200
+	agenda-group "rules"
+	when
+			
+		DatValue(ido:IDO, PROPNAME=="fecha_inicio", fechaInicio1:QMIN!=null)
+		DatValue(IDO==ido, PROPNAME=="fecha_fin", fEnd:QMIN!=null&&<fechaInicio1)
+		
+	then
+		dma.printRule("[DISPONIBILIDAD][ERROR]  LA FECHA FIN DEL PERIODO DEBE SER MAYOR O IGUAL A LA DE INICIO"+ido+" ini "+fechaInicio1+" end "+fEnd);
+		throw new OperationNotPermitedException("La fecha fin tiene que ser mayor o igual a la fecha inicio.");
+end
+
+
+/*
+	Cuando creamos un recurso nuevo, por defecto, creamos y asignamos tantas disponibilidades
+	al recurso como periodos hábiles tiene el CalendarioHabil asociado.
+*/
+rule "[DISPONIBILIDAD] AL ASIGNAR CALENDARIO AL RECURSO, LE ASIGNAMOS UNA DISPONIBILIDAD NUEVA"
+	salience -200
+	agenda-group "rules"	
+	when
+		//condicion tambien presente en regla precarga disponibilidad
+		exists(ObjValue(PROPNAME=="estadoRealizacion",idEstadotask:VALOR!=null))
+		
+		FactHierarchy(CLASSSUP=="RECURSO", idtoRecurso:IDTO)
+		Individual(idoRecurso:IDO!=null, IDTO==idtoRecurso,STATE==Constants.INDIVIDUAL_STATE_READY)
+		ObjValue(IDO==idoRecurso, PROPNAME=="calendario", idoCalendario:IDOVALUE!=null)
+		DatValue(IDO==idoCalendario, idtoCalendario:IDTO, PROPNAME=="rdn", rdnCalendario:VALOR!=null)
+
+		//Existe un calendario asociado a ese recurso.
+		calendario:CalendarioHabil(ID==rdnCalendario)
+		
+		//No hay ninguna disponibilidad asociada a ese recurso todavía
+		not((and 	ObjValue(idoDisponibilidad:IDO!=null, CLASSNAME=="DISPONIBILIDAD", PROPNAME=="recurso", IDOVALUE==idoRecurso)
+				 	DatValue(IDO==idoDisponibilidad, PROPNAME=="fecha_inicio",disIni:DATE!=null)
+				 	DatValue(IDO==idoDisponibilidad, PROPNAME=="fecha_fin",disEnd:DATE!=null)
+					eval(
+						//y existiera solape
+						disIni.compareTo(calendario.getFechaInicio())>=0 && disIni.compareTo(calendario.getFechaFin())<0 ||
+						disEnd.compareTo(calendario.getFechaInicio())>0 && disEnd.compareTo(calendario.getFechaFin())<=0
+						)))				
+			
+	then
+		dma.printRule("[DISPONIBILIDAD] AL ASIGNAR CALENDARIO AL RECURSO, LE ASIGNAMOS UNA DISPONIBILIDAD NUEVA");
+		
+		//Obtenemos los periodos hábiles del calendario con el que trabajamos.
+		HashMap periodosHabiles = calendario.getPeriodosHabiles();
+		dma.printRule(">>> periodosHabiles: "+periodosHabiles.toString());
+		Iterator it = periodosHabiles.keySet().iterator();
+		
+		//Por cada periodo, creamos una neuva disponibilidad.
+		while(it.hasNext()){
+			Periodo p = (Periodo) it.next();
+			Double horasDisponibilidad = (Double)periodosHabiles.get(p);
+			
+			Domain dominioDisponibilidad = dma.creaIndividualOfClass("DISPONIBILIDAD");
+			
+			dma.setValue(dominioDisponibilidad, "fecha_inicio", new TimeValue(p.getFechaInicioCalendar().getTime()));
+			dma.setValue(dominioDisponibilidad, "fecha_fin", new TimeValue(p.getFechaFinCalendar().getTime()));
+			dma.setValue(dominioDisponibilidad, "recurso", new ObjectValue(idoRecurso, idtoRecurso));
+			dma.setValue(dominioDisponibilidad, "cantidad", new DoubleValue(horasDisponibilidad));
+			dma.setValue(dominioDisponibilidad, "total_horas", new DoubleValue(horasDisponibilidad));	
+			dma.setValue(dominioDisponibilidad,"rdn",new StringValue("&id"+dominioDisponibilidad.getIdo()+"&"));						
+		}
+			
+end
+
+/*
+	Cuando se crea/modifica una disponibilidad, se actualiza el valor del total de horas de la disponibilidad.
+*/
+/*rule "[DISPONIBILIDAD][DEFVALUE] TOTAL HORAS DISPONIBILIDAD ES EL TOTAL DE HORAS ENTRE FECHA INICIO Y FIN"
+	salience -190
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(CLASSSUP=="DISPONIBILIDAD", idtoDisponibilidad:IDTO)
+		
+		DatValue(idoDisponibilidad:IDO!=null, IDTO==idtoDisponibilidad, PROPNAME=="fecha_inicio", fechaInicio:DATE!=null)
+		DatValue(IDO==idoDisponibilidad, PROPNAME=="fecha_fin", fechaFin:DATE!=null)
+		ObjValue(IDO==idoDisponibilidad, PROPNAME=="recurso", idoRecurso:IDOVALUE!=null)
+		
+		//El calendario del recurso asignado a la disponibilidad
+		ObjValue(IDO==idoRecurso, PROPNAME=="calendario", idoCalendario:IDOVALUE!=null, idtoCalendario:VALUECLS)
+		DatValue(IDO==idoCalendario, PROPNAME=="rdn", rdnCalendario:VALOR!=null)
+		calendario:CalendarioHabil(ID==rdnCalendario)
+		
+		//Solo disparamos si existe algún cambio
+		//eval(fechaIniChanged || fechaFinChanged || recursoChanged)
+		
+	then
+		dma.printRule("[DISPONIBILIDAD][DEFVALUE] TOTAL HORAS DISPONIBILIDAD ES EL TOTAL DE HORAS ENTRE "+fechaInicio+" Y "+fechaFin+". horas: "+calendario.getHorasHabiles(fechaInicio, fechaFin));
+		DoubleValue horasCalendarioDV = new DoubleValue((double)calendario.getHorasHabiles(fechaInicio, fechaFin)); 
+				
+		Domain dispon= new Domain(idoDisponibilidad, idtoDisponibilidad);		
+		dma.setValue(dispon, "total_horas", horasCalendarioDV);	
+end*/
+
+/*
+	Necesaria cuando se están creando a mano las disponibilidades para un recurso, ya que necesitamos
+	que el Calendario esté presente para que la regla que calcula el "total_horas" y las "horas_restantes"
+	actualice correctamente.
+*/
+rule "[DISPONIBILIDAD][PRECARGA] PRECARGA CALENDARIO"
+	salience 100
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(CLASSSUP=="DISPONIBILIDAD"||=="PARTE_TRABAJO"||=="LÍNEA_SERVICIO", idto:IDTO)
+		Individual(ido:IDO!=null, IDTO==idto)
+		ObjValue(IDO==ido, PROPNAME=="recurso", idoRecurso:IDOVALUE!=null)
+		
+		//El calendario del recurso asignado a la disponibilidad
+		ObjValue(IDO==idoRecurso, PROPNAME=="calendario", idoCalendario:IDOVALUE!=null, idtoCalendario:VALUECLS)
+		not( Individual(IDO==idoCalendario) )
+		
+	then
+		dma.printRule("[DISPONIBILIDAD][PRECARGA] PRECARGA CALENDARIO");
+		dma.ruleGetFromServer(idoCalendario, idtoCalendario, 1, false);
+end
+
+/*
+	Precarga de disponibilidades ANTERIORES Y POSTERIORES a una que está en motor para agregar. Sólo
+	se precargan aquellas que comparten recurso con la que está en motor y sólo en caso de que
+	total_horas == horas_restantes, es decir, no hay ninguna línea de servicio contribuyendo a 
+	esa disponibilidad. 
+*/
+/*rule "[DISPONIBILIDAD][PRECARGA] PRECARGA DISPONIBILIDADES PARA AGREGAR"
+	salience 100
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(CLASSSUP=="DISPONIBILIDAD", idtoDisponibilidad:IDTO)
+		
+		DatValue(idoDisp1:IDO!=null, IDTO==idtoDisponibilidad, PROPNAME=="cantidad", horasDisp1:DOUBLEVALUE!=null)
+		DatValue(IDO==idoDisp1, PROPNAME=="total_horas", DOUBLEVALUE==horasDisp1) //El total de horas y las restantes tienen que ser iguales
+		DatValue(IDO==idoDisp1, PROPNAME=="fecha_inicio",fechaInicio1:DATE!=null)
+		DatValue(IDO==idoDisp1, PROPNAME=="fecha_fin", fechaFin1:DATE!=null)
+		ObjValue(IDO==idoDisp1, PROPNAME=="recurso", objRecurso:OBJECTVALUE!=null)
+		
+	then
+		dma.printRule("[DISPONIBILIDAD][PRECARGA] PRECARGA DISPONIBILIDADES ANTERIORES PARA AGREGAR");
+		HashMap<String, Value> filtrarPor = new HashMap<String, Value>();
+		//El recurso tiene que ser el mismo
+		filtrarPor.put("recurso", objRecurso);
+		
+		//La fecha de fin debe ser anterior a la de inicio de esta disponibilidad:
+		TimeValue tv = new TimeValue();
+		tv.setRelativeSecondsMin(null);
+		tv.setRelativeSecondsMax(fechaInicio1.getTime()/Constants.TIMEMILLIS);		
+		filtrarPor.put("fecha_fin", tv);
+		
+		instance filerdispon = dma.buildInstanceWith("DISPONIBILIDAD", filtrarPor, null, null, null);
+		HashSet<IDIndividual> idosDisponEncontrados = dma.loadIndividualsWithSatisficedFilter(filerdispon, 3, true);
+		dma.printRule("\t Disponibilidades ANTERIORES encontradas: "+idosDisponEncontrados.toString());
+			
+		//O la fecha de inicio tiene que ser mayor a la de fin de esta disponibilidad:
+		filtrarPor.remove("fecha_fin");
+		tv.setRelativeSecondsMin(fechaFin1.getTime()/Constants.TIMEMILLIS);
+		tv.setRelativeSecondsMax(null);		
+		filtrarPor.put("fecha_inicio", tv);		
+		
+		filerdispon = dma.buildInstanceWith("DISPONIBILIDAD", filtrarPor, null, null, null);
+		idosDisponEncontrados = dma.loadIndividualsWithSatisficedFilter(filerdispon, 3, true);
+		dma.printRule("\t Disponibilidades POSTERIORES encontradas: "+idosDisponEncontrados.toString());	
+	
+end*/
+
+/*rule "DEBUGRULE"
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(CLASSSUP=="DISPONIBILIDAD", idtoDisponibilidad:IDTO)
+		
+		//Disponibildad (la más nueva)
+		DatValue(idoDisp1:IDO!=null, IDTO==idtoDisponibilidad, PROPNAME=="cantidad", horasDisp1:DOUBLEVALUE!=null)
+		DatValue(IDO==idoDisp1, PROPNAME=="total_horas", DOUBLEVALUE==horasDisp1) 
+		DatValue(IDO==idoDisp1, PROPNAME=="rdn", rdnDisp1:VALOR!=null);
+		
+	then
+		dma.printRule("DEBUGRULE "+rdnDisp1+" "+horasDisp1);
+end*/
+			
+/*
+	Dadas dos disponibilidades de un mismo recurso y para el mismo producto, si ambas tienen
+	disponibles el número máximo de horas (es decir, no hay líneas de tarea contribuyendo),
+	y son consecutivas en el tiempo (el inicio de una es (fin+1) de la otra, entonces
+	son agregables.
+	
+	Hacemos que se disparen en bddrules, de esta manera será lo último que se haga y solo 
+	agregará después de realizar todas las operaciones anteriores.
+	
+	Si se dispara en rules, hay un problema con el patron contributivo en base a initial values, debería sumar los initia values
+*/
+rule "[DISPONIBILIDAD] AGREGAR DISPONIBILIDADES"
+	salience -100
+	agenda-group "bddrules"
+	when
+		
+		FactHierarchy(CLASSSUP=="DISPONIBILIDAD", idtoDisponibilidad:IDTO)
+		
+		//Disponibildad (la más nueva)
+		DatValue(idoDisp1:IDO!=null, IDTO==idtoDisponibilidad, PROPNAME=="cantidad", horasDisp1:DOUBLEVALUE!=null)
+		Individual(IDO==idoDisp1, STATE==Constants.INDIVIDUAL_STATE_READY)
+		DatValue(IDO==idoDisp1, PROPNAME=="total_horas", total1:DOUBLEVALUE!=null) //El total de horas y las restantes tienen que ser iguales
+		DatValue(IDO==idoDisp1, PROPNAME=="fecha_inicio",fechaInicio1:DATE!=null, fecha1:QMIN)
+		DatValue(IDO==idoDisp1, PROPNAME=="fecha_fin", fechaFin1:DATE!=null)
+		ObjValue(IDO==idoDisp1, PROPNAME=="recurso", idoRecurso:IDOVALUE!=null, objRecurso:OBJECTVALUE)
+
+		ObjValue(IDO==idoRecurso, PROPNAME=="calendario", idoCalendario:IDOVALUE!=null)
+		DatValue(IDO==idoCalendario, PROPNAME=="rdn", rdnCalendario:VALOR!=null)
+      	calendario:CalendarioHabil(ID==rdnCalendario)	
+      	
+		DatValue(IDO==idoDisp1, PROPNAME=="rdn", rdnDisp1:VALOR!=null);
+		DatValue(IDO==idoRecurso, PROPNAME=="nombre", nombreRecurso:VALOR!=null);
+		
+		//Otra disponibilidad más antigua, con el mismo recurso,
+		DatValue(idoDisp2:IDO!=null&&!=idoDisp1, IDTO==idtoDisponibilidad, PROPNAME=="cantidad", horasDisp2:DOUBLEVALUE!=null)
+		Individual(IDO==idoDisp2, STATE==Constants.INDIVIDUAL_STATE_READY)
+		DatValue(IDO==idoDisp2, PROPNAME=="total_horas", total2:DOUBLEVALUE!=null) //El total de horas y las restantes tienen que ser iguales
+		DatValue(IDO==idoDisp2, PROPNAME=="fecha_inicio",fechaInicio2:DATE!=null)
+		DatValue(IDO==idoDisp2, PROPNAME=="fecha_fin",fechaFin2:DATE<=fechaInicio1, fecha2:QMIN)
+		ObjValue(IDO==idoDisp2, PROPNAME=="recurso", IDOVALUE==idoRecurso) //El recurso es igual en ambas disponibilidades
+		DatValue(IDO==idoDisp2, PROPNAME=="rdn", rdnDisp2:VALOR!=null);
+
+		//en caso de tener producto, deben coincidir...
+		forall(
+			IndividualValue(IDO==idoDisp1, prop:PROPNAME=="producto"||=="color"||=="medida1"||=="medida2"||=="talla"||=="lote"||=="n._serie", idoProducto:VALOR!=null)
+			IndividualValue(IDO==idoDisp2, PROPNAME==prop, VALOR==idoProducto)			
+		)
+		//diferencia menor o igual a un segundo
+		eval(calendario.getHorasHabiles(fecha2.longValue(),fecha1.longValue())<=(1.0/3600))
+		
+		//mismo factor ocupacion
+		eval(Math.abs(horasDisp1/total1-horasDisp2/total2)<0.01)
+		//... y ser consecutiva a la primera (en el consecuente).
+		
+	then
+		//Sumamos un día a la fecha de fin de la disponibilidad más antiguo para ver si coincide con la fecha 
+		//de inicio de la disponibilidad mas actual.
+
+		DoubleValue horasCombinadasDV = new DoubleValue(horasDisp1 + horasDisp2);
+
+		dma.printRule("[DISPONIBILIDAD] AGREGAR DISPONIBILIDADES("+idoDisp1+"+"+idoDisp2+") Recurso: "+nombreRecurso+", (totalHoras:"+(horasDisp1 + horasDisp2)+" ) Disponibilidad 1: "+horasDisp1+", Disponibilidad 2: "+horasDisp2);
+		//dma.printRule("FECHA PRE:"+Auxiliar.secToDate(fecha2)+" POST:"+Auxiliar.secToDate(fecha1)+" distancia "+calendario.getHorasHabiles(fecha2.longValue(),fecha1.longValue())+" limit:"+(1.0/3600));
+		//Creamos el nuevo RDN
+		//String nuevoRdn = "(" + nombreRecurso + ")";
+		Calendar c = Calendar.getInstance();
+		c.setTime(fechaInicio2);
+		//nuevoRdn += c.get(Calendar.DAY_OF_MONTH)+"/"+(c.get(Calendar.MONTH)+1)+"/"+c.get(Calendar.YEAR)+"-";
+		c.setTime(fechaFin1);
+		//nuevoRdn += c.get(Calendar.DAY_OF_MONTH)+"/"+(c.get(Calendar.MONTH)+1)+"/"+c.get(Calendar.YEAR);
+			
+		//Obtenemos el nivel de ambas disponibilidades ya que:
+		//	- Si disp1 es PROTOTIPO y disp2 es PROTOTIPO:
+		//		Eliminamos ambas disponibilidades y creamos una nueva con los valores conjuntos.
+		//	- Si disp1 es INDIVIDUAL:
+		//		Actualizamos sobre disp1 y eliminamos disp2.
+		//	- Si disp2 es INDIVIDUAL:
+		//		Actualizamos sobre disp2 y eliminamos disp1.
+		int level1 = dma.getDDM().getLevelOf(idoDisp1);
+		int level2 = dma.getDDM().getLevelOf(idoDisp2);
+			
+		Integer idoActualizar = null;
+		Integer idoBorrar = null;
+
+		//Si ambos son prototipos, creamos uno nuevo y eliminamos los que ya existían.
+		if(level1 == Constants.LEVEL_PROTOTYPE && level2 == Constants.LEVEL_PROTOTYPE ){
+			Domain dominioNuevaDisp = dma.creaIndividualOfClass("DISPONIBILIDAD");
+			dma.setValue(dominioNuevaDisp,"rdn",new StringValue("&id"+dominioNuevaDisp.getIdo()+"&"));	
+			
+		 	idoActualizar = dominioNuevaDisp.getIdo();
+			 	
+		 	 //Borramos ambas disponibilidades
+			dma.deleteObject(idoDisp1, idtoDisponibilidad);
+			dma.deleteObject(idoDisp2, idtoDisponibilidad);
+
+		}else{
+			//Siempre mantenemos la disponibilidad 1 y borramos la 2, pero si la 2 es un INDIVIDUAL, invertimos
+			//y actualizamos la 2 y borramos la 1.
+			if(level2 == Constants.LEVEL_INDIVIDUAL){
+				idoActualizar = idoDisp2; 
+				idoBorrar = idoDisp1;
+			}else{
+				idoActualizar = idoDisp1; 
+				idoBorrar = idoDisp2;
+			}
+				
+			//Borramos la disponibilidad
+			dma.deleteObject(idoBorrar, idtoDisponibilidad);
+		}
+			
+		//... y actualizamos la disponibilidad.
+		dma.setValue(idoActualizar, idtoDisponibilidad, "fecha_inicio", new TimeValue(fechaInicio2)); 
+		dma.setValue(idoActualizar, idtoDisponibilidad, "fecha_fin", new TimeValue(fechaFin1)); 
+		dma.setValue(idoActualizar, idtoDisponibilidad, "total_horas", new DoubleValue(total1+total2));
+		dma.setValue(idoActualizar, idtoDisponibilidad, "cantidad", horasCombinadasDV);
+		dma.setValue(idoActualizar,idtoDisponibilidad,"libre",new BooleanValue(horasCombinadasDV.getValue()>0.1));	
+		dma.setValue(idoActualizar, idtoDisponibilidad, "fecha_alta", new TimeValue(c.getTime()));
+		//dma.setValue(idoActualizar, idtoDisponibilidad, "rdn", new StringValue(nuevoRdn));
+		dma.setValue(idoActualizar, idtoDisponibilidad, "recurso", objRecurso);
+end
+
+rule "[DISPONIBILIDAD] AGREGAR DISPONIBILIDADES EN REPROGRAMACION"
+	salience 100
+	agenda-group "rules"
+	when
+		ObjValue(CLASSNAME=="Programar_de_nuevo",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstadotask:VALOR!=null)		
+		DatValue(ID==idEstadotask,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_PREVALIDANDO)
+		
+		FactHierarchy(CLASSSUP=="DISPONIBILIDAD", idtoDisponibilidad:IDTO)
+		
+		//Disponibildad (la más nueva)
+		DatValue(idoDisp1:IDO!=null, IDTO==idtoDisponibilidad, PROPNAME=="cantidad", horasDisp1:DOUBLEVALUE!=null)
+		Individual(IDO==idoDisp1, STATE==Constants.INDIVIDUAL_STATE_READY)
+		DatValue(IDO==idoDisp1, PROPNAME=="total_horas", total1:DOUBLEVALUE!=null) //El total de horas y las restantes tienen que ser iguales
+		DatValue(IDO==idoDisp1, PROPNAME=="fecha_inicio",fechaInicio1:DATE!=null, fecha1:QMIN)
+		DatValue(IDO==idoDisp1, PROPNAME=="fecha_fin", fechaFin1:DATE!=null)
+		ObjValue(IDO==idoDisp1, PROPNAME=="recurso", idoRecurso:IDOVALUE!=null, objRecurso:OBJECTVALUE)
+
+		ObjValue(IDO==idoRecurso, PROPNAME=="calendario", idoCalendario:IDOVALUE!=null)
+		DatValue(IDO==idoCalendario, PROPNAME=="rdn", rdnCalendario:VALOR!=null)
+      	calendario:CalendarioHabil(ID==rdnCalendario)	
+      	
+		DatValue(IDO==idoDisp1, PROPNAME=="rdn", rdnDisp1:VALOR!=null);
+		DatValue(IDO==idoRecurso, PROPNAME=="nombre", nombreRecurso:VALOR!=null);
+		
+		//Otra disponibilidad más antigua, con el mismo recurso,
+		DatValue(idoDisp2:IDO!=null&&!=idoDisp1, IDTO==idtoDisponibilidad, PROPNAME=="cantidad", horasDisp2:DOUBLEVALUE!=null)
+		Individual(IDO==idoDisp2, STATE==Constants.INDIVIDUAL_STATE_READY)
+		DatValue(IDO==idoDisp2, PROPNAME=="total_horas", total2:DOUBLEVALUE!=null) //El total de horas y las restantes tienen que ser iguales
+		DatValue(IDO==idoDisp2, PROPNAME=="fecha_inicio",fechaInicio2:DATE!=null)
+		DatValue(IDO==idoDisp2, PROPNAME=="fecha_fin",fechaFin2:DATE<=fechaInicio1, fecha2:QMIN)
+		ObjValue(IDO==idoDisp2, PROPNAME=="recurso", IDOVALUE==idoRecurso) //El recurso es igual en ambas disponibilidades
+		DatValue(IDO==idoDisp2, PROPNAME=="rdn", rdnDisp2:VALOR!=null);
+
+		//en caso de tener producto, deben coincidir...
+		forall(
+			IndividualValue(IDO==idoDisp1, prop:PROPNAME=="producto"||=="color"||=="medida1"||=="medida2"||=="talla"||=="lote"||=="n._serie", idoProducto:VALOR!=null)
+			IndividualValue(IDO==idoDisp2, PROPNAME==prop, VALOR==idoProducto)			
+		)
+		//diferencia menor o igual a un segundo
+		eval(calendario.getHorasHabiles(fecha2.longValue(),fecha1.longValue())<=(1.0/3600))
+		
+		//mismo factor ocupacion
+		eval(Math.abs(horasDisp1/total1-horasDisp2/total2)<0.01)
+		//... y ser consecutiva a la primera (en el consecuente).
+		
+	then
+		//Sumamos un día a la fecha de fin de la disponibilidad más antiguo para ver si coincide con la fecha 
+		//de inicio de la disponibilidad mas actual.
+
+		DoubleValue horasCombinadasDV = new DoubleValue(horasDisp1 + horasDisp2);
+
+		dma.printRule("[DISPONIBILIDAD] AGREGAR DISPONIBILIDADES("+idoDisp1+"+"+idoDisp2+") Recurso: "+nombreRecurso+", (totalHoras:"+(horasDisp1 + horasDisp2)+" ) Disponibilidad 1: "+horasDisp1+", Disponibilidad 2: "+horasDisp2);
+		//dma.printRule("FECHA PRE:"+Auxiliar.secToDate(fecha2)+" POST:"+Auxiliar.secToDate(fecha1)+" distancia "+calendario.getHorasHabiles(fecha2.longValue(),fecha1.longValue())+" limit:"+(1.0/3600));
+		//Creamos el nuevo RDN
+		//String nuevoRdn = "(" + nombreRecurso + ")";
+		Calendar c = Calendar.getInstance();
+		c.setTime(fechaInicio2);
+		//nuevoRdn += c.get(Calendar.DAY_OF_MONTH)+"/"+(c.get(Calendar.MONTH)+1)+"/"+c.get(Calendar.YEAR)+"-";
+		c.setTime(fechaFin1);
+		//nuevoRdn += c.get(Calendar.DAY_OF_MONTH)+"/"+(c.get(Calendar.MONTH)+1)+"/"+c.get(Calendar.YEAR);
+			
+		//Obtenemos el nivel de ambas disponibilidades ya que:
+		//	- Si disp1 es PROTOTIPO y disp2 es PROTOTIPO:
+		//		Eliminamos ambas disponibilidades y creamos una nueva con los valores conjuntos.
+		//	- Si disp1 es INDIVIDUAL:
+		//		Actualizamos sobre disp1 y eliminamos disp2.
+		//	- Si disp2 es INDIVIDUAL:
+		//		Actualizamos sobre disp2 y eliminamos disp1.
+		int level1 = dma.getDDM().getLevelOf(idoDisp1);
+		int level2 = dma.getDDM().getLevelOf(idoDisp2);
+			
+		Integer idoActualizar = null;
+		Integer idoBorrar = null;
+
+		//Si ambos son prototipos, creamos uno nuevo y eliminamos los que ya existían.
+		if(level1 == Constants.LEVEL_PROTOTYPE && level2 == Constants.LEVEL_PROTOTYPE ){
+			Domain dominioNuevaDisp = dma.creaIndividualOfClass("DISPONIBILIDAD");
+			dma.setValue(dominioNuevaDisp,"rdn",new StringValue("&id"+dominioNuevaDisp.getIdo()+"&"));	
+			
+		 	idoActualizar = dominioNuevaDisp.getIdo();
+			 	
+		 	 //Borramos ambas disponibilidades
+			dma.deleteObject(idoDisp1, idtoDisponibilidad);
+			dma.deleteObject(idoDisp2, idtoDisponibilidad);
+
+		}else{
+			//Siempre mantenemos la disponibilidad 1 y borramos la 2, pero si la 2 es un INDIVIDUAL, invertimos
+			//y actualizamos la 2 y borramos la 1.
+			if(level2 == Constants.LEVEL_INDIVIDUAL){
+				idoActualizar = idoDisp2; 
+				idoBorrar = idoDisp1;
+			}else{
+				idoActualizar = idoDisp1; 
+				idoBorrar = idoDisp2;
+			}
+				
+			//Borramos la disponibilidad
+			dma.deleteObject(idoBorrar, idtoDisponibilidad);
+		}
+			
+		//... y actualizamos la disponibilidad.
+		dma.setValue(idoActualizar, idtoDisponibilidad, "fecha_inicio", new TimeValue(fechaInicio2)); 
+		dma.setValue(idoActualizar, idtoDisponibilidad, "fecha_fin", new TimeValue(fechaFin1)); 
+		dma.setValue(idoActualizar, idtoDisponibilidad, "total_horas", new DoubleValue(total1+total2));
+		dma.setValue(idoActualizar, idtoDisponibilidad, "cantidad", horasCombinadasDV);
+		dma.setValue(idoActualizar,idtoDisponibilidad,"libre",new BooleanValue(horasCombinadasDV.getValue()>0.1));	
+		dma.setValue(idoActualizar, idtoDisponibilidad, "fecha_alta", new TimeValue(c.getTime()));
+		//dma.setValue(idoActualizar, idtoDisponibilidad, "rdn", new StringValue(nuevoRdn));
+		dma.setValue(idoActualizar, idtoDisponibilidad, "recurso", objRecurso);
+end
+
+/*
+	Si queremos permitir que el usuario cambia a mano el recurso asignado a una línea de servicio,
+	tenemos que actuar en el momento que se produce el cambio. Eliminaremos la línea antigua
+	para que la regla que contribuye sobre las disponibilidades, se de cuenta de que hay una línea
+	que ha dejado de contribuir. 
+	
+	Tras eso, crearemos un clon de la que ya teníamos para añadirla a "programación" de la TAREA. No le 
+	no clonamos el recurso (le ponemos a mano el nuevo) y tampoco la fecha de fin y la fecha de 
+	inicio, para que se pueda disparar la regla "ASIGNAR DISPONIBILIDAD" y sea la encargada de 
+	encontrar una disponibilidad acorde o partir si se da el caso. 
+	
+	Alta prioridad para que se dispare antes que cualquier otra regla.
+*/
+rule "[DISPONIBILIDAD] RESET ASIGNACION DE CONSUMO POR CAMBIO LINEA"
+	salience 200
+	agenda-group "rules"
+	when		
+		FactHierarchy(CLASSSUP=="TAREA", idtoTarea:IDTO)
+		FactHierarchy(idtoLineaConsumo:IDTO,CLASSSUP=="LÍNEA_SERVICIO")
+		ObjValue(idoTarea:IDO!=null, IDTO==idtoTarea, PROPNAME=="programación", idoLineaConsumo:IDOVALUE!=null, VALUECLS==idtoLineaConsumo, objLinea:OBJECTVALUE)
+		Lock(IDO==idoLineaConsumo,LOCKEDBYUSER==true)
+		exists(IndividualValue(IDO==idoLineaConsumo, PROPNAME=="recurso"||=="porcentaje_dedicación"||=="cantidad",hasCHANGED==true))		
+		//DatValue(IDO==idoLineaConsumo, PROPNAME=="fecha_inicio",VALOR!=null)
+	then
+		dma.printRule("[DISPONIBILIDAD] RESET ASIGNACION DE CONSUMO POR CAMBIO LINEA");
+		//if(dma.getDDM().hasProperty(idtoLineaConsumo, dma.getIdProperty("fecha_inicio")))
+		//	dma.delValues(idoLineaConsumo, idtoLineaConsumo,"fecha_inicio");
+		
+		if(idoLineaConsumo<0){
+			if(dma.getDDM().hasProperty(idtoLineaConsumo, dma.getIdProperty("fecha_fin")))					
+				dma.delValues(idoLineaConsumo, idtoLineaConsumo,"fecha_fin");
+		}else{
+			dma.printRule(" creamos linea nueva");
+			Domain lineaIN_A=dma.cloneIndividual(idoLineaConsumo,idtoLineaConsumo, idtoLineaConsumo, "fecha_fin");
+			Domain tarea=new Domain(idoTarea,idtoTarea);                        	                                   	        	         						
+        	dma.addValue(tarea,"programación",new ObjectValue(lineaIN_A));        
+        	dma.deleteObject(objLinea);
+        	dma.delValue(tarea,"programación",objLinea);
+		}
+		//dma.delValues(idoLineaConsumo, idtoLineaConsumo,"recurso");				
+		//((Fact)F).consumirEventoCambio();
+end
+
+rule "[DISPONIBILIDAD] RESET ASIGNACION DE CONSUMO POR CAMBIO TAREA"
+	salience 200
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(CLASSSUP=="TAREA", idtoTarea:IDTO)
+		FactHierarchy(idtoLineaConsumo:IDTO,CLASSSUP=="LÍNEA_SERVICIO")
+		ObjValue(idoTarea:IDO!=null, IDTO==idtoTarea, PROPNAME=="programación", idoLineaConsumo:IDOVALUE!=null, VALUECLS==idtoLineaConsumo, objLinea:OBJECTVALUE)
+		DatValue(IDO==idoTarea,prop:PROPNAME=="fecha_mínima_inicio"||=="fecha_máxima_fin",hasCHANGED==true)
+	then
+		dma.printRule("[DISPONIBILIDAD] RESET ASIGNACION DE CONSUMO POR CAMBIO TAREA");
+		     
+		//Si solamente eliminase la fecha fin de la programacion, partir disponibilidad no se daria cuenta, si se da cuenta si eliminas una programacion de ido>o
+		//y fallaria el siguiente caso
+		//Calendario tiene excluido desde 1/8 al 20/8 inclusive
+		//Tarea 16, fecha minimo 30/07 y ocupa 9 horas (hasta 31 a la 1)
+		//Tarea 19 fecha minima 30/7 tambien ocupando 8 horas, lo cual supone desde 31 a la 1 hasta finalizar el 21 a las 1
+		//Grabo, y edito la 19 adelantando la fecha al 29/7.
+		//En ese momento hay una dispon de 17 horas (9 ocupadas, 8 libres) desde 30/07:00 a 21/8:01 lo cual es correcto si hubiera dedicacion aprox 50%, pero deberia haber partido
+		//Si ahora la tarea 16 la pongo como planficada sale el error, porque esta en medio y realmente es dedicacion 100%
+		if(idoLineaConsumo<0){
+			//no puedo eliminar la linea program si es nueva porque entra en bucle
+			if(dma.getDDM().hasProperty(idtoLineaConsumo, dma.getIdProperty("fecha_fin")))					
+				dma.delValues(idoLineaConsumo, idtoLineaConsumo,prop.contains("fin")?"fecha_fin":"fecha_inicio");	
+		}else{
+			Domain tarea=new Domain(idoTarea,idtoTarea);    
+        	dma.deleteObject(objLinea);
+        	dma.delValue(tarea,"programación",objLinea);
+        }
+end
+
+rule "[DISPONIBILIDAD] RESET ASIGNACION DE CONSUMO POR CAMBIO DEDICACION"
+	salience 200
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(CLASSSUP=="TAREA", idtoTarea:IDTO)
+		ObjValue(idoTarea:IDO!=null, IDTO==idtoTarea, PROPNAME=="dedicación", idoDedicacion:IDOVALUE!=null)
+		exists(DatValue(IDO==idoDedicacion,PROPNAME=="porcentaje_dedicación"||=="recurso",hasCHANGED==true))
+		
+		FactHierarchy(idtoLineaConsumo:IDTO,CLASSSUP=="LÍNEA_SERVICIO")
+		ObjValue(IDO==idoTarea, PROPNAME=="programación", idoLineaConsumo:IDOVALUE!=null, VALUECLS==idtoLineaConsumo, objLinea:OBJECTVALUE)
+	then
+		dma.printRule("[DISPONIBILIDAD] RESET ASIGNACION DE CONSUMO POR CAMBIO TAREA");
+		//Si solamente eliminase la fecha fin de la programacion, partir disponibilidad no se daria cuenta, si se da cuenta si eliminas una programacion de ido>o
+		if(idoLineaConsumo<0){
+			//no puedo eliminar la linea program si es nueva porque entra en bucle
+			if(dma.getDDM().hasProperty(idtoLineaConsumo, dma.getIdProperty("fecha_fin")))					
+				dma.delValues(idoLineaConsumo, idtoLineaConsumo,"fecha_fin");	
+		}else{
+			Domain tarea=new Domain(idoTarea,idtoTarea);         
+        	dma.deleteObject(objLinea);
+        	dma.delValue(tarea,"programación",objLinea);
+        }
+end
+/*rule "[DISPONIBILIDAD] RESET FECHA SUBTAREA POR CAMBIO TAREA"
+	salience -100
+	agenda-group "rules"
+	when		
+		FactHierarchy(CLASSSUP=="TAREA", idtoTarea:IDTO)
+		DatValue(IDTO==idtoTarea,idoTarea:IDO,PROPNAME=="rdn")
+		(or exists(DatValue(IDO==idoTarea,PROPNAME=="fecha_mínima_inicio"||=="fecha_máxima_fin",hasCHANGED==true))
+			exists(ObjValue(IDO==idoTarea,PROPNAME=="subtarea"||=="programación",hasCHANGED==true))
+	 		exists((and ObjValue(IDO==idoTarea,PROPNAME=="subtarea"||=="programación",idoSub:IDOVALUE)
+	 					IndividualValue(IDO==idoSub,hasCHANGED==true))))
+	 					
+		subtareas:ArrayList() from collect(ObjValue(IDO==idoTarea, PROPNAME=="subtarea",IDOVALUE!=null))		
+	then
+		dma.printRule("[DISPONIBILIDAD] RESET FECHA SUBTAREA POR CAMBIO TAREA");
+		for(int i=0;i<subtareas.size();i++){
+			ObjValue f=(ObjValue)subtareas.get(i);
+			dma.delValues(f.getIDOVALUE(),f.getVALUECLS(),"fecha_inicio");
+			dma.delValues(f.getIDOVALUE(),f.getVALUECLS(),"fecha_fin");
+		}			
+end*/
+
+rule "[DISPONIBILIDAD] RESET ASIGNACION POR REPROGRAMACION"
+	salience 200
+	agenda-group "rules"
+	when		
+		ObjValue(CLASSNAME=="Programar_de_nuevo", idoUTask:IDO,idtoUtask:IDTO, PROPNAME=="sourceClass", idoTarea:IDOVALUE!=null,idtoTarea:VALUECLS,ovTarea:OBJECTVALUE)
+		progFacts:ArrayList() from collect(ObjValue(IDO==idoTarea,PROPNAME=="programación", IDOVALUE!=null))
+		not(ObjValue(IDO==idoUTask, PROPNAME=="targetClass", IDOVALUE==idoTarea))
+	then
+		dma.printRule("[DISPONIBILIDAD] RESET ASIGNACION POR REPROGRAMACION ");
+		dma.delValues(idoTarea,idtoTarea,"programación");	
+		//Si estamos en programar de nuevo, la regla "PARTIR DISPONIBILIDAD" no parte por eliminar una linea de programacion que ya existía
+        //por tanto la linea debe existir ahora (ver regla partir)
+		/*for(int i=0;i<progFacts.size();i++){
+			ObjValue ob=(ObjValue)progFacts.get(i);
+			ob.consumirEventoCambio();
+		}*/	
+		dma.delValues(idoTarea,idtoTarea,"fecha_inicio");
+		dma.delValues(idoTarea,idtoTarea,"fecha_fin");
+		dma.addValue(idoUTask,idtoUtask,"targetClass",ovTarea);					
+end
+
+/*
+	Cuando nos encontramos con una nueva disponibilidad, o una existente que ha cambiado
+	alguno de sus valores, actualiamos su RDN, ya que este está formado por:
+	
+		RDN: "(<nombre_recurso>) <fecha_inicio> - <fecha_fin>"
+*/
+/*rule "[DISPONIBILIDAD] ASIGNAR RDN A DISPONIBILIDADES"
+	salience 200
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(CLASSSUP=="DISPONIBILIDAD", idtoDisponibilidad:IDTO)
+		ObjValue(idoDisponibilidad:IDO!=null, IDTO==idtoDisponibilidad, PROPNAME=="recurso", idoRecurso:IDOVALUE!=null, objRecursoChanged:hasCHANGED)
+		DatValue(IDO==idoRecurso, PROPNAME=="nombre", nombreRecurso:VALOR!=null, nombreRecursoChanged:hasCHANGED)
+		DatValue(IDO==idoDisponibilidad, PROPNAME=="fecha_inicio", fechaInicio:DATE!=null, fechaIniChanged:hasCHANGED)
+		DatValue(IDO==idoDisponibilidad, PROPNAME=="fecha_fin", fechaFin:DATE!=null, fechaFinChanged:hasCHANGED)
+		DatValue(IDO==idoDisponibilidad, PROPNAME=="fecha_alta", fechaAlta:DATE!=null)
+		
+		eval( objRecursoChanged || nombreRecursoChanged || fechaIniChanged || fechaFinChanged )
+				
+	then
+		String nuevoRdn = "(" + nombreRecurso + ")";
+		
+		Calendar c = Calendar.getInstance();
+		c.setTime(fechaInicio);
+		nuevoRdn += c.get(Calendar.DAY_OF_MONTH) + "/" + (c.get(Calendar.MONTH)+1) + "/" + c.get(Calendar.YEAR) + "-";
+	
+		c.setTime(fechaFin);
+		nuevoRdn += c.get(Calendar.DAY_OF_MONTH) + "/" + (c.get(Calendar.MONTH)+1) + "/" + c.get(Calendar.YEAR);
+		
+		dma.setValue(idoDisponibilidad, idtoDisponibilidad, "rdn", new StringValue(nuevoRdn));
+		dma.printRule("[DISPONIBILIDAD] ASIGNAR RDN A DISPONBILIDADES -> "+nuevoRdn);
+end*/
+
+/*
+	Asigna una fecha de alta a las disponibilidades recién creadas, en caso de que ya existan
+	y se modifiquen, serán las otras reglas las que actualicen este campo.
+*/
+rule "[DISPONIBILIDAD] ASIGNAR FECHA DE ALTA A DISPONIBILIDADES"
+	salience 200
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(CLASSSUP=="DISPONIBILIDAD", idtoDisponibilidad:IDTO)
+		ObjValue(idoDisponibilidad:IDO!=null, IDTO==idtoDisponibilidad)
+		not( DatValue(IDO==idoDisponibilidad, PROPNAME=="fecha_alta", VALOR!=null))
+		
+	then
+		 dma.printRule("[DISPONIBILIDAD] ASIGNAR FECHA DE ALTA A DISPONBILIDADES");
+		 Date d = new Date();
+		 dma.setValue(idoDisponibilidad, idtoDisponibilidad, "fecha_alta", new TimeValue(d));
+end
+
+//Al crear programación en base a escandallos, informar de cantidad programada no de cantidad
+
+//Al asignar tareas en base a la cantidad programada, no ocupar dias festivos.
+
+//Al planificar una tarea, si indicamos las fechas la cantidad se calcula en base a dias festivos, y si ponemos inicio y cantidad se calcula la fecha de fin. Esto se puede hacer tb si se
+//informa de estos datos manualmente en un programación. No hay recursividad pq deben converger.
+
+//Al agregar, que solapen fechas debe tener en cuenta saltarse los dias festivos, o que siempre una fecha acabe extendiendose en festivos y comienze evitando festivos. Entonces
+//al partir ¿como calcular la nueva cantidad? la proporcionalidad se mantiene sobre el nº de dias laborables que contiene cada parte. Puede haber una funcion que devuelve nº de dias laborables
+//en base a configurar si sabado es festivo, si se trabaja domingo, y dias de fiesta. Los dias festivos podrian estar fuera de la disponibilidad, y que la cantidad disponible
+//compute dichos dias festivos? 
+
+//Cada recurso tiene asociado un unico calendario, donde decidmos si se trabja sabados o domingos, o el nº de horas de cada dia semana en cada intervalo de fechas
+
+//Actualizar cantidades debe saber la cantidad laborable que solapa
+
+//Las fechas de la tarea son el minimo y maximo de las fechas de la línea de salida
+
+//Accion crear calendario
+
+//soportar dedicaciones en tareas y prioridades
+
+//unidades de producto. EL individuo unidad especificac cuantos dias y horas significa, despues en las lineas sumar una unidad es sumar (nºdias*24+nº horas)*3600.
+//pero no soporta en las lineas cambiar de unidades. LO mejor sería tirar siempre de horas, y añadir un campo nº de dias que te permita expresarlo en otra unidad calculando cantidad
+
+//Accion crear disponibilidades a empleados
+
+//Asignar recurso a la vez que asigna disponibilidad, tomando el recurso que tenga disponibilidad lo antes posible, o separar en otra regla que asigne el recurso más desahogado de media.
+//Salvo que en la demanda se exiga cual es el recurso, aunque puede haber ambiguedad porque la misma linea de demanda requiera, de acuerdo al escandallo, dos lineas de programación de roles distintos.
+
+//El rol sería el producto, por tanto es necesario poder indicar al empleado que productos puede servir.
+
+//¿Debe la disponibilidad fijar un producto/rol? No deberia en caso de personas, pero si en caso de stock
+
+//Asignar disponibilidad tira de prioridad del documento ¿existe?
+
+//Precargar recurso para pillar rdn
+//Al partir lineas no modificamos la cantidad ejecutada, solo la programada, podria haber una regla que impida replanificar si tiene cantidad ejecu>0

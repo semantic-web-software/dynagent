@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+
+<CONFIG>
+	<UTASKS>
+		<!--AREA LOGÍSTICA-->
+		
+		<UT A_FUNC="Logística" NAME="PEDIDO_TRASPASO_RECIBIDO" LISTENER="true">
+			<TG_CLASS CLASS="PEDIDO_TRASPASO_ALMACENES" />
+		</UT>
+
+		<UT A_FUNC="Logística" NAME="PEDIDO_TRASPASO_EMITIDO">
+			<TG_CLASS CLASS="PEDIDO_TRASPASO_ALMACENES"  />
+		</UT>
+
+		<UT A_FUNC="Logística" NAME="PEDIDO_TRASPASO">
+			<TG_CLASS CLASS="PEDIDO_TRASPASO_ALMACENES"  />
+		</UT>
+
+		<UT A_FUNC="Logística" NAME="TRASPASO"  >
+			<TG_CLASS CLASS="TRASPASO_ALMACENES" />
+		</UT>
+		
+		<UT A_FUNC="Logística" NAME="Rotacion">
+			<TG_CLASS CLASS="ROTACION"  />
+		</UT>
+		<UT A_FUNC="Logística" NAME="STOCK_LOCAL">
+			<TG_CLASS CLASS="STOCK"/>
+		</UT>
+
+		<UT A_FUNC="Logística" NAME="STOCK_EXTERNO" GLOBAL="true">
+			<TG_CLASS CLASS="STOCK"/>
+		</UT>
+		
+		<UT A_FUNC="Logística" NAME="MENSAJE">
+			<TG_CLASS CLASS="MENSAJE"/>
+		</UT>
+		<UT A_FUNC="Logística" NAME="Task_MENSAJES_PENDIENTES" LISTENER="true">
+			<TG_CLASS CLASS="MENSAJE"/>
+		</UT>
+		
+	</UTASKS>
+
+</CONFIG>	

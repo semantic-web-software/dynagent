@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+
+<CONFIG>
+
+<USUARIOS>
+		<USU LOGIN="dynagent" PWD="domocenter"/>
+		<USU LOGIN="admin" PWD="admin"/>	
+		<USU LOGIN="admin2" PWD="administrador"/>
+		<USU LOGIN="tienda" PWD="tienda"/>
+		<USU LOGIN="franquicia" PWD="franquicia"/>				
+	</USUARIOS>
+	<ROLES>
+		<RL NAME_ROL="administrador"/>
+		<RL NAME_ROL="comercial"/>
+		<RL NAME_ROL="fuerzadecampo"/>		
+		<RL NAME_ROL="venta_publico"/>
+		<RL NAME_ROL="franquicia"/>
+		<RL NAME_ROL="intercom"/>
+	</ROLES>
+
+	<USUARIO_ROLES>
+		<USU_RL USUARIO="tienda" ROL="venta_publico"/>
+		<USU_RL USUARIO="admin" ROL="administrador"/>
+		<USU_RL USUARIO="dynagent" ROL="administrador"/>
+		<USU_RL USUARIO="admin2" ROL="administrador"/>
+		<USU_RL USUARIO="franquicia" ROL="franquicia"/>
+	</USUARIO_ROLES>
+
+</CONFIG>

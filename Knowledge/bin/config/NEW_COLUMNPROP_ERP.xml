@@ -1,0 +1,1976 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<CONFIG>
+<COLUMNPROP>
+
+   <CPROP CLASS="AGENTE_COMERCIAL_FIJO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="nombre" ORDER="2"/>
+      <CP PROPPATH="NIF-CIF-VAT" ORDER="3"/>
+      <CP PROPPATH="teléfono" ORDER="4"/>
+      <CP PROPPATH="email" ORDER="5"/>
+      <CP PROPPATH="localidad#rdn" ORDER="6"/>
+      <CP PROPPATH="grupo_agente_comercial" ORDER="7"/>
+   </CPROP>
+   
+   <CPROP CLASS="EMAIL_SMTP">      
+      <CP PROPPATH="servidor_SMTP" ORDER="2"/>
+      <CP PROPPATH="user_id" ORDER="3"/>
+      <CP PROPPATH="password" ORDER="4"/>
+      <CP PROPPATH="email_remitente" ORDER="5"/>
+      <CP PROPPATH="nombre_remitente" ORDER="6"/>
+      <CP PROPPATH="mi_empresa#rdn" ORDER="7"/>
+      <CP PROPPATH="activo" ORDER="8"/>             
+   </CPROP>
+   
+   <CPROP CLASS="LOG_EMAIL">      
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="destinatario" ORDER="3"/>
+      <CP PROPPATH="email" ORDER="4"/>
+      <CP PROPPATH="descripción" ORDER="5"/>
+      <CP PROPPATH="documentos" ORDER="6"/>
+      <CP PROPPATH="email_remitente" ORDER="7"/>          
+      <CP PROPPATH="enviado" ORDER="8"/>                  
+   </CPROP>
+   
+   <CPROP CLASS="LOG_SESION">      
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="usuario#rdn" ORDER="3"/>
+      <CP PROPPATH="delegación#rdn" ORDER="4"/>         
+   </CPROP>
+   
+   <CPROP CLASS="EVENTO">      
+      <CP PROPPATH="tipo_evento#rdn" ORDER="1"/>
+      <CP PROPPATH="asunto" ORDER="2"/>
+      <CP PROPPATH="mensaje" ORDER="3"/>                 
+   </CPROP>
+   
+   <CPROP CLASS="DELEGACIÓN">      
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="localidad#rdn" ORDER="2"/>
+      <CP PROPPATH="empresa#rdn" ORDER="3"/>                 
+   </CPROP>
+   
+   <CPROP CLASS="MENSAJE">      
+      <CP PROPPATH="fecha" ORDER="1"/>
+      <CP PROPPATH="asunto" ORDER="2"/>
+      <CP PROPPATH="origen_delegacion#rdn" ORDER="3"/>
+      <CP PROPPATH="destino_delegacion#rdn" ORDER="4"/>
+      <CP PROPPATH="leido" ORDER="5"/>                 
+   </CPROP>
+   
+   <CPROP CLASS="AGENTE_COMERCIAL_EXTERNO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="nombre" ORDER="2"/>
+      <CP PROPPATH="NIF-CIF-VAT" ORDER="3"/>
+      <CP PROPPATH="teléfono" ORDER="4"/>
+      <CP PROPPATH="email" ORDER="5"/>
+      <CP PROPPATH="localidad#rdn" ORDER="6"/>
+      <CP PROPPATH="grupo_agente_comercial#rdn" ORDER="7"/>      
+   </CPROP>
+
+   <CPROP CLASS="AGREGADO_EMPRESA">
+      <CP PROPPATH="mi_empresa#rdn" ORDER="1"/>
+      <CP PROPPATH="stock_contable" ORDER="2"/>
+   </CPROP>
+
+   <CPROP CLASS="ACCIÓN_FORMATIVA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="curso" ORDER="2"/>
+      <CP PROPPATH="alumno#NIF-CIF-VAT" ORDER="3"/>
+      <CP PROPPATH="alumno#nombre" ORDER="4"/>
+      <CP PROPPATH="alumno#primer_apellido" ORDER="5"/>
+      <CP PROPPATH="grupo_formativo#rdn" ORDER="6"/>
+      <CP PROPPATH="agente_comercial#rdn" ORDER="7"/>
+      <CP PROPPATH="fecha_alta" ORDER="8"/>
+   </CPROP>
+   <CPROP CLASS="ARCHIVO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="archivo" ORDER="2"/>
+   </CPROP>
+   
+	 <CPROP CLASS="ÁMBITO_ARTÍCULO" CLASSPARENT="CONDICIÓN_ESPECIAL_VENTA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+   </CPROP>   
+
+	 <CPROP CLASS="ÁMBITO_ARTÍCULO" CLASSPARENT="COMISIÓN">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+   </CPROP>   
+
+
+	<CPROP CLASS="ÁMBITO_ARTÍCULO" CLASSPARENT="MARGEN_BENEFICIO_CALCULO_PRECIO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+   </CPROP>   
+
+	<CPROP CLASS="ÁMBITO_ARTÍCULO" CLASSPARENT="TARIFA_CONDICIONADA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+   </CPROP>   
+
+	<CPROP CLASS="EXCLUSIVIDAD_COMERCIAL">
+      <CP PROPPATH="porcentaje" ORDER="1"/>
+      <CP PROPPATH="agente_comercial#rdn" ORDER="2"/>
+   </CPROP> 
+   
+   <CPROP CLASS="PORCIENTO_FUNCIÓN_MARGEN">
+   	  <CP PROPPATH="porcentaje" ORDER="1"/>
+      <CP PROPPATH="margen_mínimo" ORDER="2"/>
+      <CP PROPPATH="margen_máximo" ORDER="3"/>            
+   </CPROP>
+      
+   <CPROP CLASS="FIJO_FUNCIÓN_MARGEN">
+   	  <CP PROPPATH="importe" ORDER="1"/>
+      <CP PROPPATH="margen_mínimo" ORDER="2"/>
+      <CP PROPPATH="margen_máximo" ORDER="3"/>            
+   </CPROP>
+         
+   <CPROP CLASS="ASIENTO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="mi_empresa#rdn" ORDER="2"/>
+      <CP PROPPATH="concepto" ORDER="3"/>
+      <CP PROPPATH="fecha" ORDER="4"/>
+      <CP PROPPATH="documento_contable#rdn" ORDER="5"/>
+   </CPROP>
+   <CPROP CLASS="GRUPO_FORMATIVO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="comienzo_curso" ORDER="2"/>
+      <CP PROPPATH="finalización_curso" ORDER="3"/>
+      <CP PROPPATH="curso#rdn" ORDER="4"/>
+   </CPROP>
+      
+   <CPROP CLASS="ALBARÁN_CLIENTE">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="cliente#rdn" ORDER="3"/>
+      <CP PROPPATH="cliente#nombre_comercial" ORDER="4"/>
+      <CP PROPPATH="cliente#nombre" ORDER="5"/>
+      <CP PROPPATH="importe" ORDER="6"/>
+      <CP PROPPATH="facturado" ORDER="7"/>
+      <CP PROPPATH="agente_comercial#rdn" ORDER="8"/>
+      <CP PROPPATH="emitido" ORDER="9"/>
+      <CP PROPPATH="cobro_anticipo" ORDER="10"/>
+      <CP PROPPATH="pagado" ORDER="11"/>
+      <CP PROPPATH="documentos" ORDER="12"/>
+	  <CP PROPPATH="mi_empresa#rdn" ORDER="13"/>      
+   </CPROP>
+   <CPROP CLASS="ALBARÁN-FACTURA_CLIENTE">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="cliente#rdn" ORDER="3"/>
+      <CP PROPPATH="cliente#nombre_comercial" ORDER="4"/>
+      <CP PROPPATH="cliente#nombre" ORDER="5"/>
+      <CP PROPPATH="importe" ORDER="6"/>
+      <CP PROPPATH="agente_comercial#rdn" ORDER="7"/>
+      <CP PROPPATH="emitido" ORDER="8"/>
+      <CP PROPPATH="deuda" ORDER="9"/>
+      <CP PROPPATH="pagado" ORDER="10"/>
+      <CP PROPPATH="documentos" ORDER="11"/>
+	  <CP PROPPATH="mi_empresa#rdn" ORDER="12"/>      
+   </CPROP>
+   <CPROP CLASS="ALBARÁN-FACTURA_PROVEEDOR">
+       <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="serie" ORDER="2"/>
+      <CP PROPPATH="fecha" ORDER="3"/>
+      <CP PROPPATH="proveedor#rdn" ORDER="4"/>
+      <CP PROPPATH="proveedor#nombre" ORDER="5"/>
+      <CP PROPPATH="importe" ORDER="6"/>
+      <CP PROPPATH="deuda" ORDER="7"/>
+      <CP PROPPATH="rectificada" ORDER="8"/>
+      <CP PROPPATH="emitido" ORDER="9"/>
+      <CP PROPPATH="destino#nombre" ORDER="10"/>
+      <!--
+      <CP PROPPATH="destino_posterior" ORDER="12"/>
+      <CP PROPPATH="destino_posterior" ORDER="13"/>
+      -->
+	  <CP PROPPATH="mi_empresa#rdn" ORDER="15"/>      
+   </CPROP>
+   <CPROP CLASS="CONFIGURACIÓN_CONTABLE">
+   		<CP PROPPATH="mi_empresa#rdn" ORDER="1"/>
+   </CPROP>
+   
+   <CPROP CLASS="PARAMETRO_NUMERICO">
+   		<CP PROPPATH="rdn" ORDER="1"/>
+   		<CP PROPPATH="valor_numerico" ORDER="2"/>
+   		<CP PROPPATH="filtro" ORDER="3"/>
+   </CPROP>
+   
+   <CPROP CLASS="PARAMETRO_VERDADERO">
+   		<CP PROPPATH="rdn" ORDER="1"/>
+   		<CP PROPPATH="activo" ORDER="2"/>
+   		<CP PROPPATH="filtro" ORDER="3"/>
+   </CPROP>
+   
+   <CPROP CLASS="ALBARÁN_DISTRIBUIDOR">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="distribuidor#nombre" ORDER="3"/>
+      <CP PROPPATH="distribuidor#almacén#nombre" ORDER="4"/>
+      <CP PROPPATH="distribuidor#almacén#rdn" ORDER="5"/>
+      <CP PROPPATH="destino#nombre" ORDER="6"/>
+      <!--
+      <CP PROPPATH="destino_posterior" ORDER="7"/>
+      <CP PROPPATH="destino_posterior" ORDER="8"/>
+      -->
+      <CP PROPPATH="cantidad_total" ORDER="10"/>
+      <CP PROPPATH="total_kg" ORDER="11"/>
+      <CP PROPPATH="mi_empresa#rdn" ORDER="12"/>      
+   </CPROP>
+   <CPROP CLASS="ALBARÁN_PROVEEDOR">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="proveedor#rdn" ORDER="3"/>
+      <CP PROPPATH="proveedor#nombre" ORDER="4"/>
+      <CP PROPPATH="importe" ORDER="5"/>
+      <CP PROPPATH="destino#nombre" ORDER="6"/>
+      <!--
+      <CP PROPPATH="destino_posterior" ORDER="7"/>
+      <CP PROPPATH="destino_posterior" ORDER="8"/>
+      -->
+      <CP PROPPATH="facturado" ORDER="9"/>
+      <CP PROPPATH="emitido" ORDER="11"/>
+	  <CP PROPPATH="mi_empresa#rdn" ORDER="12"/>      
+   </CPROP>
+   <CPROP CLASS="ENTRADA_PRODUCTOS_ALMACÉN">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="destino#nombre" ORDER="3"/>
+      <!--
+      <CP PROPPATH="destino_posterior" ORDER="4"/>
+      <CP PROPPATH="destino_posterior" ORDER="5"/>
+      -->
+
+   </CPROP>
+   <CPROP CLASS="ALMACÉN">
+      <CP PROPPATH="nombre" ORDER="1"/>
+      <CP PROPPATH="rdn" ORDER="2"/>
+      <CP PROPPATH="delegación#rdn" ORDER="3"/>
+      <CP PROPPATH="localidad#rdn" ORDER="4"/>
+      <CP PROPPATH="localidad#provincia#rdn" ORDER="5"/>
+      <CP PROPPATH="teléfono" ORDER="6"/>
+      <CP PROPPATH="empresa#rdn" ORDER="7"/>
+      
+   </CPROP>
+   <CPROP CLASS="ALUMNO">
+      <CP PROPPATH="NIF-CIF-VAT" ORDER="1"/>
+      <CP PROPPATH="nombre" ORDER="2"/>
+      <CP PROPPATH="primer_apellido" ORDER="3"/>
+      <CP PROPPATH="segundo_apellido" ORDER="4"/>
+      <CP PROPPATH="empresa#rdn" ORDER="5"/>
+      <CP PROPPATH="localidad#rdn" ORDER="6"/>
+      <CP PROPPATH="email" ORDER="7"/>
+      <CP PROPPATH="móvil" ORDER="8"/>
+   </CPROP>
+   <CPROP CLASS="APLICACIÓN">
+      <CP PROPPATH="mi_empresa#rdn" ORDER="1"/>
+      <CP PROPPATH="centro_trabajo#nombre" ORDER="3"/>
+      <CP PROPPATH="almacén_por_defecto#nombre" ORDER="4"/>
+      <CP PROPPATH="n._dígitos_en_importe_linea" ORDER="5"/>
+   </CPROP>
+   <CPROP CLASS="APUNTE">
+      <CP PROPPATH="mi_empresa#rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="concepto" ORDER="3"/>
+      <CP PROPPATH="subcuenta#codigo_cuenta" ORDER="4"/>
+      <CP PROPPATH="saldo_subcuenta" ORDER="5"/>
+      <CP PROPPATH="contrapartida" ORDER="6"/>
+      <CP PROPPATH="debe" ORDER="7"/>
+      <CP PROPPATH="haber" ORDER="8"/>
+      <CP PROPPATH="base" ORDER="9"/>
+   </CPROP>
+   <CPROP CLASS="APROBACIÓN_SP">
+      <CP PROPPATH="fecha" ORDER="1"/>
+      <CP PROPPATH="firmado_por" ORDER="2"/>
+   </CPROP>
+   
+    <CPROP CLASS="ARTÍCULO" CLASSPARENT="PARÁMETROS_CAMBIO_PRECIO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+      <CP PROPPATH="pvp" ORDER="3"/>
+      <CP PROPPATH="pvp_iva_incluido" ORDER="4"/>
+      <CP PROPPATH="iva" ORDER="5"/>
+   </CPROP>
+
+   <CPROP CLASS="ASIGNACIÓN_VENCIMIENTO">   	  
+      <CP PROPPATH="vencimiento#fecha" ORDER="1"/>
+      <CP PROPPATH="vencimiento#factura#rdn" ORDER="2"/>
+      <CP PROPPATH="vencimiento#factura#fecha" ORDER="3"/>
+   </CPROP>
+   
+    <CPROP CLASS="ASIGNACIÓN_VENCIMIENTO" CLASSPARENT="COBRO">      
+	  <CP PROPPATH="importe_asignado" ORDER="0"/>		 
+      <CP PROPPATH="vencimiento#fecha" ORDER="2"/>
+      <CP PROPPATH="vencimiento#factura#rdn" ORDER="3"/>
+      <CP PROPPATH="vencimiento#factura#fecha" ORDER="4"/>
+      <CP PROPPATH="vencimiento#medio_de_pago#rdn" ORDER="5"/>
+      <CP PROPPATH="vencimiento#importe" ORDER="6"/>
+      <CP PROPPATH="vencimiento#deuda" ORDER="7"/>
+   </CPROP>
+   
+   <CPROP CLASS="BANCO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="nombre" ORDER="2"/>
+   </CPROP>
+   <CPROP CLASS="CAJA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+      <CP PROPPATH="saldo" ORDER="3"/>
+      <CP PROPPATH="delegación#rdn" ORDER="4"/>
+   </CPROP>
+   
+   <CPROP CLASS="CARGO">
+      <CP PROPPATH="tipo_cargo#rdn" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+      <CP PROPPATH="importe" ORDER="3"/>
+      <CP PROPPATH="iva" ORDER="4"/>
+   </CPROP>
+   <CPROP CLASS="CENTRO_TRABAJO">
+      <CP PROPPATH="nombre" ORDER="1"/>
+      <CP PROPPATH="localidad#rdn" ORDER="2"/>
+      <CP PROPPATH="dirección" ORDER="3"/>
+   </CPROP>
+	<CPROP CLASS="CLASE_EXCLUÍDA">
+      <CP PROPPATH="dominio#rdn" ORDER="1"/>
+   </CPROP>
+      
+      
+	<CPROP CLASS="PROPIEDAD_EXCLUÍDA">
+      <CP PROPPATH="propiedad#rdn" ORDER="1"/>
+   </CPROP>
+   
+	<CPROP CLASS="PROPIEDAD_EN_CLASE_EXCLUÍDA">
+      <CP PROPPATH="propiedad#rdn" ORDER="1"/>
+	  <CP PROPPATH="dominio#rdn" ORDER="2"/>      
+   </CPROP>   
+          
+      
+   
+   <CPROP CLASS="COSTE_UNIDAD">
+      <CP PROPPATH="unidad#rdn" ORDER="1"/>
+      <CP PROPPATH="coste" ORDER="2"/>
+   </CPROP>
+   <CPROP CLASS="CUENTA_ANALÍTICA">
+      <CP PROPPATH="rdn" ORDER="0"/>
+      <CP PROPPATH="coste_incurrido" ORDER="1"/>
+      <CP PROPPATH="coste_planificado" ORDER="2"/>      
+      <CP PROPPATH="ingresos" ORDER="3"/>
+   </CPROP>
+   <CPROP CLASS="CIERRE_CAJA">
+      <CP PROPPATH="caja#rdn" ORDER="1"/>
+      <CP PROPPATH="fecha_cierre" ORDER="2"/>
+      <CP PROPPATH="responsable#rdn" ORDER="3"/>
+      <CP PROPPATH="declaración_saldo" ORDER="5"/>
+      <CP PROPPATH="descuadre_total" ORDER="6"/>
+      <CP PROPPATH="observaciones" ORDER="7"/>
+   </CPROP>
+   <CPROP CLASS="DESCUADRE_CAJA">
+      <CP PROPPATH="fecha" ORDER="0"/>
+      <CP PROPPATH="mi_empresa#rdn" ORDER="1"/>
+      <CP PROPPATH="caja_entrada#rdn" ORDER="2"/>
+      <CP PROPPATH="importe" ORDER="3"/>
+      <CP PROPPATH="mi_empresa#nombre" ORDER="3"/>
+   </CPROP>
+   
+  	<CPROP CLASS="FLUJO_CAJA">
+      <CP PROPPATH="mi_empresa#rdn" ORDER="0"/>      
+      <CP PROPPATH="fecha" ORDER="1"/>
+      <CP PROPPATH="importe" ORDER="2"/>
+      <CP PROPPATH="cliente#rdn" ORDER="3"/>
+      <CP PROPPATH="proveedor#rdn" ORDER="4"/>      
+      <CP PROPPATH="concepto" ORDER="5"/>
+      <CP PROPPATH="documentos" ORDER="6"/>
+      <CP PROPPATH="medio_de_pago#rdn" ORDER="7"/>      
+      <CP PROPPATH="caja_entrada#rdn" ORDER="8"/>
+      <CP PROPPATH="caja_salida#rdn" ORDER="9"/>    
+   </CPROP>   
+   
+   <CPROP CLASS="CONDICIÓN_ESPECIAL_VENTA_PRECIO_FIJO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="cliente#rdn" ORDER="2"/>
+	  <CP PROPPATH="grupo_cliente#rdn" ORDER="3"/>      
+      <CP PROPPATH="prioridad#rdn" ORDER="4"/>
+      <CP PROPPATH="precio" ORDER="5"/>
+      <CP PROPPATH="fecha_inicio" ORDER="6"/>
+      <CP PROPPATH="fecha_fin" ORDER="7"/>
+      
+   </CPROP>
+   <CPROP CLASS="CONDICIÓN_ESPECIAL_VENTA_PORCENTUAL">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="cliente#rdn" ORDER="2"/>
+	  <CP PROPPATH="grupo_cliente#rdn" ORDER="3"/> 
+      <CP PROPPATH="prioridad#rdn" ORDER="4"/>
+      <CP PROPPATH="porcentaje" ORDER="5"/>
+      <CP PROPPATH="fecha_inicio" ORDER="6"/>
+      <CP PROPPATH="fecha_fin" ORDER="7"/>      
+   </CPROP>
+   
+   <CPROP CLASS="PRODUCTIVIDAD">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="prioridad#rdn" ORDER="2"/>
+      <CP PROPPATH="envase1xhora" ORDER="3"/>
+      <CP PROPPATH="envase2xhora" ORDER="4"/>
+   </CPROP>
+
+   <CPROP CLASS="CLIENTE_PARTICULAR">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="nombre" ORDER="3"/>            
+      <CP PROPPATH="deuda" ORDER="4"/>
+      <CP PROPPATH="NIF-CIF-VAT" ORDER="5"/>
+      <CP PROPPATH="localidad#rdn" ORDER="5"/>
+      <CP PROPPATH="teléfono" ORDER="6"/>
+      <CP PROPPATH="observaciones" ORDER="7"/>
+      <CP PROPPATH="agente_comercial#rdn" ORDER="8"/>
+      <CP PROPPATH="fecha_última_compra" ORDER="9"/>
+   </CPROP>
+   <CPROP CLASS="CLIENTE_EMPRESA">
+      <CP PROPPATH="rdn" ORDER="1"/>      
+      <CP PROPPATH="nombre_comercial" ORDER="2"/>
+      <CP PROPPATH="nombre" ORDER="3"/>	     
+      <CP PROPPATH="deuda" ORDER="4"/>
+      <CP PROPPATH="NIF-CIF-VAT" ORDER="6"/>  
+      <CP PROPPATH="localidad#rdn" ORDER="6"/>
+      <CP PROPPATH="teléfono" ORDER="7"/>
+      <CP PROPPATH="observaciones" ORDER="8"/>
+      <CP PROPPATH="agente_comercial#rdn" ORDER="9"/>
+      <CP PROPPATH="fecha_última_compra" ORDER="10"/>
+   </CPROP>
+   <CPROP CLASS="CLIENTE_POTENCIAL_EMPRESA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="nombre_comercial" ORDER="2"/>
+      <CP PROPPATH="nombre" ORDER="3"/>
+      <CP PROPPATH="localidad#rdn" ORDER="4"/>
+      <CP PROPPATH="observaciones" ORDER="5"/>
+      <CP PROPPATH="teléfono" ORDER="6"/>
+   </CPROP>
+   <CPROP CLASS="CLIENTE_POTENCIAL_PARTICULAR">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="nombre" ORDER="2"/>
+      <CP PROPPATH="localidad#rdn" ORDER="3"/>
+      <CP PROPPATH="observaciones" ORDER="4"/>
+      <CP PROPPATH="teléfono" ORDER="5"/>
+   </CPROP>
+   <CPROP CLASS="COBRO_VENCIMIENTO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="cliente#rdn" ORDER="2"/>
+      <CP PROPPATH="cliente#nombre" ORDER="3"/>
+      <CP PROPPATH="fecha" ORDER="4"/>
+      <CP PROPPATH="fecha_creación" ORDER="5"/>
+      <CP PROPPATH="medio_de_pago#rdn" ORDER="6"/>
+      <CP PROPPATH="importe" ORDER="7"/>
+      <CP PROPPATH="documentos" ORDER="8"/>      
+   </CPROP>
+   <CPROP CLASS="COBRO_ANTICIPO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="cliente#rdn" ORDER="2"/>
+      <CP PROPPATH="cliente#nombre" ORDER="3"/>
+      <CP PROPPATH="fecha" ORDER="4"/>
+      <CP PROPPATH="fecha_creación" ORDER="5"/>
+      <CP PROPPATH="medio_de_pago#rdn" ORDER="6"/>
+      <CP PROPPATH="importe" ORDER="7"/>
+	  <CP PROPPATH="importe_pendiente_asignar" ORDER="8"/>      
+    </CPROP>
+   
+   <CPROP CLASS="COBRO_ANTICIPO" CLASSPARENT="DOCUMENTO_VENTA_NOMINATIVO">
+   	  <CP PROPPATH="medio_de_pago#rdn" ORDER="1"/>
+      <CP PROPPATH="entregado_metálico" ORDER="2"/>
+      <CP PROPPATH="importe" ORDER="3"/>      
+      <CP PROPPATH="devuelto_metálico" ORDER="4"/>
+      <CP PROPPATH="caja_entrada#rdn" ORDER="5"/>
+   </CPROP>
+   <CPROP CLASS="COMISIÓN_FIJA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="prioridad#rdn" ORDER="5"/>
+      <CP PROPPATH="fecha_inicio" ORDER="6"/>
+	  <CP PROPPATH="fecha_fin" ORDER="7"/>
+	  <CP PROPPATH="importe" ORDER="8"/>      
+   </CPROP>
+   <CPROP CLASS="COMISIÓN_PORCENTUAL">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="prioridad#rdn" ORDER="3"/>
+      <CP PROPPATH="fecha_inicio" ORDER="4"/>
+	  <CP PROPPATH="fecha_fin" ORDER="5"/>
+	  <CP PROPPATH="porcentaje_base" ORDER="6"/>      
+   </CPROP>
+   <CPROP CLASS="CONFIG_LOGÍSTICA">
+      <CP PROPPATH="solo_permitir_rotaciones_centralizadas" ORDER="1"/>
+      <CP PROPPATH="días_min_almacén_no_central_para_rotar" ORDER="2"/>
+      <CP PROPPATH="estimar_ventas_localmente" ORDER="3"/>
+   </CPROP>
+   
+    <CPROP CLASS="CONFIG_TICKET">
+      <CP PROPPATH="período_días_abonable" ORDER="1"/>
+      <CP PROPPATH="período_días_abonar_con_dinero" ORDER="2"/>
+   </CPROP>
+   
+   <CPROP CLASS="VARIACIÓN_POR_CANTIDAD">
+   	  <CP PROPPATH="valor_tramo" ORDER="1"/>      
+      <CP PROPPATH="objetivo_mínimo" ORDER="2"/>      
+      <CP PROPPATH="objetivo_máximo" ORDER="3"/>
+      <CP PROPPATH="tipo_objetivo#rdn" ORDER="2"/>
+   </CPROP>
+      
+   <CPROP CLASS="COMPONENTE_PACK">
+      <CP PROPPATH="producto#rdn" ORDER="1"/>
+      <CP PROPPATH="producto#descripción" ORDER="2"/>
+      <CP PROPPATH="cantidad" ORDER="3"/>
+   </CPROP>
+   
+   <CPROP CLASS="CONFIG_LOTE">
+   	  <CP PROPPATH="rdn" ORDER="1"/>      
+      <CP PROPPATH="familia#rdn" ORDER="2"/>
+      <CP PROPPATH="subfamilia#rdn" ORDER="3"/>
+      <CP PROPPATH="marca#rdn" ORDER="4"/>
+	  <CP PROPPATH="producto#rdn" ORDER="5"/>
+	  <CP PROPPATH="prioridad#rdn" ORDER="6"/>      
+   </CPROP>
+   <CPROP CLASS="CONTRIBUCIÓN_LINEAL">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="cantidad" ORDER="2"/>
+      <CP PROPPATH="contribución_unitaria" ORDER="3"/>
+   </CPROP>
+   <CPROP CLASS="CONTROL_TRANSPORTE">
+      <CP PROPPATH="matrícula" ORDER="1"/>
+      <CP PROPPATH="responsable_transporte#rdn" ORDER="2"/>
+   </CPROP>
+   <CPROP CLASS="CUENTA_BANCARIA">
+      <CP PROPPATH="entidad" ORDER="2"/>
+      <CP PROPPATH="oficina" ORDER="3"/>
+      <CP PROPPATH="dígito_de_control" ORDER="4"/>
+      <CP PROPPATH="número_cuenta" ORDER="5"/>
+		<CP PROPPATH="rdn" ORDER="6"/>      
+   </CPROP>
+   <CPROP CLASS="CUENTA_CONTABLE">
+      <CP PROPPATH="codigo_cuenta" ORDER="1"/>
+      <CP PROPPATH="detalle" ORDER="2"/>
+      <CP PROPPATH="rdn" ORDER="3"/>
+      <CP PROPPATH="mi_empresa#rdn" ORDER="4"/>
+      <CP PROPPATH="saldo_DEBE" ORDER="5"/>
+      <CP PROPPATH="saldo_HABER" ORDER="6"/>
+      <CP PROPPATH="saldo" ORDER="7"/>
+   </CPROP>
+   
+   <CPROP CLASS="CUENTA_CONTABLE" CLASSPARENT="APUNTE">
+      <CP PROPPATH="rdn" ORDER="1"/> 
+   </CPROP>
+   
+   <CPROP CLASS="DATOS_OFERTA_COMERCIAL">
+      <CP PROPPATH="producto#rdn" ORDER="1"/>
+      <CP PROPPATH="producto#descripción" ORDER="2"/>
+      <CP PROPPATH="pvpr" ORDER="3"/>
+      <CP PROPPATH="descuento" ORDER="4"/>
+   </CPROP>
+   <CPROP CLASS="DESCUENTO_GLOBAL">
+      <CP PROPPATH="tipo_descuento_global#rdn" ORDER="1"/>
+      <CP PROPPATH="porcentaje" ORDER="2"/>
+   </CPROP>
+   <CPROP CLASS="TIPO_DESCUENTO_GLOBAL">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="porcentaje" ORDER="2"/>
+   </CPROP>
+   <CPROP CLASS="DESGLOSE_IVA">
+      <CP PROPPATH="iva#rdn" ORDER="1"/>
+      <CP PROPPATH="base" ORDER="2"/>
+      <CP PROPPATH="cuota_iva" ORDER="3"/>
+      <CP PROPPATH="cuota_recargo" ORDER="4"/>
+   </CPROP>
+   <CPROP CLASS="DIRECCIÓN">
+      <CP PROPPATH="dirección" ORDER="1"/>
+      <CP PROPPATH="localidad#rdn" ORDER="2"/>
+      <CP PROPPATH="localidad#provincia#rdn" ORDER="3"/>
+      <CP PROPPATH="código_postal" ORDER="4"/>
+      <CP PROPPATH="receptor" ORDER="5"/>
+   </CPROP>
+   <CPROP CLASS="DISTRIBUIDOR">
+      <CP PROPPATH="nombre" ORDER="2"/>
+      <CP PROPPATH="almacén#nombre" ORDER="3"/>
+      <CP PROPPATH="almacén#rdn" ORDER="4"/>
+
+      <CP PROPPATH="localidad#rdn" ORDER="8"/>
+      <CP PROPPATH="teléfono" ORDER="9"/>
+      <CP PROPPATH="rdn" ORDER="10"/>
+   </CPROP>
+   <CPROP CLASS="DISTRIBUIDOR" CLASSPARENT="ALBARÁN_DISTRIBUIDOR">
+      <CP PROPPATH="nombre" ORDER="2"/>
+      <CP PROPPATH="almacén#nombre" ORDER="3"/>
+      <CP PROPPATH="almacén#rdn" ORDER="4"/>
+      <CP PROPPATH="localidad#rdn" ORDER="5"/>
+      <CP PROPPATH="rdn" ORDER="6"/>
+      <CP PROPPATH="empresa#rdn" ORDER="7"/>      
+   </CPROP>
+   <CPROP CLASS="DISTRIBUIDOR" CLASSPARENT="PEDIDO_DISTRIBUIDOR">
+      <CP PROPPATH="nombre" ORDER="2"/>
+      <CP PROPPATH="almacén#nombre" ORDER="3"/>
+      <CP PROPPATH="almacén#rdn" ORDER="4"/>
+      <CP PROPPATH="localidad#rdn" ORDER="5"/>
+      <CP PROPPATH="rdn" ORDER="6"/>
+   </CPROP>
+   <CPROP CLASS="DISTRIBUIDOR" CLASSPARENT="CLIENTE">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="nombre" ORDER="2"/>
+      <CP PROPPATH="almacén#nombre" ORDER="3"/>
+      <CP PROPPATH="almacén#rdn" ORDER="4"/>
+      <CP PROPPATH="localidad#rdn" ORDER="5"/>
+   </CPROP>
+   <CPROP CLASS="EMBALADO_NIVEL2">
+      <CP PROPPATH="cantidadXenvase1" ORDER="1"/>
+      <CP PROPPATH="envase1Xenvase2" ORDER="2"/>
+   </CPROP>
+   <CPROP CLASS="EMPLEADO">
+      <CP PROPPATH="rdn" ORDER="0"/>
+      <CP PROPPATH="nombre" ORDER="1"/>
+      <CP PROPPATH="primer_apellido" ORDER="2"/>
+      <CP PROPPATH="segundo_apellido" ORDER="3"/>
+      <CP PROPPATH="localidad#rdn" ORDER="4"/>
+      <CP PROPPATH="NIF-CIF-VAT" ORDER="5"/>
+      <CP PROPPATH="departamento#rdn" ORDER="6"/>
+      <CP PROPPATH="usuario#rdn" ORDER="7"/>
+   </CPROP>
+   <CPROP CLASS="EPI">
+      <CP PROPPATH="descripción" ORDER="1"/>
+      <CP PROPPATH="fabricante#rdn" ORDER="3"/>
+      <CP PROPPATH="modelo_fabricante" ORDER="4"/>
+      <CP PROPPATH="parte_a_proteger#rdn" ORDER="5"/>
+      <CP PROPPATH="revisión_epi#fecha" ORDER="6"/>
+      <CP PROPPATH="aprobacion_SP#fecha" ORDER="7"/>
+      <CP PROPPATH="aprobacion_SP#firmado_por" ORDER="8"/>
+   </CPROP>
+
+   <CPROP CLASS="ARRENDAMIENTO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="cliente#rdn" ORDER="3"/>
+      <CP PROPPATH="cliente#nombre" ORDER="4"/>
+      <CP PROPPATH="importe" ORDER="5"/>      
+      <CP PROPPATH="agente_comercial#rdn" ORDER="6"/>              	  	 
+      <CP PROPPATH="mi_empresa#rdn" ORDER="12"/>
+   </CPROP>
+   
+   <CPROP CLASS="FACTURA_A_CLIENTE">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="cliente#rdn" ORDER="3"/>
+      <CP PROPPATH="cliente#nombre_comercial" ORDER="3"/>
+      <CP PROPPATH="cliente#nombre" ORDER="3"/>
+      <CP PROPPATH="importe" ORDER="5"/>      
+      <CP PROPPATH="agente_comercial#rdn" ORDER="6"/>
+      <CP PROPPATH="deuda" ORDER="7"/>	              	  	 
+	  <CP PROPPATH="pagado" ORDER="8"/>	  
+      <CP PROPPATH="emitido" ORDER="9"/>
+      <CP PROPPATH="rectificada" ORDER="10"/>
+      <CP PROPPATH="documentos" ORDER="11"/>
+      <CP PROPPATH="mi_empresa#rdn" ORDER="12"/>
+   </CPROP>
+   <CPROP CLASS="FACTURA_PROVEEDOR">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="codigo_factura" ORDER="2"/>
+      <CP PROPPATH="serie" ORDER="3"/>
+      <CP PROPPATH="fecha" ORDER="4"/>
+      <CP PROPPATH="proveedor#rdn" ORDER="5"/>
+      <CP PROPPATH="proveedor#nombre" ORDER="6"/>
+      <CP PROPPATH="importe" ORDER="7"/>
+      <CP PROPPATH="pagado" ORDER="8"/>
+      <CP PROPPATH="rectificada" ORDER="9"/>
+      <CP PROPPATH="documentos" ORDER="10"/>	            
+      <CP PROPPATH="emitido" ORDER="11"/>    
+      <CP PROPPATH="mi_empresa#rdn" ORDER="12"/>  	                    
+   </CPROP>
+   <CPROP CLASS="FACTURA_RECTIFICATIVA_COMPRAS">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="proveedor#rdn" ORDER="3"/>
+      <CP PROPPATH="proveedor#nombre" ORDER="4"/>
+      <CP PROPPATH="importe" ORDER="5"/>
+      <CP PROPPATH="deuda" ORDER="6"/>
+      <CP PROPPATH="rectifica_a" ORDER="7"/>      
+      <CP PROPPATH="emitido" ORDER="8"/>
+      <CP PROPPATH="mi_empresa#rdn" ORDER="9"/>      
+   </CPROP>
+   <CPROP CLASS="FACTURA_RECTIFICATIVA_VENTAS">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="cliente#rdn" ORDER="3"/>
+      <CP PROPPATH="cliente#nombre" ORDER="4"/>
+      <CP PROPPATH="importe" ORDER="5"/>
+      <CP PROPPATH="deuda" ORDER="6"/>
+      <CP PROPPATH="rectifica_a" ORDER="7"/>
+      <CP PROPPATH="agente_comercial#rdn" ORDER="8"/>
+      <CP PROPPATH="emitido" ORDER="9"/>
+	  <CP PROPPATH="mi_empresa#rdn" ORDER="10"/>            
+   </CPROP>
+   <CPROP CLASS="FAMILIA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+   </CPROP>
+   <CPROP CLASS="TALLA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+      <CP PROPPATH="orden" ORDER="3"/>
+   </CPROP>
+   <CPROP CLASS="COLOR">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+   </CPROP>
+   <CPROP CLASS="FORMA_PAGO">      
+   	  <CP PROPPATH="porcentaje" ORDER="1"/>
+   	  <CP PROPPATH="importe" ORDER="2"/>
+      <CP PROPPATH="medio_de_pago#rdn" ORDER="3"/>      
+      <CP PROPPATH="descripción" ORDER="4"/>
+      <CP PROPPATH="cuenta_bancaria#entidad" ORDER="5"/>
+   </CPROP>
+    <CPROP CLASS="FORMA_PAGO" CLASSPARENT="CLIENTE">   	  
+      <CP PROPPATH="porcentaje" ORDER="1"/>
+      <CP PROPPATH="medio_de_pago#rdn" ORDER="2"/>      
+      <CP PROPPATH="descripción" ORDER="3"/>
+      <CP PROPPATH="cuenta_bancaria#entidad" ORDER="4"/>
+   </CPROP>
+   
+   <CPROP CLASS="FORMA_PAGO" CLASSPARENT="PROVEEDOR">
+      <CP PROPPATH="porcentaje" ORDER="1"/>
+      <CP PROPPATH="medio_de_pago#rdn" ORDER="2"/>      
+      <CP PROPPATH="descripción" ORDER="3"/>
+      <CP PROPPATH="cuenta_bancaria#entidad" ORDER="4"/>
+   </CPROP>
+         
+   <CPROP CLASS="ÍNDICE">
+      <CP PROPPATH="dominio#rdn" ORDER="1"/>
+      <CP PROPPATH="campo_en_prefijo#rdn" ORDER="3"/>
+      <CP PROPPATH="prefijo" ORDER="4"/>
+      <CP PROPPATH="inicio_contador" ORDER="5"/>
+      <CP PROPPATH="sufijo" ORDER="6"/>
+      <CP PROPPATH="dígitos_mínimos" ORDER="7"/>
+      <CP PROPPATH="campo_filtro#rdn" ORDER="8"/>
+      <CP PROPPATH="valor_filtro" ORDER="9"/>
+      <CP PROPPATH="mi_empresa#rdn" ORDER="10"/>
+   </CPROP>
+   <CPROP CLASS="GÉNERO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+      <CP PROPPATH="familia#rdn" ORDER="3"/>
+      <CP PROPPATH="familia#descripción" ORDER="4"/>
+      <CP PROPPATH="subfamilia#rdn" ORDER="5"/>
+      <CP PROPPATH="subfamilia#descripción" ORDER="6"/>
+      <CP PROPPATH="stock_total" ORDER="7"/>
+      <CP PROPPATH="pvp_iva_incluido" ORDER="9"/>
+      <CP PROPPATH="pvp" ORDER="10"/>
+      <CP PROPPATH="fecha_última_venta" ORDER="11"/>
+      <CP PROPPATH="requiere_lote" ORDER="12"/>
+      <CP PROPPATH="requiere_color" ORDER="13"/>
+      <CP PROPPATH="requiere_talla" ORDER="14"/>
+   </CPROP>
+   
+   	<CPROP CLASS="SERVICIO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+      <CP PROPPATH="familia#rdn" ORDER="3"/>
+      <CP PROPPATH="familia#descripción" ORDER="4"/>
+      <CP PROPPATH="subfamilia#rdn" ORDER="5"/>
+      <CP PROPPATH="subfamilia#descripción" ORDER="6"/>
+      <!-- a la PROPPATH iva le bajo la prioridad (subo numero) para que linea articulo pille antes
+      la columna stock total de genero -->
+      <CP PROPPATH="pvp_iva_incluido" ORDER="9"/>
+      <CP PROPPATH="pvp" ORDER="10"/>
+      <CP PROPPATH="fecha_última_venta" ORDER="11"/>    
+   </CPROP>  
+   
+   <CPROP CLASS="GRUPO_CLIENTE">
+      <CP PROPPATH="rdn" ORDER="1"/>
+   </CPROP>
+   <CPROP CLASS="IMAGEN">
+      <CP PROPPATH="imagen" ORDER="1"/>      
+      <CP PROPPATH="concepto" ORDER="2"/>
+	  <CP PROPPATH="número" ORDER="3"/>      
+   </CPROP>
+   
+   <CPROP CLASS="INFORME">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="área_funcional#rdn" ORDER="2"/>
+      <CP PROPPATH="formulario_impresión" ORDER="3"/>
+      <CP PROPPATH="vista_previa" ORDER="4"/>
+      <CP PROPPATH="confirmar_impresión" ORDER="5"/>
+      <CP PROPPATH="copias_impresión" ORDER="6"/>
+      <CP PROPPATH="impresión_directa" ORDER="7"/>
+      <CP PROPPATH="impresora" ORDER="8"/>
+   </CPROP>
+   
+   <CPROP CLASS="LÍMITE_STOCK" CLASSPARENT="INFO_STOCK_AUX">
+      <CP PROPPATH="mínimo" ORDER="1"/>
+      <CP PROPPATH="máximo" ORDER="2"/>
+   </CPROP>
+   <CPROP CLASS="LÍMITE_STOCK">
+      <CP PROPPATH="producto#rdn" ORDER="1"/>
+      <CP PROPPATH="producto#descripción" ORDER="2"/>
+      <CP PROPPATH="almacén#nombre" ORDER="3"/>
+      <CP PROPPATH="mínimo" ORDER="4"/>
+      <CP PROPPATH="máximo" ORDER="5"/>
+   </CPROP>
+
+   <CPROP CLASS="LÍNEA_MATERIA" CLASSPARENT="PRODUCCIÓN_MATERIAL">
+      <CP PROPPATH="producto#rdn" ORDER="0"/>
+      <CP PROPPATH="producto#descripción" ORDER="1"/>
+      <CP PROPPATH="cantidad" ORDER="2"/>
+      <CP PROPPATH="almacén_origen#nombre" ORDER="3"/>
+      <CP PROPPATH="almacén_destino#nombre" ORDER="4"/>
+      <CP PROPPATH="lote#rdn" ORDER="5"/>
+      <CP PROPPATH="lote#garantía_caducidad" ORDER="6"/>
+      <CP PROPPATH="talla#rdn" ORDER="7"/>
+      <CP PROPPATH="color#rdn" ORDER="8"/>      
+      <CP PROPPATH="estado#rdn" ORDER="9"/>
+      <CP PROPPATH="coste_unitario" ORDER="9"/>
+      <CP PROPPATH="número" ORDER="10"/>
+   </CPROP>
+   <CPROP CLASS="LÍNEA_MATERIA" CLASSPARENT="ENTRADA_ARTÍCULOS">
+      <CP PROPPATH="producto#rdn" ORDER="1"/>
+      <CP PROPPATH="producto#descripción" ORDER="2"/>
+      <CP PROPPATH="producto#familia#rdn" ORDER="3"/>
+      <CP PROPPATH="cantidad" ORDER="5"/>
+      <CP PROPPATH="lote#rdn" ORDER="5"/>
+      <CP PROPPATH="lote#garantía_caducidad" ORDER="6"/>
+      <CP PROPPATH="talla#rdn" ORDER="7"/>
+      <CP PROPPATH="color#rdn" ORDER="8"/>     
+      <CP PROPPATH="número" ORDER="10"/>
+   </CPROP>
+ 
+    
+   <CPROP CLASS="PRODUCCIÓN_MATERIAL">
+   	   <CP PROPPATH="fecha_creación" ORDER="1"/>
+       <CP PROPPATH="fecha_inicio" ORDER="2"/>
+       <CP PROPPATH="línea#producto#rdn" ORDER="3"/>
+       <CP PROPPATH="línea#producto#descripción" ORDER="4"/>
+       <CP PROPPATH="línea#producto#familia#rdn" ORDER="5"/>
+       <CP PROPPATH="línea#cantidad" ORDER="6"/>
+       <CP PROPPATH="estado#rdn" ORDER="7"/>
+   </CPROP>
+   
+   <CPROP CLASS="TAREA" CLASSPARENT="SUBTAREA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+      <CP PROPPATH="proyecto#rdn" ORDER="3"/>
+      <CP PROPPATH="sujeto#rdn" ORDER="4"/>
+      <CP PROPPATH="sujeto#nombre" ORDER="5"/>       
+   </CPROP>
+      
+    <CPROP CLASS="SUBTAREA">
+      <CP PROPPATH="fecha_inicio" ORDER="1"/>
+      <CP PROPPATH="tarea#rdn"    ORDER="2"/>
+      <CP PROPPATH="tarea#descripción"    ORDER="3"/>
+      <CP PROPPATH="tarea#proyecto#rdn"    ORDER="4"/>               
+      <CP PROPPATH="tarea#sujeto#rdn"    ORDER="5"/>
+      <CP PROPPATH="tarea#sujeto#nombre"    ORDER="6"/>
+      <CP PROPPATH="concepto" ORDER="7"/>     
+      <CP PROPPATH="porcentaje_realización" ORDER="8"/>       
+      <CP PROPPATH="recurso_resuelto#rdn" ORDER="9"/>                                    
+   </CPROP>
+   
+    <CPROP CLASS="SUBTAREA" CLASSPARENT="TAREA">>
+      <CP PROPPATH="fecha_inicio" ORDER="1"/>   
+      <CP PROPPATH="cantidad" ORDER="3"/>
+      <CP PROPPATH="prioridad#rdn" ORDER="4"/>
+      <CP PROPPATH="producto#rdn" ORDER="5"/>               
+      <CP PROPPATH="concepto" ORDER="6"/>     
+      <CP PROPPATH="porcentaje_realización" ORDER="7"/> 
+      <CP PROPPATH="peso_prioridad" ORDER="8"/>
+      <CP PROPPATH="recurso#rdn" ORDER="9"/>      
+      <CP PROPPATH="revisión" ORDER="10"/>                          
+      <CP PROPPATH="rdn" ORDER="11"/>
+   </CPROP>
+   
+   <CPROP CLASS="DEDICACIÓN">      
+      <CP PROPPATH="recurso#rdn" ORDER="1"/>
+      <CP PROPPATH="porcentaje_dedicación" ORDER="2"/>      
+   </CPROP>
+   
+   
+   <CPROP CLASS="PARTE_TRABAJO">
+      <CP PROPPATH="fecha_inicio" ORDER="1"/>
+      <CP PROPPATH="fecha_fin" ORDER="2"/>         
+      <CP PROPPATH="cantidad" ORDER="3"/>
+      <CP PROPPATH="concepto" ORDER="4"/>        		            
+      <CP PROPPATH="recurso#rdn" ORDER="7"/>      
+      <CP PROPPATH="revisión" ORDER="9"/>  
+   </CPROP>   
+   
+   <CPROP CLASS="LÍNEA_SERVICIO" CLASSPARENT="TAREA">
+      <CP PROPPATH="fecha_inicio" ORDER="1"/>
+      <CP PROPPATH="fecha_fin" ORDER="2"/>         
+      <CP PROPPATH="cantidad" ORDER="3"/>
+      <CP PROPPATH="concepto" ORDER="4"/>        
+	  <CP PROPPATH="porcentaje_dedicación" ORDER="5"/>
+	  <CP PROPPATH="porcentaje_realización" ORDER="6"/>           
+      <CP PROPPATH="recurso#rdn" ORDER="7"/>
+      <CP PROPPATH="producto#rdn" ORDER="8"/>
+      <CP PROPPATH="revisión" ORDER="9"/>
+   </CPROP>
+   
+   <CPROP CLASS="LÍNEA_GASTO" CLASSPARENT="TAREA">
+      <CP PROPPATH="producto#rdn" ORDER="0"/>
+      <CP PROPPATH="empleado#rdn" ORDER="2"/>
+      <CP PROPPATH="proyecto#rdn" ORDER="3"/>
+      <CP PROPPATH="cantidad" ORDER="4"/>
+      <CP PROPPATH="importe" ORDER="6"/>
+
+   </CPROP>
+   
+    <CPROP CLASS="LÍNEA_MATERIA" CLASSPARENT="TAREA">
+      <CP PROPPATH="producto#rdn" ORDER="1"/>
+      <CP PROPPATH="cantidad" ORDER="2"/>
+      <CP PROPPATH="lote#rdn" ORDER="3"/>
+      <CP PROPPATH="talla#rdn" ORDER="5"/>
+      <CP PROPPATH="color#rdn" ORDER="6"/>
+   </CPROP>
+   
+     
+   <CPROP CLASS="LÍNEA_ARTÍCULOS_MATERIA" CLASSPARENT="TICKET_VENTA">
+      <CP PROPPATH="producto#rdn" ORDER="0"/>
+      <CP PROPPATH="producto#descripción" ORDER="1"/>
+      <CP PROPPATH="cantidad" ORDER="2"/>
+      <CP PROPPATH="precio_iva_incluido" ORDER="3"/>
+      <CP PROPPATH="descuento" ORDER="4"/>
+      <!-- <CP PROPPATH="importe_con_iva" ORDER="7"/> -->      
+      <CP PROPPATH="lote#rdn" ORDER="6"/>
+      <CP PROPPATH="talla#rdn" ORDER="7"/>
+      <CP PROPPATH="color#rdn" ORDER="8"/>
+      <CP PROPPATH="color#descripción" ORDER="9"/>
+   </CPROP>
+  
+   
+   <CPROP CLASS="LÍNEA_ARTÍCULOS_MATERIA" CLASSPARENT="PRESUPUESTO_COMPRA">
+      <CP PROPPATH="producto#rdn" ORDER="0"/>
+      <CP PROPPATH="producto#descripción" ORDER="1"/>
+      <CP PROPPATH="producto#familia#rdn" ORDER="2"/>
+      <CP PROPPATH="cantidad" ORDER="3"/>
+      <CP PROPPATH="descuento" ORDER="4"/>
+      <CP PROPPATH="iva#rdn" ORDER="5"/>
+      <CP PROPPATH="concepto" ORDER="6"/>      
+      <CP PROPPATH="talla#rdn" ORDER="7"/>
+      <CP PROPPATH="color#rdn" ORDER="8"/>      	   
+      <CP PROPPATH="número" ORDER="9"/>
+   </CPROP>
+   
+   <CPROP CLASS="LÍNEA_ARTÍCULOS_MATERIA" CLASSPARENT="PEDIDO_A_PROVEEDOR">
+      <CP PROPPATH="producto#rdn" ORDER="0"/>
+      <CP PROPPATH="producto#descripción" ORDER="1"/>
+      <CP PROPPATH="producto#familia#rdn" ORDER="2"/>
+      <CP PROPPATH="cantidad" ORDER="3"/>
+      <CP PROPPATH="descuento" ORDER="4"/>
+      <CP PROPPATH="iva#rdn" ORDER="5"/>
+      <CP PROPPATH="concepto" ORDER="6"/>      
+      <CP PROPPATH="talla#rdn" ORDER="7"/>
+      <CP PROPPATH="color#rdn" ORDER="8"/>      	   
+      <CP PROPPATH="número" ORDER="9"/>
+   </CPROP>
+
+   
+   <CPROP CLASS="LÍNEA_ARTÍCULOS_MATERIA" CLASSPARENT="ALBARÁN_CLIENTE">
+      <CP PROPPATH="producto#rdn" ORDER="1"/>
+      <CP PROPPATH="producto#descripción" ORDER="2"/>
+      <CP PROPPATH="producto#familia#rdn" ORDER="2"/>
+      <CP PROPPATH="cantidad" ORDER="3"/>
+      <CP PROPPATH="precio" ORDER="4"/>
+      <CP PROPPATH="concepto" ORDER="6"/>
+      <CP PROPPATH="descuento" ORDER="7"/>
+      <CP PROPPATH="iva#rdn" ORDER="8"/>
+   <!--     <CP PROPPATH="almacén_origen" ORDER="7"/>-->
+      <CP PROPPATH="lote#rdn" ORDER="9"/>
+      <CP PROPPATH="lote#garantía_caducidad" ORDER="10"/>
+      <CP PROPPATH="talla#rdn" ORDER="11"/>
+      <CP PROPPATH="color#rdn" ORDER="12"/>      
+      <CP PROPPATH="importe" ORDER="13"/>
+      <CP PROPPATH="número" ORDER="16"/>
+   </CPROP>
+   
+   
+   <CPROP CLASS="LÍNEA_ARTÍCULOS_MATERIA" CLASSPARENT="PEDIDO_DE_CLIENTE">
+      <CP PROPPATH="producto#rdn" ORDER="1"/>
+      <CP PROPPATH="producto#descripción" ORDER="2"/>
+      <CP PROPPATH="producto#familia#rdn" ORDER="2"/>
+      <CP PROPPATH="cantidad" ORDER="3"/>
+      <CP PROPPATH="precio" ORDER="4"/>
+      <CP PROPPATH="descuento" ORDER="6"/>
+      <CP PROPPATH="iva#rdn" ORDER="7"/>
+	  <CP PROPPATH="concepto" ORDER="9"/>   	  
+      <CP PROPPATH="lote#rdn" ORDER="10"/>
+      <CP PROPPATH="lote#garantía_caducidad" ORDER="11"/>
+      <CP PROPPATH="talla#rdn" ORDER="12"/>
+      <CP PROPPATH="color#rdn" ORDER="13"/>          
+      <CP PROPPATH="importe" ORDER="14"/>
+      <CP PROPPATH="estado#rdn" ORDER="14"/>
+      <CP PROPPATH="número" ORDER="16"/>
+   </CPROP>
+   
+   <CPROP CLASS="LÍNEA_ARTÍCULOS_MATERIA" CLASSPARENT="FACTURA_A_CLIENTE">
+      <CP PROPPATH="producto#rdn" ORDER="1"/>
+      <CP PROPPATH="producto#descripción" ORDER="2"/>
+      <CP PROPPATH="producto#familia#rdn" ORDER="2"/>
+      <CP PROPPATH="cantidad" ORDER="3"/>
+      <CP PROPPATH="precio" ORDER="4"/>
+      <CP PROPPATH="concepto" ORDER="6"/>
+      <CP PROPPATH="descuento" ORDER="7"/>
+      <CP PROPPATH="iva#rdn" ORDER="8"/>
+       <!-- <CP PROPPATH="almacén_origen" ORDER="7"/>-->       
+      <CP PROPPATH="lote#rdn" ORDER="9"/>
+      <CP PROPPATH="lote#garantía_caducidad" ORDER="10"/>
+      <CP PROPPATH="talla#rdn" ORDER="11"/>
+      <CP PROPPATH="color#rdn" ORDER="12"/>      
+      <CP PROPPATH="importe" ORDER="13"/>
+      <CP PROPPATH="número" ORDER="15"/>
+   </CPROP>
+   <CPROP CLASS="LÍNEA_ARTÍCULOS_MATERIA" CLASSPARENT="ALBARÁN_PROVEEDOR">
+      <CP PROPPATH="producto#rdn" ORDER="1"/>
+      <CP PROPPATH="producto#descripción" ORDER="2"/>
+      <CP PROPPATH="producto#familia#rdn" ORDER="2"/>
+      <CP PROPPATH="producto#pvp_iva_incluido" ORDER="3"/>
+      <CP PROPPATH="cantidad" ORDER="4"/>
+      <CP PROPPATH="precio" ORDER="4"/>
+      <CP PROPPATH="descuento" ORDER="5"/>
+      <CP PROPPATH="iva#rdn" ORDER="6"/>
+      <!--  <CP PROPPATH="almacén_destino" ORDER="7"/>-->
+      <CP PROPPATH="lote#rdn" ORDER="8"/>
+      <CP PROPPATH="lote#garantía_caducidad" ORDER="9"/>
+      <CP PROPPATH="talla#rdn" ORDER="10"/>
+      <CP PROPPATH="color#rdn" ORDER="11"/>      
+      <CP PROPPATH="importe" ORDER="12"/>
+	  <CP PROPPATH="cantidad_envase_1" ORDER="14"/>      
+      <CP PROPPATH="número" ORDER="15"/>
+   </CPROP>
+   <CPROP CLASS="LÍNEA_ARTÍCULOS_MATERIA" CLASSPARENT="FACTURA_PROVEEDOR">
+      <CP PROPPATH="producto#rdn" ORDER="1"/>
+      <CP PROPPATH="producto#descripción" ORDER="2"/>
+      <CP PROPPATH="producto#familia#rdn" ORDER="2"/>
+      <CP PROPPATH="producto#pvp_iva_incluido" ORDER="3"/>
+      <CP PROPPATH="cantidad" ORDER="4"/>
+      <CP PROPPATH="precio" ORDER="4"/>
+      <CP PROPPATH="descuento" ORDER="5"/>
+      <CP PROPPATH="iva#rdn" ORDER="6"/>
+      <!--  <CP PROPPATH="almacén_destino" ORDER="7"/>-->
+      <CP PROPPATH="lote#rdn" ORDER="8"/>
+      <CP PROPPATH="lote#garantía_caducidad" ORDER="9"/>
+      <CP PROPPATH="talla#rdn" ORDER="10"/>
+      <CP PROPPATH="color#rdn" ORDER="11"/>      
+      <CP PROPPATH="importe" ORDER="12"/>
+      <CP PROPPATH="número" ORDER="14"/>
+   </CPROP>
+   <CPROP CLASS="LÍNEA_ARTÍCULOS_MATERIA" CLASSPARENT="ALBARÁN_PRODUCCIÓN">
+      <CP PROPPATH="producto#rdn" ORDER="1"/>
+      <CP PROPPATH="producto#descripción" ORDER="2"/>
+      <CP PROPPATH="producto#familia#rdn" ORDER="2"/>
+      <CP PROPPATH="cantidad" ORDER="3"/>
+      <CP PROPPATH="precio" ORDER="4"/>
+      <CP PROPPATH="descuento" ORDER="5"/>
+      <CP PROPPATH="iva#rdn" ORDER="6"/>
+      <CP PROPPATH="almacén_destino#nombre" ORDER="7"/>
+      <CP PROPPATH="almacén_origen#nombre" ORDER="8"/>
+      <CP PROPPATH="lote#rdn" ORDER="9"/>
+      <CP PROPPATH="lote#garantía_caducidad" ORDER="10"/>
+      <CP PROPPATH="talla#rdn" ORDER="11"/>
+      <CP PROPPATH="color#rdn" ORDER="12"/>      
+      <CP PROPPATH="importe" ORDER="13"/>
+      <CP PROPPATH="cantidad_envase_1" ORDER="15"/>
+      <CP PROPPATH="número" ORDER="16"/>
+   </CPROP>
+ 
+ 
+   <CPROP CLASS="LÍNEA_DEMANDA">
+      <CP PROPPATH="fecha_aconsejada_pedido" ORDER="1"/>
+      <CP PROPPATH="cantidad" ORDER="2"/>
+      <CP PROPPATH="proveedor#rdn" ORDER="3"/>
+      <CP PROPPATH="producto#rdn" ORDER="4"/>
+      <CP PROPPATH="producto#descripción" ORDER="5"/>
+      <CP PROPPATH="almacén#nombre" ORDER="6"/>
+   </CPROP>
+   <CPROP CLASS="LÍNEA_DEMANDA_STOCK">
+      <CP PROPPATH="stock#producto#rdn" ORDER="1"/>
+      <CP PROPPATH="stock#producto#descripción" ORDER="2"/>
+      <CP PROPPATH="stock#producto#familia#rdn" ORDER="3"/>
+      <CP PROPPATH="stock#fecha_alta" ORDER="4"/>
+      <CP PROPPATH="límite_stock" ORDER="5"/>
+      <CP PROPPATH="cantidad_solicitada" ORDER="6"/>
+   </CPROP>
+   <CPROP CLASS="LÍNEA_CAMBIO_PRECIO">
+      <CP PROPPATH="producto#rdn" ORDER="1"/>
+      <CP PROPPATH="cantidad" ORDER="2"/>
+      <CP PROPPATH="precio_anterior" ORDER="3"/>
+      <CP PROPPATH="precio" ORDER="4"/>
+      <CP PROPPATH="iva#rdn" ORDER="5"/>
+      <CP PROPPATH="precio_iva_incluido_anterior" ORDER="6"/>
+      <CP PROPPATH="precio_iva_incluido" ORDER="7"/>
+      
+   </CPROP>
+   <CPROP CLASS="LÍNEA_REGULARIZACIÓN">
+      <CP PROPPATH="producto#rdn" ORDER="1"/>
+      <CP PROPPATH="producto#descripción" ORDER="2"/>
+      <CP PROPPATH="lote#rdn" ORDER="3"/>
+      <CP PROPPATH="lote#garantía_caducidad" ORDER="4"/>
+      <CP PROPPATH="talla#rdn" ORDER="5"/>
+      <CP PROPPATH="color#rdn" ORDER="6"/>      
+      <CP PROPPATH="cantidad_antes_regularizar" ORDER="7"/>
+      <CP PROPPATH="cantidad" ORDER="8"/>
+   </CPROP>
+   <CPROP CLASS="LIQUIDACIÓN_COMISIÓN_EXTERNA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="fecha_inicio" ORDER="3"/>
+      <CP PROPPATH="fecha_fin" ORDER="4"/>
+      <CP PROPPATH="agente_comercial#rdn" ORDER="5"/>
+      <CP PROPPATH="agente_comercial#nombre" ORDER="6"/>
+      <CP PROPPATH="base" ORDER="7"/>
+      <CP PROPPATH="total_iva" ORDER="8"/>
+      <CP PROPPATH="recargo" ORDER="9"/>
+      <CP PROPPATH="importe" ORDER="10"/>
+   </CPROP>
+   <CPROP CLASS="LIQUIDACIÓN_COMISIÓN_INTERNA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="fecha_inicio" ORDER="3"/>
+      <CP PROPPATH="fecha_fin" ORDER="4"/>
+      <CP PROPPATH="agente_comercial#rdn" ORDER="5"/>
+      <CP PROPPATH="agente_comercial#nombre" ORDER="6"/>
+      <CP PROPPATH="importe" ORDER="7"/>
+   </CPROP>
+   <CPROP CLASS="LIQUIDACIÓN_CLIENTE_CAMBIO_PRECIO">
+      <CP PROPPATH="rdn" ORDER="0"/>
+      <CP PROPPATH="fecha" ORDER="1"/>
+      <CP PROPPATH="cliente#rdn" ORDER="2"/>
+      <CP PROPPATH="cliente#nombre" ORDER="3"/>
+      <CP PROPPATH="importe_liquidación" ORDER="4"/>
+   </CPROP>
+   <CPROP CLASS="LIQUIDACIÓN_PROVEEDOR_CAMBIO_PRECIO">
+      <CP PROPPATH="rdn" ORDER="0"/>
+      <CP PROPPATH="fecha" ORDER="1"/>
+      <CP PROPPATH="proveedor#rdn" ORDER="2"/>
+      <CP PROPPATH="proveedor#nombre" ORDER="3"/>
+      <CP PROPPATH="importe_liquidación" ORDER="4"/>
+   </CPROP>
+   <CPROP CLASS="LOTE">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="garantía_caducidad" ORDER="2"/>
+      <CP PROPPATH="producto#rdn" ORDER="3"/>
+      <CP PROPPATH="producto#descripción" ORDER="4"/>
+      <CP PROPPATH="fecha_creación" ORDER="5"/>
+      <CP PROPPATH="fecha_inicio" ORDER="6"/>
+      <CP PROPPATH="fecha_fin" ORDER="7"/>
+      <CP PROPPATH="suministrador#rdn" ORDER="8"/>
+      <CP PROPPATH="provisional" ORDER="9"/>
+   </CPROP>
+   <CPROP CLASS="LOTE" CLASSPARENT="STOCK">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="garantía_caducidad" ORDER="2"/>
+      <CP PROPPATH="provisional" ORDER="7"/>
+   </CPROP>
+   
+   <CPROP CLASS="MARCA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+   </CPROP>
+   <CPROP CLASS="MARGEN_BENFICIO_EN_TARIFA">
+      <CP PROPPATH="tarifa_precio#rdn" ORDER="1"/>
+      <CP PROPPATH="porcentaje" ORDER="2"/>
+   </CPROP>
+   <CPROP CLASS="MEDIDA_CORRECTIVA_O_PREVENTIVA">
+      <CP PROPPATH="fecha_prevista_ejecución" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+      <CP PROPPATH="tipo_puesto_trabajo#rdn" ORDER="3"/>
+      <CP PROPPATH="tipo_puesto_trabajo#departamento" ORDER="4"/>
+      <CP PROPPATH="tipo_puesto_trabajo#puesto" ORDER="5"/>
+      <CP PROPPATH="firma_RET" ORDER="8"/>
+      <CP PROPPATH="fecha_ejecución" ORDER="9"/>
+   </CPROP>
+   
+    <CPROP CLASS="MÓDULO_NEGOCIO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="instalar" ORDER="2"/>
+	  <CP PROPPATH="depende_de#rdn" ORDER="3"/>
+   </CPROP>
+   
+   <CPROP CLASS="RETIRADA_EFECTIVO_CAJA">
+      <CP PROPPATH="rdn" ORDER="0"/>
+      <CP PROPPATH="fecha" ORDER="1"/>
+      <CP PROPPATH="caja_salida#rdn" ORDER="2"/>
+      <CP PROPPATH="concepto" ORDER="3"/>
+      <CP PROPPATH="responsable#rdn" ORDER="4"/>
+      <CP PROPPATH="importe" ORDER="5"/>
+   </CPROP>
+   <CPROP CLASS="INGRESO_EFECTIVO_CAJA">
+      <CP PROPPATH="rdn" ORDER="0"/>
+      <CP PROPPATH="fecha" ORDER="1"/>
+      <CP PROPPATH="caja_entrada#rdn" ORDER="2"/>
+      <CP PROPPATH="concepto" ORDER="3"/>
+      <CP PROPPATH="responsable#rdn" ORDER="4"/>
+      <CP PROPPATH="importe" ORDER="5"/>
+   </CPROP>
+   <CPROP CLASS="LÍNEA_RESUMEN_DEMANDA_STOCK">
+      <CP PROPPATH="producto#rdn" ORDER="1"/>
+      <CP PROPPATH="destino" ORDER="2"/>
+      <CP PROPPATH="stock#rdn" ORDER="3"/>
+      <CP PROPPATH="stock_disponible" ORDER="4"/>
+      <CP PROPPATH="ventas" ORDER="5"/>
+      <CP PROPPATH="tiempo_estimado" ORDER="6"/>
+      <CP PROPPATH="cantidad_solicitada" ORDER="7"/>
+      <CP PROPPATH="cantidad_pendiente" ORDER="8"/>
+   </CPROP>
+   <CPROP CLASS="LOCALIDAD">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="provincia#rdn" ORDER="2"/>
+      <CP PROPPATH="provincia#país#rdn" ORDER="3"/>
+   </CPROP>
+   <CPROP CLASS="MARGEN_BENEFICIO_CALCULO_PVP">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="calcular_según_coste" ORDER="2"/>
+      <CP PROPPATH="margen_beneficio" ORDER="3"/>
+      <CP PROPPATH="actualizar_dinámicamente_precios_venta" ORDER="4"/>
+   </CPROP>
+   <CPROP CLASS="MARGEN_BENEFICIO_CALCULO_TARIFAS">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="calcular_según_coste" ORDER="2"/>
+      <CP PROPPATH="actualizar_dinámicamente_precios_venta" ORDER="3"/>
+   </CPROP>
+   
+  <CPROP CLASS="MÁSCARA_CAMPO">
+      <CP PROPPATH="dominio#rdn" ORDER="1"/>
+      <CP PROPPATH="propiedad#rdn" ORDER="2"/>
+      <CP PROPPATH="ámbito#rdn" ORDER="3"/>
+      <CP PROPPATH="longitud" ORDER="1"/>
+      <CP PROPPATH="expresión_regular" ORDER="2"/>
+      <CP PROPPATH="observaciones" ORDER="3"/>
+   </CPROP>   
+   
+   
+	<CPROP CLASS="MENÚ">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="dominio#rdn" ORDER="2"/>
+      <CP PROPPATH="área_funcional#rdn" ORDER="3"/>
+	  <CP PROPPATH="aviso_encontrados" ORDER="4"/>
+      <CP PROPPATH="aviso_encontrados" ORDER="5"/>	   
+   </CPROP>   
+   
+   <CPROP CLASS="MI_EMPRESA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="nombre" ORDER="2"/>
+      <CP PROPPATH="localidad#rdn" ORDER="3"/>
+      <CP PROPPATH="localidad#provincia#rdn" ORDER="4"/>
+      <CP PROPPATH="teléfono" ORDER="5"/>
+   </CPROP>
+   <CPROP CLASS="PAGO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="proveedor#rdn" ORDER="2"/>
+      <CP PROPPATH="proveedor#nombre" ORDER="3"/>
+      <CP PROPPATH="fecha" ORDER="4"/>
+      <CP PROPPATH="medio_de_pago#rdn" ORDER="5"/>
+      <CP PROPPATH="importe" ORDER="6"/>
+   </CPROP>
+   <CPROP CLASS="PARÁMETRO_CONTROL">
+      <CP PROPPATH="parámetro" ORDER="1"/>
+      <CP PROPPATH="límites_críticos" ORDER="2"/>
+   </CPROP>
+   <CPROP CLASS="PEDIDO_A_PROVEEDOR">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="proveedor#rdn" ORDER="3"/>
+      <CP PROPPATH="proveedor#nombre" ORDER="4"/>
+      <CP PROPPATH="importe" ORDER="5"/>
+      <CP PROPPATH="fecha_estimada_entrega" ORDER="6"/>
+      <CP PROPPATH="albaranado" ORDER="7"/>
+	  <CP PROPPATH="facturado" ORDER="8"/>
+	  <CP PROPPATH="emitido" ORDER="10"/> 
+	  <CP PROPPATH="mi_empresa#rdn" ORDER="11"/>
+	  <CP PROPPATH="documentos" ORDER="12"/>
+   </CPROP>
+   <CPROP CLASS="PEDIDO_DE_CLIENTE">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="fecha_estimada_entrega" ORDER="3"/>
+      <CP PROPPATH="cliente#rdn" ORDER="4"/>
+      <CP PROPPATH="cliente#nombre" ORDER="5"/>
+      <CP PROPPATH="importe" ORDER="6"/>
+      <CP PROPPATH="agente_comercial#rdn" ORDER="7"/>      
+      <CP PROPPATH="cobro_anticipo" ORDER="8"/>
+      <CP PROPPATH="servido" ORDER="9"/>
+      <CP PROPPATH="albaranado" ORDER="10"/>
+	  <CP PROPPATH="estado" ORDER="11"/>
+	  <CP PROPPATH="pagado" ORDER="12"/>
+      <CP PROPPATH="mi_empresa#rdn" ORDER="13"/>
+      <CP PROPPATH="documentos" ORDER="14"/>      
+   </CPROP>
+   <CPROP CLASS="PEDIDO_DISTRIBUIDOR">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="distribuidor#nombre" ORDER="2"/>
+      <CP PROPPATH="distribuidor#almacén#nombre" ORDER="3"/>
+      <CP PROPPATH="distribuidor#almacén#rdn" ORDER="4"/>
+      <CP PROPPATH="albaranado" ORDER="5"/>
+      <CP PROPPATH="fecha" ORDER="6"/>
+      <CP PROPPATH="fecha_estimada_entrega" ORDER="7"/>
+	  <CP PROPPATH="mi_empresa#rdn" ORDER="8"/>            
+   </CPROP>
+   <CPROP CLASS="PEDIDO_EXTERNO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="cliente#rdn" ORDER="3"/>
+      <CP PROPPATH="proveedor#rdn" ORDER="3"/>
+      <CP PROPPATH="importe" ORDER="5"/>
+      <CP PROPPATH="albaranado" ORDER="6"/>
+      <CP PROPPATH="agente_comercial#rdn" ORDER="7"/>
+      
+      <CP PROPPATH="emitido" ORDER="9"/>
+   </CPROP>
+   <CPROP CLASS="PEDIDO_TRASPASO_ALMACENES">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="origen#nombre" ORDER="3"/>
+      <CP PROPPATH="destino#nombre" ORDER="4"/>
+      <CP PROPPATH="servido" ORDER="5"/>
+      <CP PROPPATH="completo" ORDER="6"/>
+      <CP PROPPATH="documentos" ORDER="7"/>      
+      <!-- 
+      <CP PROPPATH="destino_posterior" ORDER="5"/>
+      <CP PROPPATH="destino_posterior" ORDER="6"/>
+       -->
+   </CPROP>
+   <CPROP CLASS="PERIODO">
+      <CP PROPPATH="fecha_inicio" ORDER="1"/>
+      <CP PROPPATH="fecha_fin" ORDER="2"/>
+   </CPROP>
+   <CPROP CLASS="PERSONA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="nombre" ORDER="2"/>
+      <CP PROPPATH="primer_apellido" ORDER="3"/>
+      <CP PROPPATH="segundo_apellido" ORDER="4"/>
+      <CP PROPPATH="localidad#rdn" ORDER="5"/>
+      <CP PROPPATH="localidad#provincia#rdn" ORDER="6"/>
+      <CP PROPPATH="NIF-CIF-VAT" ORDER="7"/>
+   </CPROP>
+   <CPROP CLASS="PRODUCCIÓN_CADENA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="estado" ORDER="3"/>
+      <CP PROPPATH="proyecto#rdn" ORDER="4"/>
+   </CPROP>
+   <CPROP CLASS="PRECIO_BASE">      
+      <CP PROPPATH="precio" ORDER="1"/>
+      <CP PROPPATH="precio_iva_incluido" ORDER="2"/>
+      <CP PROPPATH="tarifa_precio" ORDER="3"/>
+      <CP PROPPATH="talla#rdn" ORDER="4"/>
+      <CP PROPPATH="color#rdn" ORDER="5"/>
+      <CP PROPPATH="fecha_inicio" ORDER="6"/>
+      <CP PROPPATH="fecha_fin" ORDER="7"/>
+   </CPROP>
+   
+   
+   <CPROP CLASS="MARGEN_BENEFICIO_PVP_SOBRE_COSTE">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="margen_beneficio" ORDER="2"/>
+      <CP PROPPATH="calcular_según_coste" ORDER="3"/>
+      <CP PROPPATH="familia#rdn" ORDER="4"/>
+      <CP PROPPATH="subfamilia#rdn" ORDER="5"/>
+	  <CP PROPPATH="marca#rdn" ORDER="6"/>
+      <CP PROPPATH="producto#rdn" ORDER="7"/>
+      <CP PROPPATH="prioridad#rdn" ORDER="8"/>
+	  <CP PROPPATH="fecha_última_aplicación" ORDER="9"/>      
+   </CPROP>
+   
+   <CPROP CLASS="MARGEN_TARIFA_COSTE">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="margen_beneficio" ORDER="2"/>
+      <CP PROPPATH="calcular_según_coste" ORDER="3"/>
+      <CP PROPPATH="familia#rdn" ORDER="4"/>
+      <CP PROPPATH="subfamilia#rdn" ORDER="5"/>
+	  <CP PROPPATH="marca#rdn" ORDER="6"/>
+      <CP PROPPATH="producto#rdn" ORDER="7"/>
+      <CP PROPPATH="prioridad#rdn" ORDER="8"/>
+	  <CP PROPPATH="fecha_última_aplicación" ORDER="9"/>   
+	  <CP PROPPATH="tarifa_precio#rdn" ORDER="10"/>	  
+	     
+   </CPROP>
+   
+   <CPROP CLASS="PRECIO_PROVEEDOR">
+      <CP PROPPATH="precio" ORDER="1"/>
+      <CP PROPPATH="proveedor#rdn" ORDER="2"/>
+      <CP PROPPATH="proveedor#nombre" ORDER="3"/>
+      <CP PROPPATH="su_referencia" ORDER="4"/>
+      <CP PROPPATH="pedido_mínimo" ORDER="5"/>
+   </CPROP>
+   <CPROP CLASS="PRESUPUESTO_COMPRA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="proveedor#rdn" ORDER="3"/>
+      <CP PROPPATH="proveedor#nombre" ORDER="4"/>
+      <CP PROPPATH="importe" ORDER="5"/>
+      <CP PROPPATH="emitido" ORDER="6"/>
+      <CP PROPPATH="pedido#rdn" ORDER="7"/>
+      <CP PROPPATH="albaranado" ORDER="7"/>
+      <CP PROPPATH="facturado" ORDER="8"/>
+      <CP PROPPATH="documentos" ORDER="9"/>    
+	  <CP PROPPATH="mi_empresa#rdn" ORDER="10"/>            
+   </CPROP>
+   <CPROP CLASS="PRESUPUESTO_VENTA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="cliente#rdn" ORDER="3"/>
+      <CP PROPPATH="cliente#nombre" ORDER="4"/>
+      <CP PROPPATH="importe" ORDER="5"/>
+      <CP PROPPATH="agente_comercial#rdn" ORDER="6"/>      
+      <CP PROPPATH="emitido" ORDER="8"/>
+      <CP PROPPATH="cobro_anticipo" ORDER="9"/>
+       <CP PROPPATH="pedido#rdn" ORDER="9"/>
+      <CP PROPPATH="albaranado" ORDER="10"/>
+      <CP PROPPATH="facturado" ORDER="11"/>
+      <CP PROPPATH="pagado" ORDER="12"/>
+      <CP PROPPATH="documentos" ORDER="13"/>    
+      <CP PROPPATH="mi_empresa#rdn" ORDER="14"/>      
+   </CPROP>
+   <CPROP CLASS="ESCANDALLO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="salida#producto#rdn" ORDER="2"/>
+      <CP PROPPATH="salida#producto#descripción" ORDER="3"/>
+      <CP PROPPATH="salida#cantidad" ORDER="4"/>
+      <CP PROPPATH="proporción_intermedia#rdn" ORDER="5"/>
+      <CP PROPPATH="proporción_intermedia#cantidad" ORDER="6"/>
+   </CPROP>
+   <CPROP CLASS="PROVEEDOR">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="nombre" ORDER="2"/>
+      <CP PROPPATH="nombre_comercial" ORDER="3"/>
+      <CP PROPPATH="deuda" ORDER="4"/>
+      <CP PROPPATH="NIF-CIF-VAT" ORDER="5"/>
+      <CP PROPPATH="localidad#rdn" ORDER="6"/>
+      <CP PROPPATH="localidad#provincia#rdn" ORDER="7"/>
+      <CP PROPPATH="email" ORDER="8"/>
+      <CP PROPPATH="teléfono" ORDER="9"/>
+   </CPROP>
+   <CPROP CLASS="PROVINCIA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="país#rdn" ORDER="2"/>
+   </CPROP>
+   <CPROP CLASS="PUESTO_TRABAJO">
+      <CP PROPPATH="centro_trabajo#nombre" ORDER="1"/>
+      <CP PROPPATH="tipo_puesto_trabajo#rdn" ORDER="2"/>
+      <CP PROPPATH="tipo_puesto_trabajo#departamento" ORDER="3"/>
+      <CP PROPPATH="tipo_puesto_trabajo#puesto" ORDER="4"/>
+   </CPROP>
+   <CPROP CLASS="PUNTO_CRÍTICO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+   </CPROP>
+   <CPROP CLASS="REGULARIZACIÓN">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="almacén#nombre" ORDER="3"/>
+      <CP PROPPATH="almacén#rdn" ORDER="4"/>
+      <CP PROPPATH="causa" ORDER="5"/>
+      <CP PROPPATH="responsable#rdn" ORDER="6"/>
+      <CP PROPPATH="responsable#nombre" ORDER="7"/>
+   </CPROP>
+  <CPROP CLASS="DEBE_CLIENTE_MANUAL">      
+      <CP PROPPATH="fecha" ORDER="1"/>
+      <CP PROPPATH="rdn" ORDER="10"/>
+      <CP PROPPATH="concepto" ORDER="11"/>
+      <CP PROPPATH="cliente#rdn" ORDER="12"/>
+      <CP PROPPATH="cliente#nombre" ORDER="13"/>
+      <CP PROPPATH="responsable#rdn" ORDER="14"/>
+      <CP PROPPATH="responsable#nombre" ORDER="15"/>
+      <CP PROPPATH="importe" ORDER="16"/>
+   </CPROP>
+   
+   <CPROP CLASS="REMESA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="fecha_cobro" ORDER="3"/>
+   </CPROP>
+   <CPROP CLASS="REPRESENTANTE">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="nombre" ORDER="2"/>
+      <CP PROPPATH="teléfono" ORDER="3"/>
+      <CP PROPPATH="dirección" ORDER="4"/>
+      <CP PROPPATH="localidad#rdn" ORDER="4"/>
+      <CP PROPPATH="provincia#rdn" ORDER="5"/>
+   </CPROP>
+   <CPROP CLASS="REVISIÓN_EPI">
+      <CP PROPPATH="fecha" ORDER="1"/>
+      <CP PROPPATH="información_sobre_riesgos" ORDER="2"/>
+      <CP PROPPATH="protección_frente_riesgo_previsto" ORDER="3"/>
+      <CP PROPPATH="declaracion_conformidad" ORDER="4"/>
+      <CP PROPPATH="marcado_CE" ORDER="5"/>
+   </CPROP>
+   <CPROP CLASS="REVISIÓN_PUNTO_CONTROL">
+      <CP PROPPATH="fecha" ORDER="1"/>
+      <CP PROPPATH="acción_correctiva" ORDER="2"/>
+      <CP PROPPATH="resultado_revisión" ORDER="3"/>
+   </CPROP>
+   <CPROP CLASS="RIESGO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+   </CPROP>
+   <CPROP CLASS="ROTACION">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha_creación" ORDER="2"/>
+      <CP PROPPATH="estado#rdn" ORDER="3"/>
+      <CP PROPPATH="observaciones" ORDER="4"/>
+      <CP PROPPATH="cantidad_total" ORDER="5"/> 
+      <CP PROPPATH="prioridad#rdn" ORDER="6"/>      
+   </CPROP>
+   <CPROP CLASS="LINEA_ROTACION">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="origen#nombre" ORDER="2"/>
+      <CP PROPPATH="destino#nombre" ORDER="3"/>
+      <CP PROPPATH="cantidad" ORDER="4"/>
+      <CP PROPPATH="producto#rdn" ORDER="5"/>
+      <CP PROPPATH="talla#rdn" ORDER="6"/>
+      <CP PROPPATH="color#rdn" ORDER="7"/>      
+      <CP PROPPATH="prioridad#rdn" ORDER="8"/> 
+   </CPROP>
+   <CPROP CLASS="STOCK">
+      <CP PROPPATH="producto#rdn" ORDER="1"/>
+      <CP PROPPATH="producto#nombre" ORDER="2"/>
+      <CP PROPPATH="producto#familia#rdn" ORDER="3"/>
+      <CP PROPPATH="fecha_alta" ORDER="4"/>
+      <CP PROPPATH="almacén_stock" ORDER="5"/>
+      <CP PROPPATH="lote#rdn" ORDER="6"/>
+      <CP PROPPATH="lote#garantía_caducidad" ORDER="7"/>
+      <CP PROPPATH="lote#producto#rdn" ORDER="8"/>
+      <CP PROPPATH="color#rdn" ORDER="9"/>
+      <CP PROPPATH="talla#rdn" ORDER="10"/>      
+      <CP PROPPATH="cantidad" ORDER="11"/>
+   </CPROP>
+      
+   <CPROP CLASS="STOCK" CLASSPARENT="INFO_STOCK_AUX">
+      <CP PROPPATH="almacén_stock#nombre" ORDER="1"/>
+      <CP PROPPATH="producto#rdn" ORDER="2"/>
+      <CP PROPPATH="fecha_alta" ORDER="3"/>
+      <CP PROPPATH="cantidad" ORDER="4"/>
+   </CPROP>
+   <CPROP CLASS="STOCK" CLASSPARENT="LÍNEA_RESUMEN_DEMANDA_STOCK">
+      <CP PROPPATH="cantidad" ORDER="1"/>
+   </CPROP>
+   <CPROP CLASS="SUBFAMILIA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="descripción" ORDER="2"/>
+      <CP PROPPATH="familia#rdn" ORDER="3"/>
+   </CPROP>
+   <CPROP CLASS="SUBVENCIÓN">
+      <CP PROPPATH="descripción" ORDER="1"/>
+      <CP PROPPATH="organismo" ORDER="2"/>
+      <CP PROPPATH="fecha_solicitud" ORDER="3"/>
+      <CP PROPPATH="importe_solicitado" ORDER="4"/>
+      <CP PROPPATH="importe_aprobado" ORDER="5"/>
+      <CP PROPPATH="estado#rdn" ORDER="6"/>
+      <CP PROPPATH="fecha_justificación" ORDER="7"/>
+   </CPROP>
+   <CPROP CLASS="TARIFA_CONDICIONADA">
+      <CP PROPPATH="tarifa_precio#rdn" ORDER="1"/>
+      <CP PROPPATH="producto#rdn" ORDER="2"/>
+      <CP PROPPATH="familia#rdn" ORDER="3"/>
+      <CP PROPPATH="subfamilia#rdn" ORDER="3"/>
+      <CP PROPPATH="marca#rdn" ORDER="3"/>
+   </CPROP>
+   <CPROP CLASS="TARIFA_PRECIO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="depende_de_tarifa#rdn" ORDER="2"/>
+      <CP PROPPATH="factor_dependencia" ORDER="3"/>
+   </CPROP>
+   <CPROP CLASS="TICKET_VENTA">            
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>            
+      <CP PROPPATH="importe" ORDER="3"/>
+      <CP PROPPATH="mi_empresa#rdn" ORDER="4"/>
+      <CP PROPPATH="origen#nombre" ORDER="5"/>
+      <CP PROPPATH="rectificativo" ORDER="6"/>
+      <CP PROPPATH="documentos" ORDER="7"/>
+   </CPROP>
+
+   <CPROP CLASS="TIPO_IVA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="porcentaje_iva" ORDER="2"/>
+      <CP PROPPATH="porcentaje_recargo" ORDER="3"/>
+   </CPROP>
+   <CPROP CLASS="TIPO_PUESTO_TRABAJO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="departamento#rdn" ORDER="2"/>
+      <CP PROPPATH="puesto" ORDER="3"/>
+   </CPROP>
+   <CPROP CLASS="TIENDA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="nombre" ORDER="2"/>
+      <CP PROPPATH="localidad#rdn" ORDER="3"/>
+      <CP PROPPATH="localidad#provincia#rdn" ORDER="4"/>
+      <CP PROPPATH="teléfono" ORDER="5"/>
+      <CP PROPPATH="cantidad_total_vendida" ORDER="6"/>
+   </CPROP>
+   <CPROP CLASS="TAREA">
+      <CP PROPPATH="fecha_inicio" ORDER="1"/>
+      <CP PROPPATH="fecha_fin" ORDER="2"/>
+      <CP PROPPATH="rdn" ORDER="3"/>
+	  <CP PROPPATH="descripción" ORDER="4"/>      
+      <CP PROPPATH="peso_prioridad" ORDER="5"/>
+      <CP PROPPATH="proyecto#rdn" ORDER="6"/>
+      <CP PROPPATH="sujeto#rdn" ORDER="7"/>
+      <CP PROPPATH="sujeto#nombre" ORDER="8"/> 
+      <CP PROPPATH="porcentaje_realización" ORDER="9"/>
+      <CP PROPPATH="estado#rdn" ORDER="10"/>
+      <CP PROPPATH="fecha_mínima_inicio" ORDER="11"/>
+      <CP PROPPATH="facturado" ORDER="12"/>       
+   </CPROP>
+   <CPROP CLASS="TRAMO_IMPORTE">
+      <CP PROPPATH="desde_valor" ORDER="1"/>
+      <CP PROPPATH="hasta_valor" ORDER="2"/>
+      <CP PROPPATH="importe" ORDER="3"/>
+   </CPROP>
+   <CPROP CLASS="TRANSPORTISTA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="nombre" ORDER="2"/>
+      <CP PROPPATH="localidad#rdn" ORDER="3"/>
+      <CP PROPPATH="localidad#provincia#rdn" ORDER="4"/>
+      <CP PROPPATH="teléfono" ORDER="5"/>
+   </CPROP>
+   <CPROP CLASS="TRASPASO_ALMACENES">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="origen#nombre" ORDER="3"/>
+      <CP PROPPATH="destino#nombre" ORDER="4"/>
+       <!--
+      <CP PROPPATH="destino_posterior" ORDER="5"/>
+      <CP PROPPATH="destino_posterior" ORDER="6"/>
+      -->      
+      <CP PROPPATH="recibido" ORDER="8"/>
+      <CP PROPPATH="cantidad_total" ORDER="10"/>
+   </CPROP>
+   <CPROP CLASS="TRASPASO_ENTRE_CAJAS">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="fecha" ORDER="2"/>
+      <CP PROPPATH="caja_salida#rdn" ORDER="3"/>
+      <CP PROPPATH="caja_entrada#rdn" ORDER="4"/>
+      <CP PROPPATH="concepto" ORDER="5"/>
+      <CP PROPPATH="responsable#rdn" ORDER="6"/>
+      <CP PROPPATH="importe" ORDER="7"/>
+   </CPROP>
+   <CPROP CLASS="TUTOR">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="nombre" ORDER="2"/>
+      <CP PROPPATH="NIF-CIF-VAT" ORDER="3"/>
+      <CP PROPPATH="localidad#rdn" ORDER="4"/>
+      <CP PROPPATH="localidad#provincia#rdn" ORDER="5"/>
+      <CP PROPPATH="teléfono" ORDER="6"/>
+      <CP PROPPATH="email" ORDER="7"/>
+      <CP PROPPATH="proveedor#rdn" ORDER="8"/>
+   </CPROP>
+   <CPROP CLASS="USER">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="userRol#rdn" ORDER="2"/>
+   </CPROP>
+  
+   <CPROP CLASS="VALOR_POR_DEFECTO">
+      <CP PROPPATH="dominio#rdn" ORDER="1"/>
+      <CP PROPPATH="propiedad#rdn" ORDER="2"/>
+      <CP PROPPATH="valor" ORDER="3"/>
+   </CPROP>
+      
+   
+   <CPROP CLASS="VENCIMIENTO_DE_COBRO">
+      <CP PROPPATH="fecha" ORDER="1"/>
+      <CP PROPPATH="factura#rdn" ORDER="2"/>
+      <CP PROPPATH="factura#fecha" ORDER="3"/>
+      <CP PROPPATH="medio_de_pago#rdn" ORDER="4"/>
+      <CP PROPPATH="importe" ORDER="5"/>
+      <CP PROPPATH="deuda" ORDER="6"/>
+      <CP PROPPATH="pagado" ORDER="7"/>
+      <CP PROPPATH="cliente#rdn" ORDER="8"/>
+	  <CP PROPPATH="cliente#nombre" ORDER="9"/>
+	  <CP PROPPATH="cliente#nombre_comercial" ORDER="10"/>
+	  <CP PROPPATH="cliente#agente_comercial#rdn" ORDER="11"/>      
+      <CP PROPPATH="mi_empresa" ORDER="12"/>
+   </CPROP>
+   
+   <CPROP CLASS="VENCIMIENTO_DE_COBRO" CLASSPARENT="REMESA">
+      <CP PROPPATH="fecha" ORDER="1"/>   
+      <CP PROPPATH="medio_de_pago#rdn" ORDER="4"/>
+      <CP PROPPATH="importe" ORDER="5"/>
+      <CP PROPPATH="deuda" ORDER="6"/>
+      <CP PROPPATH="pagado" ORDER="7"/>
+   </CPROP>
+   
+   <CPROP CLASS="CLIENTE_PARTICULAR" CLASSPARENT="VENCIMIENTO_DE_COBRO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="nombre" ORDER="2"/>
+      <CP PROPPATH="agente_comercial#rdn" ORDER="4"/>
+   </CPROP>
+   <CPROP CLASS="CLIENTE_EMPRESA" CLASSPARENT="VENCIMIENTO_DE_COBRO">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="nombre" ORDER="2"/>
+	  <CP PROPPATH="nombre_comercial" ORDER="3"/>      
+      <CP PROPPATH="agente_comercial#rdn" ORDER="4"/>
+   </CPROP>
+   
+   
+   <CPROP CLASS="VENCIMIENTO_DE_PAGO">
+      <CP PROPPATH="fecha" ORDER="1"/>
+      <CP PROPPATH="factura#rdn" ORDER="2"/>
+      <CP PROPPATH="factura#fecha" ORDER="3"/>
+      <CP PROPPATH="medio_de_pago#rdn" ORDER="4"/>
+      <CP PROPPATH="importe" ORDER="5"/>
+      <CP PROPPATH="deuda" ORDER="6"/>
+      <CP PROPPATH="pagado" ORDER="7"/>
+      <CP PROPPATH="proveedor#rdn" ORDER="8"/>
+	  <CP PROPPATH="proveedor#nombre" ORDER="9"/>
+	  <CP PROPPATH="proveedor#nombre_comercial" ORDER="10"/>      
+      <CP PROPPATH="mi_empresa" ORDER="11"/>
+   </CPROP>
+   <CPROP CLASS="PARTIDA">
+      <CP PROPPATH="orden" ORDER="1"/>
+      <CP PROPPATH="subcuenta#rdn" ORDER="2"/>
+      <CP PROPPATH="contrapartida" ORDER="3"/>
+      <CP PROPPATH="importe_partida" ORDER="4"/>
+      <CP PROPPATH="base_partida" ORDER="5"/>
+   </CPROP>
+   <CPROP CLASS="PREDEFINIDO">
+      <CP PROPPATH="descripción" ORDER="1"/>
+      <CP PROPPATH="concepto" ORDER="2"/>
+   </CPROP>
+  
+   <CPROP CLASS="REFERENCIA_IMPORTE_NOMBRE">
+      <CP PROPPATH="nombre" ORDER="1"/>
+      <CP PROPPATH="importe" ORDER="2"/>
+   </CPROP>
+   <CPROP CLASS="ORDEN">
+      <CP PROPPATH="orden" ORDER="1"/>
+   </CPROP>
+   <CPROP CLASS="CRÉDITO_TARJETA">
+      <CP PROPPATH="rdn" ORDER="1"/>
+      <CP PROPPATH="saldo" ORDER="2"/>
+      <CP PROPPATH="saldo_máximo" ORDER="3"/>
+   </CPROP>
+   <CPROP CLASS="ORDEN_CAMPO">
+		<CP PROPPATH="orden" ORDER="1"/>
+		<CP PROPPATH="propiedad#rdn" ORDER="2"/>
+	</CPROP>
+	
+	<CPROP CLASS="ORDEN_CAMPO_CON_FILTRO">
+		<CP PROPPATH="orden" ORDER="1"/>
+		<CP PROPPATH="ruta_propiedad" ORDER="2"/>
+	</CPROP>
+	
+    <CPROP CLASS="COLUMNAS_TABLA">
+		<CP PROPPATH="tabla#rdn" ORDER="1"/>
+		<CP PROPPATH="dominio#rdn" ORDER="2"/>
+		<CP PROPPATH="usuario#rdn" ORDER="3"/>
+		<CP PROPPATH="userRol#rdn" ORDER="4"/>
+	</CPROP>
+	
+	<CPROP CLASS="GRUPO_CAMPOS">
+		<CP PROPPATH="rdn" ORDER="1"/>
+		<CP PROPPATH="ámbito#rdn" ORDER="2"/>
+		<CP PROPPATH="dominio#rdn" ORDER="3"/>
+		<CP PROPPATH="orden" ORDER="4"/>
+	</CPROP>
+	
+	<CPROP CLASS="MÁSCARA_CAMPO">
+		<CP PROPPATH="ámbito#rdn" ORDER="1"/>
+		<CP PROPPATH="dominio#rdn" ORDER="2"/>
+		<CP PROPPATH="propiedad#rdn" ORDER="3"/>
+	</CPROP>
+	
+	<CPROP CLASS="ORDEN_RELATIVO_CAMPOS">
+		<CP PROPPATH="rdn" ORDER="1"/>
+		<CP PROPPATH="dominio#rdn" ORDER="2"/>
+		<CP PROPPATH="campos#orden" ORDER="3"/>
+		<CP PROPPATH="campos#propiedad#rdn" ORDER="4"/>
+	</CPROP>
+	
+	<CPROP CLASS="PERMISO_FORMULARIO">
+		<CP PROPPATH="rdn" ORDER="1"/>		
+		<CP PROPPATH="permiso#rdn" ORDER="2"/>		
+		<CP PROPPATH="dominio#rdn" ORDER="3"/>
+		<CP PROPPATH="usuario#rdn" ORDER="4"/>
+		<CP PROPPATH="userRol#rdn" ORDER="5"/>
+		<CP PROPPATH="ámbito#rdn" ORDER="6"/>		
+		<CP PROPPATH="acción_permiso#rdn" ORDER="7"/>		
+		<CP PROPPATH="prioridad#rdn" ORDER="8"/>
+	</CPROP>
+	
+	<CPROP CLASS="PERMISO_GENÉRICO">
+		<CP PROPPATH="rdn" ORDER="1"/>	
+		<CP PROPPATH="permiso#rdn" ORDER="2"/>
+		<CP PROPPATH="usuario#rdn" ORDER="3"/>
+		<CP PROPPATH="userRol#rdn" ORDER="4"/>
+		<CP PROPPATH="acción_permiso#rdn" ORDER="5"/>		
+		<CP PROPPATH="prioridad#rdn" ORDER="6"/>
+	</CPROP>
+	
+	<CPROP CLASS="PERMISO_PROPIEDAD">
+		<CP PROPPATH="rdn" ORDER="1"/>	
+		<CP PROPPATH="permiso#rdn" ORDER="2"/>	
+		<CP PROPPATH="acción_permiso#rdn" ORDER="3"/>
+		<CP PROPPATH="dominio#rdn" ORDER="4"/>
+		<CP PROPPATH="propiedad#rdn" ORDER="5"/>
+		<CP PROPPATH="usuario#rdn" ORDER="6"/>
+		<CP PROPPATH="userRol#rdn" ORDER="7"/>
+		<CP PROPPATH="ámbito#rdn" ORDER="8"/>		
+		<CP PROPPATH="prioridad#rdn" ORDER="9"/>
+	</CPROP>
+	
+	<CPROP CLASS="PERMISO_ÁMBITO">
+		<CP PROPPATH="rdn" ORDER="1"/>	
+		<CP PROPPATH="permiso#rdn" ORDER="2"/>	
+		<CP PROPPATH="acción_permiso#rdn" ORDER="3"/>
+		<CP PROPPATH="usuario#rdn" ORDER="4"/>
+		<CP PROPPATH="userRol#rdn" ORDER="5"/>
+		<CP PROPPATH="ámbito#rdn" ORDER="6"/>		
+		<CP PROPPATH="prioridad#rdn" ORDER="7"/>
+	</CPROP>
+	<CPROP CLASS="TAMAÑO_TABLA">
+		<CP PROPPATH="tabla#rdn" ORDER="1"/>
+		<CP PROPPATH="dominio#rdn" ORDER="2"/>
+		<CP PROPPATH="tamaño" ORDER="3"/>
+	</CPROP>
+	<CPROP CLASS="TAMAÑO_CAMPO">
+		<CP PROPPATH="propiedad#rdn" ORDER="1"/>
+		<CP PROPPATH="dominio#rdn" ORDER="2"/>
+		<CP PROPPATH="tamaño" ORDER="3"/>
+	</CPROP>
+	
+	<CPROP CLASS="ALIAS_FORMULARIO">
+		<CP PROPPATH="ámbito#rdn" ORDER="1"/>
+		<CP PROPPATH="dominio#rdn" ORDER="2"/>
+		<CP PROPPATH="alias" ORDER="3"/>
+	</CPROP>
+	
+	<CPROP CLASS="ALIAS_GRUPO">
+		<CP PROPPATH="ámbito#rdn" ORDER="1"/>
+		<CP PROPPATH="grupo_campos#rdn" ORDER="2"/>
+		<CP PROPPATH="alias" ORDER="3"/>
+	</CPROP>
+	
+	<CPROP CLASS="ALIAS_PROPPATHIEDAD">
+		<CP PROPPATH="ámbito#rdn" ORDER="1"/>
+		<CP PROPPATH="dominio#rdn" ORDER="2"/>
+		<CP PROPPATH="propiedad#rdn" ORDER="3"/>
+		<CP PROPPATH="alias" ORDER="4"/>		
+	</CPROP>
+	
+	
+	<CPROP CLASS="ALIAS_ÁMBITO">
+		<CP PROPPATH="ámbito#rdn" ORDER="1"/>
+		<CP PROPPATH="alias" ORDER="4"/>
+	</CPROP>	
+
+	<CPROP CLASS="CAMPO_DESTACADO">
+		<CP PROPPATH="ámbito#rdn" ORDER="1"/>
+		<CP PROPPATH="dominio#rdn" ORDER="2"/>
+		<CP PROPPATH="propiedad#rdn" ORDER="3"/>
+	</CPROP>
+	
+	<CPROP CLASS="CAMPO_REQUERIDO">
+		<CP PROPPATH="dominio#rdn" ORDER="1"/>
+		<CP PROPPATH="propiedad#rdn" ORDER="2"/>
+	</CPROP>
+	
+	<CPROP CLASS="CARDINALIDAD">
+		<CP PROPPATH="dominio#rdn" ORDER="1"/>
+		<CP PROPPATH="propiedad#rdn" ORDER="2"/>
+		<CP PROPPATH="mínimo_número_valores" ORDER="3"/>
+		<CP PROPPATH="máximo_número_valores" ORDER="4"/>
+	</CPROP>
+	
+	<CPROP CLASS="AVISO">
+		<CP PROPPATH="color_aviso#rdn" ORDER="1"/>
+		<CP PROPPATH="minutos_actualización" ORDER="2"/>
+	</CPROP>
+	
+	<CPROP CLASS="PARÁMETRO_DATO">
+		<CP PROPPATH="nombre" ORDER="1"/>
+		<CP PROPPATH="tipo_dato#rdn" ORDER="2"/>
+		<CP PROPPATH="valor_defecto" ORDER="3"/>
+	</CPROP>
+	
+	<CPROP CLASS="PARÁMETRO_OBJETO">
+		<CP PROPPATH="nombre" ORDER="1"/>
+		<CP PROPPATH="tipo_objeto#rdn" ORDER="2"/>
+		<CP PROPPATH="valor_defecto" ORDER="3"/>
+	</CPROP>
+	
+	<CPROP CLASS="DISPONIBILIDAD">
+		<CP PROPPATH="rdn" ORDER="1"/>
+		<CP PROPPATH="recurso#rdn" ORDER="2"/>
+		<CP PROPPATH="recurso#nombre" ORDER="3"/>		
+		<CP PROPPATH="fecha_inicio" ORDER="4"/>
+		<CP PROPPATH="fecha_fin" ORDER="5"/>
+		<CP PROPPATH="total_horas" ORDER="6"/>
+		<CP PROPPATH="cantidad" ORDER="7"/>
+		<CP PROPPATH="libre" ORDER="8"/>
+		
+		
+	</CPROP>
+
+	<CPROP CLASS="CALENDARIO_HÁBIL">
+		<CP PROPPATH="rdn" ORDER="1"/>
+		<CP PROPPATH="descripción" ORDER="2"/>
+		<CP PROPPATH="total_horas" ORDER="5"/>
+	</CPROP>
+	
+	<CPROP CLASS="RESULTADO_BATCH">
+		<CP PROPPATH="rdn" ORDER="1"/>
+		<CP PROPPATH="resultado" ORDER="2"/>
+	</CPROP>
+	
+	<CPROP CLASS="LÍNEA_LIQUIDACIÓN_SUBVENCIÓN">
+		<CP PROPPATH="producto#rdn" ORDER="1"/>
+		<CP PROPPATH="producto#descripción" ORDER="2"/>		
+		<CP PROPPATH="cantidad" ORDER="3"/>
+		<CP PROPPATH="porcentaje" ORDER="4"/>
+		<CP PROPPATH="precio" ORDER="5"/>		
+	</CPROP>	
+	
+	
+	<CPROP CLASS="LIQUIDACIÓN_SUBVENCIÓN_PROYECTO">
+		<CP PROPPATH="rdn" ORDER="1"/>
+		<CP PROPPATH="fecha_inicio" ORDER="2"/>
+		<CP PROPPATH="fecha_fin" ORDER="3"/>		
+		<CP PROPPATH="base" ORDER="5"/>
+		<CP PROPPATH="importe" ORDER="6"/>		
+	</CPROP>
+	
+	<CPROP CLASS="PROYECTO">
+		<CP PROPPATH="rdn" ORDER="1"/>
+		<CP PROPPATH="fecha_inicio" ORDER="2"/>
+		<CP PROPPATH="fecha_fin" ORDER="3"/>		
+		<CP PROPPATH="cliente#rdn" ORDER="5"/>
+		<CP PROPPATH="responsable#rdn" ORDER="6"/>		
+		<CP PROPPATH="estado#rdn" ORDER="7"/>
+	</CPROP>	
+	
+
+	<CPROP CLASS="PRODUCTO_SUBVENCIONABLE">
+		<CP PROPPATH="porcentaje" ORDER="1"/>
+		<CP PROPPATH="producto#rdn" ORDER="2"/>
+		<CP PROPPATH="familia#rdn" ORDER="3"/>
+		<CP PROPPATH="subfamilia#rdn" ORDER="4"/>
+		<CP PROPPATH="marca#rdn" ORDER="5"/>		
+	</CPROP>	
+	
+	<CPROP CLASS="TARIFA_CONDICIONADA">	
+		<CP PROPPATH="tarifa_precio#rdn" ORDER="1"/>
+		<CP PROPPATH="familia#rdn" ORDER="2"/>
+		<CP PROPPATH="subfamilia#rdn" ORDER="3"/>
+		<CP PROPPATH="marca#rdn" ORDER="4"/>	
+		<CP PROPPATH="producto#rdn" ORDER="5"/>	
+	</CPROP>
+	
+	
+	<CPROP CLASS="CONFIG_COMISIÓN_VENTA">	
+		<CP PROPPATH="agregar_articulos_comisionados_por_comisión" ORDER="1"/>
+	</CPROP>	
+	
+	<CPROP CLASS="AGRUPACION_TALLA_COLOR">
+		<CP PROPPATH="color#rdn" ORDER="1"/>
+		<CP PROPPATH="cantidad_1" ORDER="2"/>
+		<CP PROPPATH="cantidad_2" ORDER="3"/>		
+		<CP PROPPATH="cantidad_3" ORDER="4"/>
+		<CP PROPPATH="cantidad_4" ORDER="5"/>
+		<CP PROPPATH="cantidad_5" ORDER="6"/>
+		<CP PROPPATH="cantidad_6" ORDER="7"/>
+		<CP PROPPATH="cantidad_7" ORDER="8"/>
+		<CP PROPPATH="cantidad_8" ORDER="9"/>
+		<CP PROPPATH="cantidad_9" ORDER="10"/>
+		<CP PROPPATH="cantidad_10" ORDER="11"/>
+	</CPROP>
+	
+</COLUMNPROP>
+</CONFIG>

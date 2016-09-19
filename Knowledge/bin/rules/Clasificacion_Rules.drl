@@ -1,0 +1,932 @@
+
+package dynagent.ruleengine.src.ruler.ERPrules
+
+import dynagent.common.exceptions.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.*;
+import dynagent.common.properties.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import org.drools.WorkingMemory;
+import dynagent.common.properties.values.*;
+import dynagent.common.basicobjects.*;
+import dynagent.common.utils.IndividualValues;
+global DataModelAdapter dma;
+
+rule "DETECTAR ERROR EXCLUSIÓN DE PROPIEDAD EN CLASE SIN QUE EXISTA LA DEFINCIÓN DE LA PROPIEDAD A LA CLASE"
+ salience 500
+ agenda-group "rules" when 
+ 	
+	ObjValue(CLASSNAME=="PROPIEDAD_EN_CLASE_EXCLUÍDA",PROPNAME=="dominio",id1:VALOR, idoExc2:IDO!=null)
+  	DatValue(ID==id1,PROPNAME=="rdn", dominio:VALOR)
+  	ObjValue(IDO==idoExc2, PROPNAME=="propiedad",id2:VALOR!=null)
+  	DatValue(ID==id2,PROPNAME=="rdn",propiedadExcluida:VALOR)
+ 	not(IModel(CLASSNAME==dominio,PROPNAME==propiedadExcluida))
+ then
+ 	dma.printRule("\n\n\n ============== DETECTAR ERROR EXCLUSIÓN DE PROPIEDAD EN CLASE SIN QUE EXISTA LA DEFINCIÓN DE LA PROPIEDAD A LA CLASE=========================\n .....CLASE:"+dominio+" no tiene la propiedad:"+ propiedadExcluida);
+ 	throw new OperationNotPermitedException(" DETECTAR ERROR EXCLUSIÓN DE PROPIEDAD EN CLASE SIN QUE EXISTA LA DEFINCIÓN DE LA PROPIEDAD A LA CLASE\nCLASE:"+dominio+" no tiene la propiedad:"+ propiedadExcluida);
+ end
+  
+rule "DETECTAR ERROR EXCLUSIÓN DE CLASE SIN QUE EXISTA LA DEFINICIÓN DE LA CLASE"
+ salience 500
+ agenda-group "rules" when 
+ 	
+	ObjValue(CLASSNAME=="CLASE_EXCLUÍDA",PROPNAME=="dominio",id1:VALOR, idoExc2:IDO!=null)
+  	DatValue(ID==id1,PROPNAME=="rdn", dominio:VALOR)
+  	not(exists(IModel(CLASSNAME==dominio)))
+ then
+ 	dma.printRule("\n\n\n ============== DETECTAR ERROR EXCLUSIÓN DE CLASE SIN QUE EXISTA LA DEFINICIÓN DE LA CLASE=========================\n .....CLASE:"+dominio);
+ 	throw new OperationNotPermitedException("DETECTAR ERROR EXCLUSIÓN DE CLASE SIN QUE EXISTA LA DEFINICIÓN DE LA CLASE="+dominio);
+ end
+
+
+rule "MODULO SELECCIONADO EN ACCIÓN INSTALAR--> TRUE EN SU CAMPO INSTALAR"
+ salience 500
+ agenda-group "rules" when 
+ 
+	ObjValue(CLASSNAME=="Instalar",  idoUTask:IDO,PROPNAME=="sourceClass", idModulo:VALOR!=null,idoModulo:IDOVALUE!=null,idtoModulo:VALUECLS)
+	DatValue(ID==idModulo,PROPNAME=="rdn",nombreModulo:VALOR!=null)
+then
+	dma.printRule("\n\n =============== MODULO SELECCIONADO EN ACCIÓN INSTALAR --> TRUE EN SU CAMPO INSTALAR: "+nombreModulo);
+	dma.setDataValue(idoModulo,idtoModulo,"instalar","true");
+end	
+
+rule "MODULO SELECCIONADO EN ACCIÓN DESINSTALAR--> FALSE EN SU CAMPO INSTALAR"
+ salience 500
+ agenda-group "rules" when 
+ 
+	ObjValue(CLASSNAME=="Desinstalar",  idoUTask:IDO,PROPNAME=="sourceClass", idModulo:VALOR!=null,idoModulo:IDOVALUE!=null,idtoModulo:VALUECLS)	
+	DatValue(ID==idModulo,PROPNAME=="rdn",nombreModulo:VALOR!=null)
+then
+	dma.printRule("\n\n =============== MODULO SELECCIONADO EN ACCIÓN DESINSTALAR --> FALSE EN SU CAMPO INSTALAR: "+nombreModulo);
+	dma.setDataValue(idoModulo,idtoModulo,"instalar","false");
+end	
+
+
+
+//////////////////////////////////////////////////////////
+//REGLAS SOLO SE DISPARAN EN SESIÓN DE CLASIFICACION (temporalmente simulamos esta sesión con edición SELECCIÓN_MÓDULOS_NEGOCIO y cambiar valor de csu campo "clasificar_ahora" a true
+
+rule "CLASIFICACIONRULE :PRECARGA CLASES ESPECIALIZADAS DE CLASES DE MODULOS"
+ salience 200
+ agenda-group "rules" when 
+ 	
+
+	(or
+		exists((and
+			ObjValue(CLASSNAME=="Instalar"||=="Desinstalar",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+			DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    		ObjValue(IDO==idoUTask, PROPNAME=="sourceClass", idModulo:VALOR!=null)
+    	))
+    	exists((and
+    		DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    		DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    	))
+    )
+
+	clases: ArrayList(size>0) 
+            	from accumulate(
+            				 (and 
+             					 ObjValue(CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="dominio",idDominio:VALOR!=null)
+             					 DatValue(ID==idDominio,PROPNAME=="rdn",claseModulo:VALOR!=null)
+								 FactHierarchy(CLASSSUP==claseModulo,claseHija:CLASS)
+	                             not(DatValue(CLASSNAME=="CLASE",VALOR==claseHija))
+             				  ),
+                              init	( ArrayList<Value> lineas2 = new ArrayList<Value> ();),
+                              action( lineas2.add(new StringValue(claseHija));),                            
+                              result(lineas2))
+	
+then
+	dma.printRule("\n\n ======== PRECARGA CLASES ESPECIALIZADAS DE CLASES DE MODULOS===========");
+	HashMap<String, ArrayList<Value>> propiedadValores=new HashMap<String, ArrayList<Value>>();
+	propiedadValores.put("rdn",clases);
+	instance filter=dma.buildInstanceWith("CLASE",null,propiedadValores,null,null);
+	dma.loadIndividualsWithSatisficedFilter(filter,1);
+
+end
+
+
+rule "CLASIFICACIONRULE R0: INCLUSIÓN DE MODULO POR DEPENDENCIA DE OTRO MODULO INCLUIDO"
+ 	salience 500
+ 	agenda-group "rules" when 
+ 	
+	(or
+		exists((and
+			ObjValue(CLASSNAME=="Instalar"||=="Desinstalar",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+			DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    		ObjValue(IDO==idoUTask, PROPNAME=="sourceClass", idModulo:VALOR!=null)
+    	))
+    	exists((and
+    		DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    		DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    	))
+    )
+
+	DatValue(CLASSNAME=="MÓDULO_NEGOCIO",idoModulo1:IDO!=null,PROPNAME=="rdn", nombreModulo1:VALOR!=null,idto:IDTO)
+	DatValue(IDO==idoModulo1,PROPNAME=="instalar",VALOR=="true")
+	ObjValue(IDO==idoModulo1,PROPNAME=="depende_de",idoModulo2:IDOVALUE!=null)
+	DatValue(IDO==idoModulo2,PROPNAME=="rdn",nombreModulo2:VALOR!=null)
+	not(DatValue(IDO==idoModulo2,PROPNAME=="instalar",VALOR=="true"))
+		  
+	then
+		dma.printRule("\n====> ... CLASIFICACIONRULE R0: INCLUSIÓN DE MODULO POR DEPENDENCIA DE OTRO MODULO INCLUIDO: moduloDependiente: "+nombreModulo1+"  moduloDelQueDepende:"+nombreModulo2);
+		dma.showMessage("Se va a instalar "+nombreModulo2+" porque "+nombreModulo1+" depende de él");
+		dma.setDataValue(idoModulo2,idto,"instalar","true");
+	end
+
+
+/////////////////////////////////////////////////////////
+rule "CLASIFICACIONRULE R1:PRECARGA MODULOS NEGOCIO/PROPIEDADES/CLASES"
+ salience 201
+ agenda-group "rules" when 
+ 	
+	(or
+		exists((and
+			ObjValue(CLASSNAME=="Instalar"||=="Desinstalar",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+			DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    		ObjValue(IDO==idoUTask, PROPNAME=="sourceClass", idModulo:VALOR!=null)
+    	))
+    	exists((and
+    		DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    		DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    	))
+    )
+	not(Individual(CLASSNAME=="PROPIEDAD"))
+ then
+	dma.printRule("\n====> CLASIFICACIONRULE R1:PRECARGA MODULOS NEGOCIO/PROPIEDADES/CLASES");
+	instance filter=null;
+	filter=dma.buildInstanceWith("MÓDULO_NEGOCIO",null,null,null,null);
+	dma.loadIndividualsWithSatisficedFilter(filter,2);
+	filter=dma.buildInstanceWith("PROPIEDAD",null,null,null,null);
+	dma.loadIndividualsWithSatisficedFilter(filter);
+	filter=dma.buildInstanceWith("CLASE",null,null,null,null);
+	dma.loadIndividualsWithSatisficedFilter(filter);
+	filter=dma.buildInstanceWith("EXCLUSIÓN",null,null,null,null);
+	HashSet<IDIndividual> listaExclusiones=dma.loadIndividualsWithSatisficedFilter(filter);
+	Iterator it=listaExclusiones.iterator();
+	
+	
+	System.err.println("\n... info se van a borrar las exclusiones: numero:"+listaExclusiones.size());
+	while(it.hasNext()){
+		IDIndividual domexclu=(IDIndividual)it.next();
+		dma.deleteObject(domexclu);
+	}
+end
+
+
+rule "CLASIFICACIONRULE R2: ENLAZAR MODULOS NEGOCIO FINALIZACION ACCION INSTALAR/DESINSTALAR"
+ salience -500
+ agenda-group "rules" when 
+ 	
+	ObjValue(CLASSNAME=="Instalar"||=="Desinstalar",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null,idtoUtask:IDTO)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    modulosfacts:ArrayList() from collect(Individual(CLASSNAME=="MÓDULO_NEGOCIO"))
+ then
+	dma.printRule("\n====> CLASIFICACIONRULE R2: ENLAZAR MODULOS NEGOCIO FINALIZACION ACCION INSTALAR/DESINSTALAR  modulosfacts"+ modulosfacts);
+	for (int i=0;i<modulosfacts.size();i++){
+		Individual indmodulo=(Individual)modulosfacts.get(i);
+		dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(indmodulo.getIDO(),indmodulo.getIDTO()));
+	
+	}
+end
+
+
+//2 REGLAS AUXILIARES: NO HARAN FALTA CUANDO SE MODIFIQUE EL IMPORTADOR PARA QUE TRANSFORME LA DEFINICION DE LA ONTOLOGÍA DE LAS PROIEDADES/CLASES AL INDIVIDUO QUE CREA EL IMPORTADOR DE CLASE/PROPIEDAD 
+rule "CLASIFICACIONRULE R2: COMPLETAR INFORMACION PROPIEDAD2"
+ salience 199
+ agenda-group "rules" when 
+ 
+ DatValue(CLASSNAME=="MÓDULO_NEGOCIO",idoModulo:IDO!=null,PROPNAME=="rdn", nombreModulo:VALOR!=null,idto:IDTO)
+  IndividualValue(IDO==idoModulo,PROPNAME=="propiedades", propiedad:VALOR)
+  FactHierarchy(CLASSSUP=="PROPIEDAD",clsPropiedad:CLASS)
+  DatValue(CLASSNAME==clsPropiedad,PROPNAME=="rdn",VALOR==propiedad,idoPropiedad:IDO,idtoPropiedad:IDTO)
+  not(ObjValue(IDO==idoModulo,PROPNAME=="propiedad", IDOVALUE==idoPropiedad))
+ then
+ 	dma.printRule("\n====> ... CLASIFICACIONRULE R2: COMPLETAR INFORMACION PROPIEDAD2   MÓDULO NEGOCIO: "+nombreModulo+"  propiedad:"+propiedad);
+  dma.addValue(idoModulo,idto,"propiedad",new ObjectValue(idoPropiedad,idtoPropiedad));
+end
+
+rule "CLASIFICACIONRULE R3: COMPLETAR INFORMACION DOMINIO2"
+ salience 198
+ agenda-group "rules" when 
+ 
+ 
+ DatValue(CLASSNAME=="MÓDULO_NEGOCIO",idoModulo:IDO!=null,PROPNAME=="rdn", nombreModulo:VALOR!=null,idto:IDTO)
+  IndividualValue(IDO==idoModulo,PROPNAME=="clases", clase:VALOR)
+  FactHierarchy(CLASSSUP=="CLASE",clsClase:CLASS)
+  DatValue(CLASSNAME==clsClase,PROPNAME=="rdn",VALOR==clase,idoClase:IDO,idtoClase:IDTO)
+  not(ObjValue(IDO==idoModulo,PROPNAME=="dominio", IDOVALUE==idoClase))
+ then
+ dma.printRule("====> .....CLASIFICACIONRULE R3: COMPLETAR INFORMACION DOMINIO2  MÓDULO NEGOCIO: "+nombreModulo+" dominio:"+clase);
+  dma.addValue(idoModulo,idto,"dominio",new ObjectValue(idoClase,idtoClase));
+end
+
+
+//@REGLA DE EXCLUSION 4
+rule "CLASIFICACIONRULE R4: EXCLUIR CLASES QUE SOLO ESTÁN EN MODULOS NO INCLUIDOS"
+	salience 197
+	agenda-group "rules" when 
+ 	
+	
+	(or
+		exists((and
+			ObjValue(CLASSNAME=="Instalar"||=="Desinstalar",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+			DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    	))
+    	exists((and
+    		DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    		DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    	))
+    )
+	
+	DatValue(CLASSNAME=="MÓDULO_NEGOCIO", idoModulo:IDO!=null,PROPNAME=="instalar",VALOR=="false")
+	ObjValue(IDO==idoModulo,PROPNAME=="dominio",idClaseExcluir:VALOR!=null,ovclase:OBJECTVALUE)
+	DatValue(ID==idClaseExcluir,PROPNAME=="rdn", claseExcluir:VALOR!=null)
+	not(
+		(and
+			DatValue(CLASSNAME=="MÓDULO_NEGOCIO", idoModulo2:IDO!=null,PROPNAME=="instalar",VALOR=="true")
+			ObjValue(IDO==idoModulo2,PROPNAME=="dominio",VALOR==idClaseExcluir)  		
+		)
+	)
+	not(
+		(and
+			IndividualValue(CLASSNAME=="CLASE_EXCLUÍDA", PROPNAME=="dominio",VALOR==idClaseExcluir,idoExc:IDO!=null)
+			Individual(IDO==idoExc,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+		)
+	)
+	then
+		dma.printRule("\n====> ........CLASIFICACIONRULE R4: EXCLUIR CLASES QUE SOLO ESTÁN EN MODULOS NO INCLUIDOS. claseExcluir:"+claseExcluir);
+		Domain dom=dma.creaIndividualOfClass("CLASE_EXCLUÍDA");
+		dma.setValue(dom,"dominio",ovclase);
+end
+
+//@REGLA DE EXCLUSIÓN 5
+
+//@REGLA DE EXCLUSION 5
+rule "CLASIFICACIONRULE R5: EXCLUIR CLASE QUE HEREDA DE CLASE QUE ESTÁN EXCLUIDA"
+ salience 196
+ agenda-group "rules" when 
+ 	
+
+	(or
+		exists((and
+			ObjValue(CLASSNAME=="Instalar"||=="Desinstalar",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+			DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    	))
+    	exists((and
+    		DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    		DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    	))
+    )
+
+
+    ObjValue(CLASSNAME=="CLASE_EXCLUÍDA", PROPNAME=="dominio",idClasePadreExcluida:VALOR!=null,idoExc:IDO!=null)
+    not(exists(Individual(IDO==idoExc,STATE==Constants.INDIVIDUAL_STATE_DELETED)))
+  	DatValue(ID==idClasePadreExcluida, PROPNAME=="rdn",clasePadreExcluida:VALOR!=null)
+  	FactHierarchy(CLASSSUP==clasePadreExcluida,claseHijaExcluir:CLASS)
+  	not(
+  		(and
+  	    	ObjValue(CLASSNAME=="CLASE_EXCLUÍDA", PROPNAME=="dominio",idclaseHijaExcluir:VALOR,idoExc2:IDO!=null)
+        	Individual(IDO==idoExc2,STATE!=Constants.INDIVIDUAL_STATE_DELETED)  	    
+  			DatValue(ID==idclaseHijaExcluir, PROPNAME=="rdn",VALOR==claseHijaExcluir)
+  	)
+  )
+  DatValue(VALOR==claseHijaExcluir,PROPNAME=="rdn",idoClaseHijaExcluir:IDO,idtoClaseHijaExcluir:IDTO!=null)
+then
+  dma.printRule("\n====> ..............CLASIFICACIONRULE R5: EXCLUIR CLASE QUE HEREDA DE CLASE QUE ESTÁN EXCLUIDA. se excluye:"+ claseHijaExcluir+" que hereda de: "+clasePadreExcluida);
+  Domain dom=dma.creaIndividualOfClass("CLASE_EXCLUÍDA");
+  dma.setValue(dom,"dominio",new ObjectValue(idoClaseHijaExcluir,idtoClaseHijaExcluir));
+  //dma.printRule("\n ... debug propiedad dominio 2 tras exclusión:"+dom.getIdo()+"   "+dma.getValue(dom,"dominio"));
+end
+
+
+
+rule "CLASIFICACIONRULE R6: EXCLUIR PROPIEDADES QUE SOLO ESTÁN EN MODULOS NO INCLUIDOS"
+salience 195
+ agenda-group "rules" when 
+ 
+ 
+	(or
+		exists((and
+			ObjValue(CLASSNAME=="Instalar"||=="Desinstalar",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+			DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    	))
+    	exists((and
+    		DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    		DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    	))
+    )
+
+ 
+  IndividualValue(CLASSNAME=="MÓDULO_NEGOCIO", idoModulo:IDO!=null,PROPNAME=="instalar",VALOR=="false")
+  ObjValue(IDO==idoModulo,PROPNAME=="propiedad",idPropiedadExcluir:VALOR!=null,ovpropiedad:OBJECTVALUE)
+  DatValue(ID==idPropiedadExcluir,PROPNAME=="rdn", propiedadExcluir:VALOR!=null)
+  not(
+  	(and
+  		IndividualValue(CLASSNAME=="MÓDULO_NEGOCIO", idoModulo2:IDO!=null,PROPNAME=="instalar",VALOR=="true")
+		IndividualValue(IDO==idoModulo2,PROPNAME=="propiedad",VALOR==idPropiedadExcluir)  		
+  	)
+  )
+  
+  not(
+  		(and
+  			IndividualValue(CLASSNAME=="PROPIEDAD_EXCLUÍDA", PROPNAME=="propiedad",VALOR==idPropiedadExcluir,idoExc:IDO!=null)
+  			Individual(IDO==idoExc,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+  		)
+  	)
+  			
+then
+  dma.printRule("\n====> ...........CLASIFICACIONRULE R6: EXCLUIR PROPIEDADES QUE SOLO ESTÁN EN MODULOS NO INCLUIDOS. propiedadExcluida:"+propiedadExcluir);
+  Domain dom=dma.creaIndividualOfClass("PROPIEDAD_EXCLUÍDA");
+  dma.setValue(dom,"propiedad",ovpropiedad);
+end
+
+
+//@REGLA DE EXCLUSION 7
+rule "CLASIFICACIONRULE R7: PROPAGAR POR HERENCIA EXCLUSIÓN DE CLASE EN PROPIEDAD"
+ salience 194
+ agenda-group "rules" when 
+ 
+
+	(or
+		exists((and
+			ObjValue(CLASSNAME=="Instalar"||=="Desinstalar",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+			DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    	))
+    	exists((and
+    		DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    		DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    	))
+    )
+ 
+
+  ObjValue(CLASSNAME=="PROPIEDAD_EN_CLASE_EXCLUÍDA", PROPNAME=="dominio",idClasePadreExcluida:VALOR!=null,idoExclusion:IDO)
+  not(exists(Individual(IDO==idoExclusion,STATE==Constants.INDIVIDUAL_STATE_DELETED)))  
+
+  DatValue(ID==idClasePadreExcluida, PROPNAME=="rdn",clasePadreExcluida:VALOR!=null)
+  ObjValue(IDO==idoExclusion, PROPNAME=="propiedad",idPropiedadExcluida:VALOR!=null,ovpropiedadexcluida:OBJECTVALUE!=null)  
+  DatValue(ID==idPropiedadExcluida, PROPNAME=="rdn",propiedadExcluida:VALOR!=null)
+  FactHierarchy(CLASSSUP==clasePadreExcluida,claseHijaExcluir:CLASS)
+  not(
+  	(and
+  	    ObjValue(CLASSNAME=="PROPIEDAD_EN_CLASE_EXCLUÍDA", PROPNAME=="dominio",idclaseHijaExcluir:VALOR,idExclusionHija:ID)
+  		Individual(ID==idExclusionHija,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+  		DatValue(ID==idclaseHijaExcluir, PROPNAME=="rdn",VALOR==claseHijaExcluir)
+  		ObjValue(ID==idExclusionHija, PROPNAME=="propiedad",VALOR==idPropiedadExcluida)
+  		
+  	)
+  )
+  DatValue(VALOR==claseHijaExcluir,PROPNAME=="rdn",idoClaseHijaExcluir:IDO,idtoClaseHijaExcluir:IDTO!=null)
+then
+  dma.printRule("\n====> .................CLASIFICACIONRULE R7: PROPAGAR POR HERENCIA EXCLUSIÓN DE CLASE EN PROPIEDAD:\n se excluye en:"+ claseHijaExcluir+" la propiedad "+propiedadExcluida+" por herencia desde: "+clasePadreExcluida);
+  Domain dom=dma.creaIndividualOfClass("PROPIEDAD_EN_CLASE_EXCLUÍDA");
+  dma.setValue(dom,"dominio",new ObjectValue(idoClaseHijaExcluir,idtoClaseHijaExcluir));
+  dma.setValue(dom,"propiedad",ovpropiedadexcluida);
+end
+
+//@REGLA DE EXCLUSION 8
+//TODO PROBAR
+rule "CLASIFICACIONRULE R8: EXCLUIR PROPIEDAD EN CLASE SI SU RANGO ESTA EXCLUIDA Y NO ES OBLIGATORIA LA PROPIEDAD"
+ salience 193
+ agenda-group "rules" when 
+ 
+
+	(or
+		exists((and
+			ObjValue(CLASSNAME=="Instalar"||=="Desinstalar",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+			DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    	))
+    	exists((and
+    		DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    		DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    	))
+    )
+ 
+  
+  ObjValue(CLASSNAME=="CLASE_EXCLUÍDA", PROPNAME=="dominio",idoSupExcluido:IDOVALUE)
+  
+  DatValue(IDO==idoSupExcluido, PROPNAME=="rdn",rdnClaseSupExc:VALOR!=null)
+  FactHierarchy(CLASSSUP==rdnClaseSupExc,claseExcluida:CLASS)
+          
+  not(Individual(CLASSNAME==claseExcluida, STATE!=Constants.INDIVIDUAL_STATE_DELETED))       
+
+  Model(RANGENAME==claseExcluida,propiedadExcluida:PROPNAME!=null,dominio:CLASSNAME,OP=="AND"||=="ONEOF"||=="OR")
+  //not(Model(RANGENAME!=null&&!=claseExcluida,PROPNAME==propiedadExcluida,CLASSNAME==dominio,OP=="AND"||=="ONEOF"||=="OR"))
+
+  not( Model(PROPNAME==propiedadExcluida,CLASSNAME==dominio,OP==Constants.OP_CARDINALITY,QMIN>=1))
+
+  not(
+  	(and
+  		ObjValue(CLASSNAME=="PROPIEDAD_EN_CLASE_EXCLUÍDA",PROPNAME=="dominio",id1:VALOR, idoExc2:IDO!=null)
+  		Individual(IDO==idoExc2,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+  		DatValue(ID==id1,PROPNAME=="rdn", VALOR==dominio)
+  		ObjValue(IDO==idoExc2, PROPNAME=="propiedad",id2:VALOR!=null)
+  		DatValue(ID==id2,PROPNAME=="rdn",VALOR==propiedadExcluida)
+  	)
+  )
+
+  not(
+  	(and
+  		ObjValue(CLASSNAME=="PROPIEDAD_EXCLUÍDA",PROPNAME=="propiedad",id3:VALOR, idoExc3:IDO!=null)
+		Individual(IDO==idoExc3,STATE!=Constants.INDIVIDUAL_STATE_DELETED)  		
+  		DatValue(ID==id3,PROPNAME=="rdn",VALOR==propiedadExcluida)
+  	)
+  )
+
+  FactHierarchy(CLASSSUP=="PROPIEDAD",clsPropidad:CLASS)
+  DatValue(CLASSNAME==clsPropidad, PROPNAME=="rdn",VALOR==propiedadExcluida,idoPropExcluida:IDO!=null,idtoPropExcluida:IDTO)
+  DatValue(CLASSNAME=="CLASE", PROPNAME=="rdn",VALOR==dominio,idoDominio:IDO!=null,idtoDominio:IDTO)
+ 
+then
+  dma.printRule("\n====> ..................... CLASIFICACIONRULE R8: EXCLUIR PROPIEDAD EN CLASE SI SU RANGO ESTA EXCLUIDA Y NO ES OBLIGATORIA LA PROPIEDAD:\n dominio:"+dominio+" propiedad:"+propiedadExcluida);
+  Domain dom=dma.creaIndividualOfClass("PROPIEDAD_EN_CLASE_EXCLUÍDA");
+  dma.setValue(dom,"dominio",new ObjectValue(idoDominio,idtoDominio));
+  dma.setValue(dom,"propiedad",new ObjectValue(idoPropExcluida,idtoPropExcluida));
+end
+
+//@REGLA DE EXCLUSION 9
+rule "CLASIFICACIONRULE R9: ERROR PROPIEDAD OBLIGATORÍA APUNTANDO A RANGO EXCLUIDO"
+ salience -200
+ agenda-group "rules" when 
+ 
+
+	(or
+		exists((and
+			ObjValue(CLASSNAME=="Instalar"||=="Desinstalar",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+			DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    	))
+    	exists((and
+    		DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    		DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    	))
+    )
+
+ 
+  errores: ArrayList(size>0) 
+            	from accumulate(
+            				 (and 
+								  ObjValue(CLASSNAME=="CLASE_EXCLUÍDA", PROPNAME=="dominio",idClaseExcluida:VALOR!=null,idoExc:IDO!=null)
+								  not(exists(Individual(IDO==idoExc,STATE==Constants.INDIVIDUAL_STATE_DELETED)))
+								  DatValue(ID==idClaseExcluida, PROPNAME=="rdn",claseExcluida:VALOR!=null)
+								  Model(RANGENAME==claseExcluida,propiedadWarning:PROPNAME!=null,dominio:CLASSNAME,OP=="AND")
+								  Model(PROPNAME==propiedadWarning,CLASSNAME==dominio,OP==Constants.OP_CARDINALITY,QMIN>=1)
+								  not(FactHierarchy(CLASS==dominio,CLASSSUP=="UTASK"))
+								  not((and
+								  		ObjValue(CLASSNAME=="CLASE_EXCLUÍDA", PROPNAME=="dominio",idClaseExcluida2:VALOR!=null,idoExc2:IDO!=null)
+								  		Individual(IDO==idoExc2,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+								  		DatValue(ID==idClaseExcluida2, PROPNAME=="rdn",VALOR==dominio)
+									))
+ 									not((and
+								  		ObjValue(CLASSNAME=="PROPIEDAD_EXCLUÍDA", PROPNAME=="propiedad",idPropiedadExcluida:VALOR!=null,idoExc3:IDO!=null)
+								  		Individual(IDO==idoExc3,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+								  		DatValue(ID==idPropiedadExcluida, PROPNAME=="rdn",VALOR==propiedadWarning)
+									))
+									not((and
+								  		ObjValue(CLASSNAME=="PROPIEDAD_EN_CLASE_EXCLUÍDA", PROPNAME=="propiedad",idPropiedadExcluida:VALOR!=null,idoExc4:IDO!=null)
+								  		Individual(IDO==idoExc4,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+								  		DatValue(ID==idPropiedadExcluida, PROPNAME=="rdn",VALOR==propiedadWarning)
+										ObjValue(IDO==idoExc4, PROPNAME=="dominio",idDominioExcluido:VALOR!=null)
+										DatValue(ID==idDominioExcluido, PROPNAME=="rdn",VALOR==dominio)
+									))
+									
+									
+            				  ),
+                              init	(ArrayList<String> errores2 = new ArrayList<String>();
+          		              ),
+                              action( 
+                              		String error="la clase "+dominio+" tiene la propiedad: "+propiedadWarning+" obligatoria que es de un tipo excluido: "+claseExcluida;
+                              		errores2.add(error);
+                           ),                            
+                             result(errores2))	
+then
+  dma.printRule("\n====> ........................ CLASIFICACIONRULE R9: ERROR PROPIEDAD OBLIGATORÍA APUNTANDO A RANGO EXCLUIDO"+Auxiliar.IteratorToStringByRows(errores.iterator()));
+  throw new OperationNotPermitedException(" ERROR PROPIEDAD OBLIGATORÍA APUNTANDO A RANGO EXCLUIDO:\nSe han excluido tipos de propiedades obligatorias:"+Auxiliar.IteratorToStringByRows(errores.iterator()));
+end
+
+//@REGLA DE CLASIFICACIÓN 10
+//TODO PROBAR
+rule "CLASIFICACIONRULE R10: ERROR PROPIEDAD APUNTANDO A MÁS DE UN RANGO UNO DE ELLOS EXCLUIDO, CASO SIN IMPLEMENTAR"
+ salience -200
+ agenda-group "rules" when 
+ 
+
+	(or
+		exists((and
+			ObjValue(CLASSNAME=="Instalar"||=="Desinstalar",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+			DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    	))
+    	exists((and
+    		DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    		DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    	))
+    )
+ 
+  
+  ObjValue(CLASSNAME=="CLASE_EXCLUÍDA", PROPNAME=="dominio",idClaseExcluida:VALOR!=null,idoExc:IDO!=null)
+  not(exists(Individual(IDO==idoExc,STATE==Constants.INDIVIDUAL_STATE_DELETED)))
+  DatValue(ID==idClaseExcluida, PROPNAME=="rdn",claseExcluida:VALOR!=null)
+  M1:Model(RANGENAME==claseExcluida,propiedadWarning:PROPNAME!=null,dominio:CLASSNAME,OP!=null&&!="CAR")
+  Model(PROPNAME==propiedadWarning,CLASSNAME==dominio,OP!=null&&!="CAR",claseNOExcluida:RANGENAME,this!=M1)
+ not(
+  	(and
+  		ObjValue(CLASSNAME=="PROPIEDAD_EN_CLASE_EXCLUÍDA",PROPNAME=="dominio",id1:VALOR, idoExc2:IDO!=null)
+  		Individual(IDO==idoExc2,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+  		DatValue(ID==id1,PROPNAME=="rdn", VALOR==dominio)
+  		ObjValue(IDO==idoExc2, PROPNAME=="propiedad",id2:VALOR!=null)
+  		DatValue(ID==id2,PROPNAME=="rdn",VALOR==propiedadWarning)
+  	)
+  )
+  not(
+  	(and
+  		ObjValue(CLASSNAME=="PROPIEDAD_EXCLUÍDA",PROPNAME=="propiedad",id3:VALOR, idoExc3:IDO!=null)
+	    Individual(IDO==idoExc3,STATE!=Constants.INDIVIDUAL_STATE_DELETED)  		
+  		DatValue(ID==id3,PROPNAME=="rdn",VALOR==propiedadWarning)
+  	)
+  )
+then
+  dma.printRule("\n====> ........................... CLASIFICACIONRULE R10: ERROR PROPIEDAD APUNTANDO A MÁS DE UN RANGO UNO DE ELLOS EXCLUIDO, CASO SIN IMPLEMENTAR propiedad:"+propiedadWarning+" claseExcluida:"+claseExcluida+" domninio:"+dominio);
+  throw new OperationNotPermitedException("PROPIEDAD APUNTANDO A MÁS DE UN RANGO UNO DE ELLOS EXCLUIDO, CASO SIN IMPLEMENTAR propiedad:"+propiedadWarning+" claseExcluida:"+claseExcluida+" domninio:"+dominio);
+end
+
+
+//@REGLA DE EXCLUSION 11
+//TODO PROBAR
+rule "CLASIFICACIONRULE R11: PROPIEDAD EN CLASE VIRTUAL OBTENIDA DE CLASE HIJA EXCLUIDA HAY QUE EXCLUIRLA EN LA VIRTUAL"
+ salience 190
+ agenda-group "rules" when 
+ 
+
+	(or
+		exists((and
+			ObjValue(CLASSNAME=="Instalar"||=="Desinstalar",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+			DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    	))
+    	exists((and
+    		DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    		DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    	))
+    )
+ 
+  
+  Virtual(claseAbstracta:CLASSNAME, propiedadExcluir:PROPNAME=="propiedad")
+  not(
+  	(and
+  		FactHierarchy(CLASSSUP==claseAbstracta,claseHija:CLASS)
+  		exists(Model(CLASSNAME==claseHija, PROPNAME==propiedadExcluir))  
+  		not(
+  			(and
+		  		ObjValue(CLASSNAME=="PROPIEDAD_EN_CLASE_EXCLUÍDA",PROPNAME=="dominio",id1:VALOR, idoExc:IDO!=null)
+  				Individual(IDO==idoExc,STATE!=Constants.INDIVIDUAL_STATE_DELETED)		  		
+		  		DatValue(ID==id1,PROPNAME=="rdn", VALOR==claseHija)
+		  		ObjValue(IDO==idoExc, PROPNAME=="propiedad",id2:VALOR!=null)
+		  		DatValue(ID==id2,PROPNAME=="rdn",VALOR==propiedadExcluir)
+  			)
+  		)
+   		not(
+   			(and
+  				ObjValue(CLASSNAME=="CLASE_EXCLUIDA",PROPNAME=="dominio",id3:VALOR, idoExc:IDO!=null)
+				Individual(IDO==idoExc,STATE!=Constants.INDIVIDUAL_STATE_DELETED)  				
+ 				DatValue(ID==id3,PROPNAME=="rdn",VALOR==claseHija)
+  			)
+  		  )
+  		)
+  	)
+  	DatValue(VALOR==claseAbstracta,PROPNAME=="rdn",CLASSNAME=="CLASE",idoClaseAbstracta:IDO!=null,idtoClaseAbstracta:IDTO)
+  	FactHierarchy(CLASSSUP=="PROPIEDAD",clsPropiedad:CLASS)
+  	DatValue(VALOR==propiedadExcluir,PROPNAME=="rdn",CLASSNAME==clsPropiedad,idoPropiedad:IDO!=null,idtoPropiedad:IDTO)  	
+  	
+ then
+  	dma.printRule("\n====> ........................... CLASIFICACIONRULE R11: PROPIEDAD EN CLASE VIRTUAL OBTENIDA DE CLASE HIJA EXCLUIDA HAY QUE EXCLUIRLA EN LA VIRTUAL propiedadExcluir:"+propiedadExcluir+" claseAbstracta:"+claseAbstracta);
+	Domain dom=dma.creaIndividualOfClass("PROPIEDAD_EN_CLASE_EXCLUÍDA");
+  dma.setValue(dom,"dominio",new ObjectValue(idoClaseAbstracta,idtoClaseAbstracta));
+  dma.setValue(dom,"propiedad",new ObjectValue(idoPropiedad,idtoPropiedad));
+end
+
+
+/*rule "CLASIFICACIONRULE R12: ELIMINAR FACT MODEL DE PROPIEDADES EXCLUIDAS"
+ salience 190
+ agenda-group "rules" when 
+ 
+
+	ObjValue(CLASSNAME=="Instalar"||=="Desinstalar",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+
+
+  ObjValue(CLASSNAME=="PROPIEDAD_EXCLUÍDA",PROPNAME=="propiedad",id3:VALOR, idoExc:IDO!=null)
+  DatValue(ID==id3,PROPNAME=="rdn",propiedadExcluida:VALOR)
+  model:Model(PROPNAME==propiedadExcluida)
+then
+ dma.printRule("\n====> ........................... ... CLASIFICACIONRULE R12: ELIMINAR FACT MODEL DE PROPIEDADES EXCLUIDAS:\n "+model);
+ retract(model);
+end
+
+rule "CLASIFICACIONRULE R13: ELIMINAR FACT MODEL DE CLASES EXCLUIDAS"
+ salience 189
+ agenda-group "rules" when 
+ 
+
+	ObjValue(CLASSNAME=="Instalar"||=="Desinstalar",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+
+
+  ObjValue(CLASSNAME=="CLASE_EXCLUÍDA",PROPNAME=="dominio",id3:VALOR, idoExc:IDO!=null)
+  DatValue(ID==id3,PROPNAME=="rdn",claseExcluida:VALOR)
+  Model(CLASSNAME==claseExcluida||RANGENAME==claseExcluida,propiedad:PROPNAME,dominio:CLASSNAME)
+  //HAY QUE ELIMINAR TODOS LOS FACTS MODEL (se tiene que hacer de esta forma pq la cardinalidad no tiene en rango el rango y quedaban facts cardinalidad basura
+  modelsFactsToDeleted:ArrayList(size>0) from collect (Model(CLASSNAME==dominio,PROPNAME==propiedad))
+  
+then
+ dma.printRule("\n====> ........................... ..... CLASIFICACIONRULE R13: ELIMINAR FACT MODEL DE CLASES EXCLUIDAS:\n "+Auxiliar.IteratorToStringByRows(modelsFactsToDeleted.iterator()));
+ for(int i=0;i<modelsFactsToDeleted.size();i++){
+ 	retract(modelsFactsToDeleted.get(i));
+ }
+end
+
+rule "CLASIFICACIONRULE R14: ELIMINAR FACT MODEL DE PROPIEDAD EN CLASES EXCLUIDAS"
+ salience 188
+ agenda-group "rules" when 
+ 
+
+	ObjValue(CLASSNAME=="Instalar"||=="Desinstalar",  idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+
+
+
+  ObjValue(CLASSNAME=="PROPIEDAD_EN_CLASE_EXCLUÍDA",PROPNAME=="dominio",id3:VALOR, idoExc:IDO!=null)
+  DatValue(ID==id3,PROPNAME=="rdn",claseExcluida:VALOR)
+  ObjValue(IDO==idoExc,PROPNAME=="propiedad",id4:VALOR)
+  DatValue(ID==id4,PROPNAME=="rdn",propiedadExcluida:VALOR)
+   model:Model(CLASSNAME==claseExcluida,PROPNAME==propiedadExcluida)
+then
+ dma.printRule("\n====> ........................... ..... CLASIFICACIONRULE R14: ELIMINAR FACT MODEL DE PROPIEDAD EN CLASES EXCLUIDAS\n "+model);
+ retract(model);
+end
+*/
+
+
+
+
+
+
+
+
+rule "CLASIFICACIÓN SERVICIOS"
+agenda-group "rules" when
+    
+    DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    ObjValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="confirmedSource",value:IDOVALUE)
+    ObjValue(IDO==value,PROPNAME=="tipo_productos",idoTipoProducto:IDOVALUE)
+    DatValue(IDO==idoTipoProducto,PROPNAME=="rdn",VALUE=="Servicios")
+then
+   	dma.printRule("\n\n=======================RULE CLASIFICACIÓN SERVICIO"); 
+   	dma.questionRequest(Constants.CLASSIFICATION_QUESTION_TASK_RDN,new IndividualValues(dma.getIdClass("CONFIGURACIÓN_SERVICIOS"),null),null);
+end
+
+rule "CLASIFICACIÓN INICIAL"
+agenda-group "rules" when
+    
+    DatValue(CLASSNAME=="APLICACIÓN", PROPNAME=="módulos_configurados", BOOLEANVALOR==false)
+then
+   	dma.printRule("\n\n=======================RULE CLASIFICACIÓN INICIAL"); 
+   	dma.questionRequest(Constants.CLASSIFICATION_QUESTION_TASK_RDN,new IndividualValues(dma.getIdClass("CONFIGURACIÓN_INICIAL"),null),null);
+end
+
+rule "CLASIFICACIÓN GÉNERO"
+agenda-group "rules" when
+    
+    DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    ObjValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="confirmedSource",value:IDOVALUE)
+
+    tipoProductos: HashSet(size>0) 
+		from accumulate(
+				 (and 
+ 					 ObjValue(IDO==value,CLASSNAME=="CONFIGURACIÓN_INICIAL",PROPNAME=="tipo_productos",idoTipoProducto:IDOVALUE)
+    				 DatValue(IDO==idoTipoProducto,PROPNAME=="rdn",tipoProducto:VALUE!="Servicios")
+ 				  ),
+                  init	( HashSet<String> tipoProductos2 = new HashSet<String> ();),
+                  action( tipoProductos2.add(tipoProducto);),                            
+                  result(tipoProductos2)
+                  )
+                  
+    propiedadesGenero: ArrayList() from collect (DatValue(CLASSNAME=="PROPIEDAD_GÉNERO",PROPNAME=="rdn"))
+then
+   	dma.printRule("\n\n=======================RULE CLASIFICACIÓN GÉNERO"); 
+   	IndividualValues data=new IndividualValues(dma.getIdClass("CONFIGURACIÓN_GÉNERO"),null);
+	int idProp=dma.getIdProperty("propiedades_género");
+	for(DatValue datValue:(ArrayList<DatValue>)propiedadesGenero){
+		String propiedadGenero=datValue.getVALUE();
+		if(propiedadGenero.equals("Lote_perecedero")){
+			if(tipoProductos.contains("Alimentación")){
+				data.addData(idProp,datValue.getIDO());	
+			}
+		}else if(propiedadGenero.equals("Número_de_Serie")){
+			if(tipoProductos.contains("Equipos_electrónicos")){
+				data.addData(idProp,datValue.getIDO());	
+			}
+		}else if(propiedadGenero.equals("Talla")){
+			if(tipoProductos.contains("Textil")){
+				data.addData(idProp,datValue.getIDO());	
+			}
+		}else if(propiedadGenero.equals("Color")){
+			if(tipoProductos.contains("Textil")){
+				data.addData(idProp,datValue.getIDO());	
+			}
+		}
+	}
+   	
+   	dma.questionRequest(Constants.CLASSIFICATION_QUESTION_TASK_RDN,data,null);
+end
+
+
+rule "CLASIFICACIÓN FINAL"
+salience 100
+agenda-group "rules" when
+    
+    jb:JBossEngine();
+    DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    ObjValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="confirmedSource",value:IDOVALUE)
+    DatValue(IDO==value,CLASSNAME=="CONFIGURACIÓN_INICIAL",PROPNAME=="venta_al_público",ventaPublico:BOOLEANVALOR)
+    eval(!ventaPublico)
+    opcionesVenta: ArrayList() from collect (DatValue(CLASSNAME=="OPCIÓN_VENTA",PROPNAME=="rdn"))
+then
+   	dma.printRule("\n\n=======================RULE CLASIFICACIÓN FINAL"); 
+   	IndividualValues data=new IndividualValues(dma.getIdClass("CONFIGURACIÓN_FINAL"),null);
+	if(ventaPublico){
+		int idProp=dma.getIdProperty("opciones_venta");
+		for(DatValue datValue:(ArrayList<DatValue>)opcionesVenta){
+			data.addData(idProp,datValue.getIDO());	
+		}
+	}
+   	dma.questionRequest(Constants.CLASSIFICATION_QUESTION_TASK_RDN,data,null);
+end
+
+
+
+
+rule "INSTALAR MÓDULOS CONFIGURACIÓN SERVICIOS"
+salience 504
+agenda-group "rules" when
+    
+    DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    
+    DatValue(idoConfiguration:IDO,CLASSNAME=="CONFIGURACIÓN_SERVICIOS",PROPNAME=="gestión_de_proyectos",proyectos:VALOR)
+    DatValue(IDO==idoConfiguration,PROPNAME=="uso_de_retenciones",retenciones:VALOR)
+    
+    DatValue(idoServicio:IDO,idtoModulo:IDTO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_SERVICIO")
+    DatValue(idoProyecto:IDO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_PROYECTO")
+    DatValue(idoRetenciones:IDO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_RETENCIONES")
+    
+then
+   	dma.printRule("\n\n=======================RULE INSTALAR MÓDULOS CONFIGURACIÓN SERVICIOS");
+   	dma.setDataValue(idoServicio,idtoModulo,"instalar","true");
+   	dma.setDataValue(idoRetenciones,idtoModulo,"instalar",retenciones);
+   	dma.setDataValue(idoProyecto,idtoModulo,"instalar",proyectos);
+end
+
+rule "INICIALIZAR TODOS LOS MODULOS DE NEGOCIO A INSTALAR IGUAL A FALSE"
+salience 510
+agenda-group "rules" when
+    
+    DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    
+    Model(idtoModulo:IDTO,CLASSNAME=="MÓDULO_NEGOCIO")
+    idoModulos: HashSet() 
+		from accumulate(
+				  DatValue(idoMod:IDO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE!=null),
+                  init	( HashSet<Integer> idoModulos2 = new HashSet<Integer> ();),
+                  action( idoModulos2.add(idoMod);),                            
+                  result(idoModulos2)
+                  )
+then
+   	dma.printRule("\n\n=======================RULE INICIALIZAR TODOS LOS MODULOS DE NEGOCIO A INSTALAR IGUAL A FALSE");
+   	for(Integer idoModulo:(HashSet<Integer>)idoModulos){
+   		dma.setDataValue(idoModulo,idtoModulo,"instalar","false");	
+   	}
+end
+
+rule "INSTALAR MÓDULOS CONFIGURACIÓN INICIAL"
+salience 505
+agenda-group "rules" when
+    
+    DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    
+    DatValue(idoConfiguration:IDO,CLASSNAME=="CONFIGURACIÓN_INICIAL",PROPNAME=="venta_al_público",ventaPublico:VALOR)
+    DatValue(IDO==idoConfiguration,PROPNAME=="remesas_bancarias",remesas:VALOR)
+    DatValue(IDO==idoConfiguration,PROPNAME=="contabilidad",contabilidad:VALOR)
+    DatValue(IDO==idoConfiguration,PROPNAME=="comerciales",comerciales:VALOR)
+    
+    DatValue(idoRemesa:IDO,idtoModulo:IDTO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_REMESA")
+    DatValue(idoContabilidad:IDO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_CONTABILIDAD")
+    DatValue(idoTicket:IDO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_TICKET")
+    DatValue(idoTarjeta:IDO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_TARJETA_REGALO")
+    DatValue(idoComercial:IDO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_COMERCIAL")
+    
+then
+   	dma.printRule("\n\n=======================RULE INSTALAR MÓDULOS CONFIGURACIÓN INICIAL");
+   	dma.setDataValue(idoRemesa,idtoModulo,"instalar",remesas);
+   	dma.setDataValue(idoComercial,idtoModulo,"instalar",comerciales);
+   	dma.setDataValue(idoContabilidad,idtoModulo,"instalar",contabilidad);
+   	dma.setDataValue(idoTicket,idtoModulo,"instalar",ventaPublico);
+   	dma.setDataValue(idoTarjeta,idtoModulo,"instalar",ventaPublico);
+end
+
+rule "INSTALAR MÓDULOS CONFIGURACIÓN FINAL"
+salience 503
+agenda-group "rules" when
+    
+    DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    
+    opcionesVenta: HashSet() 
+		from accumulate(
+				 (and 
+ 					 ObjValue(idoConfiguration:IDO,PROPNAME=="opciones_venta",idoValue:IDOVALUE)
+ 					 DatValue(IDO==idoValue,PROPNAME=="rdn",value:VALUE)
+ 				  ),
+                  init	( HashSet<String> opcionesVenta2 = new HashSet<String> ();),
+                  action( opcionesVenta2.add(value);),                            
+                  result(opcionesVenta2)
+                  )
+        
+    DatValue(idoComercial:IDO,idtoModulo:IDTO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_COMERCIAL")
+    DatValue(idoTarjeta:IDO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_TARJETA_REGALO")
+    
+then
+   	dma.printRule("\n\n=======================RULE INSTALAR MÓDULOS CONFIGURACIÓN FINAL");
+   	dma.setDataValue(idoTarjeta,idtoModulo,"instalar",String.valueOf(opcionesVenta.contains("Tarjetas_Fidelización")));
+end
+
+rule "INSTALAR MÓDULOS CONFIGURACIÓN GÉNERO"
+salience 504
+agenda-group "rules" when
+    
+    DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    
+    DatValue(idoConfiguration:IDO,CLASSNAME=="CONFIGURACIÓN_GÉNERO",PROPNAME=="fabricación_propia",fabricacion:VALOR)
+    
+    propiedadesGenero: HashSet() 
+		from accumulate(
+				 (and 
+ 					 ObjValue(IDO==idoConfiguration,PROPNAME=="propiedades_género",idoValue:IDOVALUE)
+ 					 DatValue(IDO==idoValue,PROPNAME=="rdn",value:VALUE)
+ 				  ),
+                  init	( HashSet<String> propiedadesGenero2 = new HashSet<String> ();),
+                  action( propiedadesGenero2.add(value);),                            
+                  result(propiedadesGenero2)
+                  )
+        
+    DatValue(idoLote:IDO,idtoModulo:IDTO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_LOTE")
+    DatValue(idoLoteAlim:IDO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_LOTE_PERECEDERO")
+	DatValue(idoLotePack:IDO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_LOTE_PACK")    
+    DatValue(idoSerie:IDO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_LOTE_SERIE")
+    DatValue(idoTalla:IDO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_TALLA")
+    DatValue(idoColor:IDO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_COLOR")
+    DatValue(idoEmbalado:IDO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_EMBALADO")
+    DatValue(idoDimensiones:IDO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_INFO_DIMENSIONES")
+    DatValue(idoProduccion:IDO,CLASSNAME=="MÓDULO_NEGOCIO",PROPNAME=="rdn",VALUE=="MÓDULO_PRODUCCIÓN")
+    
+then
+   	dma.printRule("\n\n=======================RULE INSTALAR MÓDULOS CONFIGURACIÓN GÉNERO");
+   	dma.setDataValue(idoDimensiones,idtoModulo,"instalar","true");
+   	dma.setDataValue(idoEmbalado,idtoModulo,"instalar","true");
+   	dma.setDataValue(idoProduccion,idtoModulo,"instalar",fabricacion);
+   	boolean tieneLotePack= propiedadesGenero.contains("Lote_pack");
+   	boolean tieneLoteAlim= propiedadesGenero.contains("Lote_perecedero");
+	boolean tieneLoteSerie= propiedadesGenero.contains("Número_de_Serie");   	
+   	dma.setDataValue(idoLotePack,idtoModulo,"instalar",String.valueOf(tieneLotePack));
+	dma.setDataValue(idoSerie,idtoModulo,"instalar",String.valueOf(tieneLoteSerie));
+	dma.setDataValue(idoLoteAlim,idtoModulo,"instalar",String.valueOf(tieneLoteAlim));  	   	
+   	dma.setDataValue(idoTalla,idtoModulo,"instalar",String.valueOf(propiedadesGenero.contains("Talla")));
+   	dma.setDataValue(idoColor,idtoModulo,"instalar",String.valueOf(propiedadesGenero.contains("Color")));
+   	
+   	dma.setDataValue(idoLote,idtoModulo,"instalar",String.valueOf(tieneLotePack || tieneLoteSerie || tieneLoteAlim));
+end
+
+rule "MARCAR EN APLICACIÓN MÓDULOS CONFIGURADOS A TRUE"
+agenda-group "rules" when
+    
+    DatValue(ido:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.CLASSIFICATION_QUESTION_TASK_RDN)
+    DatValue(IDO==ido,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    DatValue(idoAplicacion:IDO,idtoAplicacion:IDTO,CLASSNAME=="APLICACIÓN", PROPNAME=="módulos_configurados", idProp:PROP)
+then
+   	dma.printRule("\n\n=======================RULE MARCAR EN APLICACIÓN MÓDULOS CONFIGURADOS A TRUE"); 
+   	dma.setDataValue(idoAplicacion,idtoAplicacion,"módulos_configurados","true");
+end
+
+rule "EVITAR INSTALACIÓN DE MÓDULO PROXIMA VERSION"
+agenda-group "rules" when
+    DatValue(CLASSNAME=="MÓDULO_NEGOCIO",idoModulo1:IDO!=null,PROPNAME=="rdn", val:VALUE=="PROXIMA_VERSION",idto:IDTO)
+	DatValue(IDO==idoModulo1,PROPNAME=="instalar",VALOR=="true")
+then
+   	dma.printRule("\n\n=======================RULE EVITAR INSTALACIÓN DE MÓDULO PROXIMA VERSION"); 
+   	throw new OperationNotPermitedException("No está permitida la instalación del módulo "+val);
+end
+
+	

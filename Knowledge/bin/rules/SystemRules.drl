@@ -1,0 +1,648 @@
+package dynagent.ruleengine.src.ruler.ERPrules
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.ruleengine.src.ruler.ERPrules.datarules.*;
+import dynagent.common.exceptions.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import org.drools.WorkingMemory;
+import dynagent.common.basicobjects.*;
+import dynagent.ruleengine.src.sessions.SessionController;
+
+global DataModelAdapter dma;
+
+
+/*
+NO HACE FALTA DE MOMENTO POR HABER UN ACCESO ESPECIFICO QUE IMPIDE VER LA PROPIEDAD ARCHIVO ORIGINAL
+rule "PERMISO NO PERMITIR CAMBIAR DISEÑO ORIGINAL DE INFORMES"
+agenda-group "inicializerules" when
+	jb:JBossEngine();
+   	Lock(name:CLASSNAME=="INFORME"||=="SUBINFORME", ido:IDO!=null, idto:IDTO, LEVEL==Constants.LEVEL_INDIVIDUAL, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+then
+   	dma.printRule("\n\n =============PERMISO NO PERMITIR CAMBIAR DISEÑO ORIGINAL DE INFORMES: "+name);
+   	FactAccess factAccess=new FactAccess(idto,ido,dma.getIdProperty("archivo_original"),null,null,null,null,null,1,4,Constants.MAX_ACCESS_PRIORITY,dma.getDDM());
+	jb.insertFact(factAccess);
+end*/
+
+rule "CARDINALIDAD MAXIMA 1 EXCEDIDA"
+salience 100
+no-loop true
+agenda-group "rules" when 
+  	
+  	F1:IndividualValue(ido:IDO!=null,clase:CLASSNAME!=null,propname:PROPNAME!="sourceClass",v1:VALOR!=null)
+	F2:IndividualValue(IDO==ido,PROPNAME==propname,v2:VALOR!=null&&!=v1)
+	(or
+		exists(Model(CLASSNAME==clase,PROPNAME==propname,OP==Constants.OP_CARDINALITY,QMAX<=1))
+		exists(IndividualCardinality(IDO==ido,PROPNAME==propname,QMAX<=1))		
+	)
+then
+	dma.printRule("\n=== WARNING::==WARNING::=== CARDINALIDAD MAXIMA 1 EXCEDIDA");
+	System.err.println("--> "+F1+"\n -->  "+F2);
+	dma.showMessage("warning: hay más de un valor para la propiedad "+propname+"  valor1:"+v1+"  valor2:"+v2);
+end
+
+/*
+rule "WARNING INCONSISTENCIA EN RANGENAME DE FACT"
+salience 1000
+ agenda-group "rules" when 
+  	
+	ov:ObjValue(idoCentro:IDOVALUE!=null,rangeName:RANGENAME,valueCls:VALUECLS)
+	f:Individual(IDO==idoCentro,cls:CLASSNAME!=rangeName)
+then
+	dma.printRule("\n WARNING INCONSISTENCIA EN RANGENAME DE FACT: ido e idoValue:"+idoCentro+"  rangeName:"+rangeName+"  classname:"+cls+"  \n"+ov+"\n\n"+f);
+end 
+	
+rule "WARNING INCONSISTENCIA EN VALUECLS DE FACT"
+salience 1000
+ agenda-group "rules" when 
+  	
+	ov:ObjValue(idoCentro:IDOVALUE!=null,valueCls:VALUECLS)
+	f:Individual(IDO==idoCentro,idto:IDTO!=valueCls)
+then
+	dma.printRule("\n WARNING INCONSISTENCIA EN VALUECLS DE FACT: ido e idoValue:"+idoCentro+"  valueCls:"+valueCls+"  idto:"+idto+"  \n"+ov+"\n\n"+f);
+end 
+
+rule "BASE DATOS NO ADAPTADA AL MODELO: DATVALUE"
+salience 100
+no-loop true
+agenda-group "rules" when 
+  	
+	f:DatValue(idtoclase:IDTO,idind:ID!=null,prop:PROP!=2,valor:VALOR!=null,nameProp:PROPNAME)//rdn no esta en modelo
+  	not(Model(IDTO==idtoclase,PROPNAME==nameProp))
+then
+	dma.printRule("\n\n=======WARNING RULE BASE DATOS NO ADAPTADA AL MODELO: DATVALUE. prop="+nameProp+"  valor="+valor +"\n"+f);
+	//NO SE PUEDE HACER DEL PQ SI LA CLASE NO TIENE LA PROIEDAD FALLA	dma.delValue(idind,nameProp,valor);
+end
+
+rule "BASE DATOS NO ADAPTADA AL MODELO: OBJVALUE"
+salience 100
+no-loop true
+agenda-group "rules" when 
+  	
+	f:ObjValue(idtoclase:IDTO,idind:ID!=null,prop:PROP,valor:VALOR!=null,nameProp:PROPNAME)
+  	not(Model(IDTO==idtoclase,PROPNAME==nameProp))
+then
+	dma.printRule("\n\n=======WARNING RULE BASE DATOS NO ADAPTADA AL MODELO: OBJVALUE. prop="+nameProp+"  valor="+valor +"\n"+f);
+	//NO SE PUEDE HACER DEL PQ SI LA CLASE NO TIENE LA PROIEDAD FALLA	dma.delValue(idind,nameProp,valor);
+end
+*/
+
+rule "TARGET CLASS: ELIMINAR SI ELIMINACION"
+salience 200
+agenda-group "rules"
+when
+	Individual(ido:IDO,LEVEL==Constants.LEVEL_PROTOTYPE,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+	ObjValue(idoTask:IDO,idtoTask:IDTO,PROPNAME=="targetClass",IDOVALUE==ido,ov:OBJECTVALUE)
+then
+	dma.printRule("====== TARGET CLASS: ELIMINAR SI ELIMINACION "+ido);
+	dma.delValue(idoTask,idtoTask,"targetClass",ov);
+end
+
+rule "CARGA FORMATO/INDICE EN ELIMINACIÓN"
+salience 100
+ agenda-group "rules" when 
+  	
+	Individual(CLASSNAME=="ÍNDICE",ido:IDO,idtoIndice:IDTO,STATE==Constants.INDIVIDUAL_STATE_DELETED,LEVEL==Constants.LEVEL_INDIVIDUAL)
+	not(IndividualValue(IDO==ido,VALOR!=null))//para no precargar si ya existe en motor
+then
+	dma.printRule("\n\n$$$$$$$$$$$$$ PRECARGA_RULE: CARGA FORMATO/INDICE  EN ELIMINACIÓN");
+ 	dma.ruleGetFromServer(ido,idtoIndice,1,false);
+end
+
+rule "NO SE PUEDEN EDITAR INDICES DE SISTEMA"
+salience -100
+ agenda-group "rules" when 
+  	
+  	Lock(CLASSNAME=="ÍNDICE",id:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+  	ObjValue(ID==id,PROPNAME=="dominio",idDominio:VALOR!=null)
+  	DatValue(ID==idDominio,PROPNAME=="rdn",VALOR=="ÍNDICE"||=="VALOR_POR_DEFECTO")
+ then
+	 dma.printRule("\n\n======================  NO SE PUEDE EDITAR INDICES DE SISTEMA");
+ 	throw new OperationNotPermitedException("NO SE PUEDE EDITAR INDICES DE SISTEMA");
+ end
+
+rule "NO SE PUEDEN BORRAR INDICES DE SISTEMA"
+salience -100
+ agenda-group "rules" when 
+  	
+  	Individual(CLASSNAME=="ÍNDICE",id:ID,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+  	ObjValue(ID==id,PROPNAME=="dominio",idDominio:VALOR!=null)
+  	DatValue(ID==idDominio,PROPNAME=="rdn",VALOR=="ÍNDICE"||=="VALOR_POR_DEFECTO")
+ then
+	 dma.printRule("\n\n======================  NO SE PUEDE BORRAR INDICES DE SISTEMA");
+ 	throw new OperationNotPermitedException("NO SE PUEDE EDITAR INDICES DE SISTEMA");
+end
+
+rule "PRECARGA INDICES PARA DETECTAR PROBLEMAS"
+salience 100
+agenda-group "rules" when 
+		
+		Lock(CLASSNAME=="ÍNDICE",idIndice:ID!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+		not(exists(Individual(CLASSNAME=="ÍNDICE",idIndice2:ID!=null&&!=idIndice)))
+then
+	dma.printRule("\n ......======= PRECARGA INDICES PARA DETECTAR PROBLEMAS");
+	instance instancefilter=dma.buildInstanceWith("ÍNDICE",null,null,null,null);
+	dma.loadIndividualsWithSatisficedFilter(instancefilter);
+	// también hay que cargas las clases pq sino no esta en motor la infomación de losnombres, objvalue(propname=="DOMINIO") no tiene aúnen valuerdn el nombre de la clase
+	instancefilter=dma.buildInstanceWith("CLASE",null,null,null,null);
+	dma.loadIndividualsWithSatisficedFilter(instancefilter);
+end
+
+
+/*comentda pq ahora mismo hace en consecuente precarag todos los indices, estudiar si se puede afinar la precarga precargando
+solo especializados y superiores o si es realmente necesario cargar todos los indices 
+rule "PRECARGA INDICES DE ESPECIALIZADOS/SUPERIORES DE UNA CLASE CUANDO SE DEFINE INDICE SOBRE LA CLASE"
+ salience 200
+ agenda-group "rules" when 
+   	
+ 	ObjValue(CLASSNAME=="ÍNDICE",PROPNAME=="dominio", idoDominio1:IDOVALUE!=null,idoIndice:IDO!=null)
+ 	DatValue(IDO==idoDominio1,PROPNAME=="rdn",clase1:VALOR!=null)
+ 	Lock(IDO==idoIndice,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+
+ 	superiores:ArrayList() from accumulate (
+ 		(and
+ 			FactHierarchy(CLASS==clase1,superior:CLASSSUP!=CLASS)
+ 		),
+ 		init(
+ 			ArrayList<String> superioresaux=new ArrayList<String>(); 
+ 		
+ 		),action(
+ 			superioresaux.add(superior);
+ 		),
+ 		result(superioresaux)
+ 		)
+ 	especializados:ArrayList() from accumulate (
+ 		(and
+ 			FactHierarchy(CLASSSUP==clase1,specialized:CLASS!=CLASSSUP)
+ 		),
+ 		init(
+ 			ArrayList<String> especializadossaux=new ArrayList<String>(); 
+ 		
+ 		),action(
+ 			especializadossaux.add(specialized);
+ 		),
+ 		result(especializadossaux)
+ 		)
+ 	eval(especializados.size()>0||superiores.size()>0)
+then
+	dma.printRule("\n\n=========== PRECARGA INDICES DE ESPECIALIZADOS/SUPERIORES DE UNA CLASE CUANDO SE DEFINE INDICE SOBRE LA CLASE: clase:"+clase1+" superiores:"+superiores+"  especializados:"+especializados);
+	//TODO OPTIMIZAR PRECARGANDO SOLO INDICES DE ESAS CLASE, PARA PRIMERA VERSION MUY RAPIDA SE CARGAN TODOS LOS INDICES
+	instance instancefilter=dma.buildInstanceWith ("ÍNDICE",null,null,null,null);
+	HashSet<IDIndividual> idos_Cargados = 	dma.loadIndividualsWithSatisficedFilter(instancefilter);
+	//todo también hay que cargas las clases pq sino no esta en motor la infomación de losnombres, objvalue(propname=="DOMINIO") no tiene aúnen valuerdn el nombre de la clase
+end
+*/
+ 
+/*rule "DETECTAR CLASE QUE NO TIENE INDICE DIRECTAMENTE ASIGNADO PERO POR HERENCIA LE CORRESPONDEN DOS O MAS"
+salience -99//impte: menor prioridad que la de carga de indices
+agenda-group "rules" when 
+	
+	ObjValue(CLASSNAME=="ÍNDICE",PROPNAME=="dominio",idDominio1:VALOR!=null,idIndice1:ID)
+	not(exists(Individual(ID==idIndice1,STATE==Constants.INDIVIDUAL_STATE_DELETED)))
+	DatValue(ID==idDominio1,PROPNAME=="rdn",padre1:VALOR!=null)	
+	ObjValue(CLASSNAME=="ÍNDICE",PROPNAME=="dominio",idDominio2:VALOR!=null,idIndice2:ID)
+	not(exists(Individual(ID==idIndice2,STATE==Constants.INDIVIDUAL_STATE_DELETED)))	
+	DatValue(ID==idDominio2,PROPNAME=="rdn",padre2:VALOR!=null&&!=padre1)			
+	FactHierarchy(clase:CLASS,CLASSSUP==padre1)
+	FactHierarchy(CLASS==clase,CLASSSUP==padre2)	
+	not(
+		(and
+			ObjValue(CLASSNAME=="ÍNDICE",PROPNAME=="dominio",idDominio:VALOR!=null)
+			DatValue(ID==idDominio,PROPNAME=="rdn",VALOR==clase)
+		)
+	)		
+then
+	dma.printRule("\n====================== DETECTAR CLASE QUE NO TIENE INDICE DIRECTAMENTE ASIGNADO PERO POR HERENCIA LE CORRESPONDEN DOS O MAS");
+	dma.showMessage("WARNING: ...clase="+clase+"  no tiene indice y hay ambiguedad porque le aplicacarían dos indices por especializados:"+padre1+" ,"+padre2);
+end*/
+
+rule "ERROR EN VALORES PROPIEDAD INVERSA"
+salience 200
+agenda-group "inicializerules" when 
+		
+		FactProp(propiedad:NAME!=null,idProp:PROP,idpropInversa:PROPIN!=null)
+		FactProp(propiedadInversa:NAME!=null,PROP==idpropInversa)
+		ObjValue(idoDom:IDO,PROP==idProp,idovalueInversa:IDOVALUE!=null,dominio:CLASSNAME!=null,rango:RANGENAME)
+		not(ObjValue(IDO==idovalueInversa,PROP==idpropInversa,IDOVALUE==idoDom))
+	then
+		dma.printRule("\n\n\n================= WARNING POSIBLE ERROR EN VALORES PROPIEDAD INVERSA: propiedad="+propiedad+"   propiedadInversa="+propiedadInversa+"  dominio="+dominio+"  rango:"+rango+" ido:"+idoDom+" idoValue:"+idovalueInversa);
+		throw new OperationNotPermitedException("WARNING POSIBLE ERROR EN VALORES PROPIEDAD INVERSA: propiedad="+propiedad+"   propiedadInversa="+propiedadInversa+"  dominio="+dominio+"  rango:"+rango+" ido:"+idoDom+" idoValue:"+idovalueInversa);
+end
+
+rule "DESVINCULAR OBJETOS VINCULADOS A PARAMETROS DE UNA ACCION Y QUE NO HEREDAN DE AUX_PARAMS"
+salience -100 
+ agenda-group "rules" 
+ when 		
+	ObjValue(accion:CLASSNAME,  idoUTask:IDO,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+	ObjValue(IDO==idoUTask,PROPNAME=="params",idoParams:IDOVALUE!=null)
+	ObjValue(IDO==idoParams,idtoParams:IDTO, propiedad:PROPNAME,idProp:PROP,idovalue:IDOVALUE!=null,tipoParametro:VALUECLS,valor:OBJECTVALUE)
+	not(FactHierarchy(IDTO==tipoParametro,CLASSSUP=="AUX_PARAMS"))
+then
+	dma.printRule("\n\n ===========> DESVINCULAR OBJETOS VINCULADOS A PARAMETROS DE UNA ACCION Y QUE NO HEREDAN DE AUX_PARAMS: propiedad:"+propiedad+"  accion:"+accion+" idovalue:"+idovalue);
+	dma.delValue(idoParams,idtoParams,idProp,valor);
+end
+
+rule "ELIMINAR OBJETOS DESVINCULADOS DE UNA ACCIÓN"
+//ELIMINAMOS UN OBJETO CREADO DESE UNA ACCIÓN (PROTOTYPE) Y QUE SE DESCARTA DESDE LA MISMA ACCION (esto a bajo nivel es desvincularlo de la acción)
+salience -100 
+ agenda-group "rules" 
+ when 
+		
+	ObjValue(accion:CLASSNAME, idoUTask:IDO,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+	ObjValue(IDO==idoUTask,PROPNAME=="targetClass",VALOR==null,sidoTarget:PREVALOR!=null)
+	Individual(ID==sidoTarget, LEVEL==Constants.LEVEL_PROTOTYPE,clasetarget:CLASSNAME,idoTarget:IDO!=null,idtoTarget:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+then
+	dma.printRule("\n\n ========== ELIMINAR OBJETOS DESVINCULADOS DE UNA ACCIÓN:"+accion+" ido="+idoTarget+" cls="+clasetarget);
+	dma.deleteObject(idoTarget,idtoTarget);
+end
+	
+rule "AISLADOS: CUANDO SE DESVINCULA UN INDIVIDUO Y QUEDA AISLADO SE PONE ISOLATED=TRUE"
+//IMPORTANTE ESTA PRIORIDAD ESTA BAJA PARA QUE SE PUEDA DISPARAR ANTES LA ELIMINACIÓN INVERSA DE LÍNEA HACIA PEDIDO
+salience -100
+agenda-group "rules" when 
+	
+	//Enlace anulado a individuo aislado, no es suficinete con que el individuo esté aislado en motor pq podría ser un indiviuo que se ha cargado desde una búsqueda o desde una regla (y estos están aislados), por
+	//eso se usa el criterio de que se haya desvinculado y haya quedado aislado.
+	fPointToIsolated:ObjValue(iddominio:ID!=null,claseaislado:RANGENAME,propDominio:PROP,idClassAislado:VALUECLS,idAislado:PREVALOR!=null,VALOR==null||VALOR!=idAislado,idoAislado:IDOPREVALOR!=null)//Hacemos valor!=idAislado porque puede ser que sea null(enlace quitado) u otro ido distinto(enlace cambiado)
+	Individual(ID==idAislado,ISOLATED==false,idtoaislado:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	not(FactHierarchy(IDTO==idClassAislado,CLASSSUP=="ENUMERATED"||=="UTASK"))
+	
+	not((and//Que no le apunte un dominio. Y si le apunta que sea uno aislado o borrado
+			ObjValue(idDom:ID,pAny:PROP!=null,VALUE==idAislado)
+			Individual(ID==idDom,ISOLATED==false,STATE==Constants.INDIVIDUAL_STATE_READY)
+			eval(pAny!=propDominio||idDom!=iddominio)//ya que con mismo dominio puede estar apuntado por otra prop, como los almacenes por defecto de aplicacion
+	))
+	not((and//Si hay una userTask apuntandole no hay que aislarlo. Se hace aqui porque es un filtro y no tiene Individual
+			ObjValue(idtoDom:IDTO,VALUE==idAislado)
+			FactHierarchy(IDTO==idtoDom,CLASSSUP=="UTASK")
+	))
+	not((and
+			IndividualValue(IDO==idoAislado,initialValuesChanged==true)
+			Individual(IDO==idoAislado,LEVEL==Constants.LEVEL_INDIVIDUAL)
+	))
+then
+	dma.printRule("\n\n AISLADOS:=====CUANDO SE DESVINCULA UN INDIVIDUO Y QUEDA AISLADO SE PONE ISOLATED=TRUE ido ="+idAislado+"  claseaislado="+claseaislado);
+	dma.printRule("..factQueAislo="+	fPointToIsolated);
+	
+	Integer ido=new Integer(idAislado);
+	if(ido<0){
+		dma.deleteObject(new Integer(idAislado),idtoaislado);
+	}
+	else{
+		//dma.retractInfoObject(new Integer(idAislado),true);
+		dma.getDDM().isolatedInfoObject(new Integer(idAislado),true);
+	}
+	dma.printRule("FIN REGLA AISLADOS.\n\n");
+end
+
+rule "AISLADOS: CUANDO SE BORRA EL DOMINIO Y QUEDA AISLADO SE PONE ISOLATED=TRUE"
+//IMPORTANTE ESTA PRIORIDAD ESTA BAJA PARA QUE SE PUEDA DISPARAR ANTES LA ELIMINACIÓN INVERSA DE LÍNEA HACIA PEDIDO
+salience -100
+agenda-group "rules" when 
+	
+	//Enlace anulado a individuo aislado, no es suficinete con que el individuo esté aislado en motor pq podría ser un indiviuo que se ha cargado desde una búsqueda o desde una regla (y estos están aislados), por
+	//eso se usa el criterio de que se haya desvinculado y haya quedado aislado.
+	Individual(iddominio:ID,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+	fPointToIsolated:ObjValue(ID==iddominio,propDominio:PROP,claseaislado:RANGENAME,idClassAislado:VALUECLS,idAislado:VALOR,idoAislado:IDOVALUE!=null)
+	Individual(ID==idAislado,ISOLATED==false,idtoaislado:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	not(FactHierarchy(IDTO==idClassAislado,CLASSSUP=="ENUMERATED"||=="UTASK"))
+	
+	not(//Que no le apunte un dominio. Y si le apunta que sea uno aislado o borrado
+		(and
+			ObjValue(idDom:ID,PROP!=null,VALUE==idAislado,this!=fPointToIsolated)
+			Individual(ID==idDom,ISOLATED==false,STATE==Constants.INDIVIDUAL_STATE_READY)
+		)		
+	)
+	not(//Si hay una userTask apuntandole no hay que aislarlo. Se hace aqui porque es un filtro y no tiene Individual
+		(and
+			ObjValue(idtoDom:IDTO,VALUE==idAislado)
+			FactHierarchy(IDTO==idtoDom,CLASSSUP=="UTASK")
+		)
+	)
+	
+	not((and
+			IndividualValue(IDO==idoAislado,initialValuesChanged==true)
+			Individual(IDO==idoAislado,LEVEL==Constants.LEVEL_INDIVIDUAL)
+	))	
+then
+	dma.printRule("\n\n AISLADOS:=====CUANDO SE BORRA EL DOMINIO Y QUEDA AISLADO SE PONE ISOLATED=TRUE ido ="+idAislado+"  claseaislado="+claseaislado);
+	Integer ido=new Integer(idAislado);
+	if(ido.intValue()<0){
+		dma.printRule("IDO negativo, se elimina objeto");
+		dma.deleteObject(ido,idtoaislado);
+	}
+	else{
+		//dma.retractInfoObject(new Integer(idAislado),true);
+		dma.getDDM().isolatedInfoObject(ido,true);
+	}
+	dma.printRule("FIN REGLA AISLADOS.\n\n");
+end
+
+rule "DESHACER AISLADOS: CUANDO SE VUELVE A VINCULAR UN INDIVIDUO PREVIAMENTE DESVINCULADO SE PONE ISOLATED=FALSE"
+//IMPORTANTE ESTA PRIORIDAD ESTA BAJA PARA QUE SE PUEDA DISPARAR ANTES LA ELIMINACIÓN INVERSA DE LÍNEA HACIA PEDIDO
+salience -100
+agenda-group "rules" when 
+	
+	Individual(idAislado:ID,idClassAislado:IDTO,ISOLATED==true)
+	ov:ObjValue(iddominio:IDO,VALUE==idAislado,VALUECLS==idClassAislado,claseaislado:RANGENAME)
+	not(Individual(IDO==iddominio,STATE==Constants.INDIVIDUAL_STATE_DELETED||ISOLATED==true))
+then
+	dma.printRule("\n\n DESHACER AISLADOS:=====CUANDO SE VUELVE A VINCULAR UN INDIVIDUO PREVIAMENTE DESVINCULADO SE PONE ISOLATED=FALSE  ido ="+idAislado+"  claseaislado="+claseaislado+" ov:"+ov);
+	
+	dma.getDDM().isolatedInfoObject(new Integer(idAislado),false);
+end
+
+rule "DESHACER AISLADOS: CUANDO SE CAMBIA ALGUN VALOR DE UN INDIVIDUO PREVIAMENTE DESVINCULADO SE PONE ISOLATED=FALSE"
+//IMPORTANTE ESTA PRIORIDAD ESTA BAJA PARA QUE SE PUEDA DISPARAR ANTES LA ELIMINACIÓN INVERSA DE LÍNEA HACIA PEDIDO
+//Se pone en el grupo bddrules porque con que lo cambie ahi ya se enviará a base de datos. Las reglas actuan sobre ese individuo aunque este aislado
+salience -100
+agenda-group "bddrules" when 
+	
+	Individual(idoAislado:IDO,classAislado:CLASSNAME,ISOLATED==true)
+	Individual(IDO==idoAislado,LEVEL==Constants.LEVEL_INDIVIDUAL)
+	f:IndividualValue(IDO==idoAislado,initialValuesChanged==true)
+then
+	dma.printRule("\n\n DESHACER AISLADOS:=====CUANDO SE CAMBIA ALGUN VALOR DE UN INDIVIDUO PREVIAMENTE DESVINCULADO SE PONE ISOLATED=FALSE  ido ="+idoAislado+"  claseaislado="+classAislado+" f:"+f);
+	dma.getDDM().isolatedInfoObject(idoAislado,false);
+end
+
+rule "BORRAR PARAMETROS DE UNA ACCION CUANDO ESTA ESTA REALIZADA"
+agenda-group "rules" when
+    
+   	ObjValue(typetask:CLASSNAME, idtoUtask:IDTO,idoUTask:IDO ,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+	ObjValue(IDO==idoUTask, PROPNAME=="params",idoparams:IDOVALUE!=null)
+	ObjValue(IDO==idoparams,idtoParams:IDTO, idprop:PROP,propiedad:PROPNAME,VALOR!=null,rango:RANGENAME,objvalue:OBJECTVALUE!=null)
+then
+   dma.printRule("\n\n ============BORRAR VALORES PARAMETROS DE UNA ACCION CUANDO ESTA ESTA REALIZADA idoparams="+idoparams+" propiedad:"+propiedad+" rango:"+rango); 
+   dma.deleteObject(idoparams,idtoParams);
+end
+
+rule "DEPURAR REGLAS DISPARADAS ORDENADAS ALFABETICAMENTE"
+agenda-group "rules" when
+    ddm:DocDataModel()
+	DatValue(CLASSNAME=="LOCALIDAD", VALOR=="debugrulesfiredsorted")
+then
+	ArrayList<String> rules=ddm.getDebugLog().getRULESFIREDSORTED();
+	dma.printRule("\n\n=================  REGLAS DISPARADAS ORDENADAS ALFABETICAMENTE:"+rules.size()+"\n");		
+	Iterator it=rules.iterator();
+	while (it.hasNext()){
+		System.err.println(it.next());
+	}	
+end
+
+rule "DEPURAR REGLAS DISPARADAS ORDEN DISPARO"
+agenda-group "rules" when
+    ddm:DocDataModel()
+	DatValue(CLASSNAME=="LOCALIDAD", VALOR=="debugrulesfired")
+then
+	ArrayList<String> rules=ddm.getDebugLog().getRULESFIRED();
+	dma.printRule("\n\n================= DEPURAR REGLAS DISPARADAS ORDEN DISPARO:"+rules.size()+"\n"); 
+	Iterator it=rules.iterator();
+	while (it.hasNext()){
+		System.err.println(it.next());
+	}
+end
+
+rule "FORZAR INDICE DE ALBARÁN-FACTURA CLIENTE SEA EL DE FACTURA"
+salience -100
+ agenda-group "rules" when 
+  	DatValue(CLASSNAME=="ALBARÁN-FACTURA_CLIENTE", idAlbaranFactura:ID,idoAlbaranFactura:IDO!=null&&<0,idtoAlbaranFactura:IDTO,PROPNAME=="rdn",codigo:VALOR!=null)
+  	Model(CLASSNAME=="FACTURA_A_CLIENTE",idtoFactura:IDTO)
+  	eval(!codigo.contains("@"))
+  	eval(codigo.contains("&"+idAlbaranFactura+"&"))
+then
+	 codigo=codigo.substring(0,codigo.length()-1);
+	 codigo+="@"+idtoFactura+"&";
+	 dma.printRule("\n\n=====FORZAR INDICE DE ALBARÁN-FACTURA CLIENTE SEA EL DE FACTURA: nuevoCodigo:"+codigo);
+ 	dma.setDataValue(idoAlbaranFactura,idtoAlbaranFactura,"rdn",codigo);
+end
+
+rule "NO SE PUEDEN ASIGNAR MIEMPRESA A UN INDICE SOBRE UNA CLASE QUE NO TIENE ESA PROPIEDAD"
+salience -100
+ agenda-group "rules" when 
+  	Lock(CLASSNAME=="ÍNDICE",id:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+  	ObjValue(ID==id,PROPNAME=="mi_empresa",VALOR!=null)
+  	ObjValue(ID==id,PROPNAME=="dominio",idDominio:VALOR!=null)
+  	DatValue(ID==idDominio,PROPNAME=="rdn",claseDominio:VALOR!=null)
+	not(exists(Model(CLASSNAME==claseDominio,PROPNAME=="mi_empresa")))
+then
+	 dma.printRule("\n\n=====NO SE PUEDEN ASIGNAR MIEMPRESA A UN INDICE SOBRE UNA CLASE QUE NO TIENE ESA PROPIEDAD: claseDominio:"+claseDominio);
+ 	throw new OperationNotPermitedException("No puede asignar mi_empresa a "+claseDominio+" porque no tiene esa propiedad");
+end
+
+
+rule "RDN CALCULADO EN CLASES"
+salience -200
+ agenda-group "rules" when 
+	//FactHierarchy(CLASSSUP=="PARAMS"||=="CLASIFICATION"||=="DATA_TRANSFER"||=="ALIAS"||=="CAMPO_DESTACADO"||=="CAMPO_REQUERIDO"||=="COLUMNAS_TABLA"||=="EXCLUSIÓN"||=="MÁSCARA_CAMPO"||=="ORDEN_CAMPO"||=="ORDEN_RELATIVO_CAMPOS"||=="PERMISO"||=="TAMAÑO_TABLA"||=="TAMAÑO_CAMPO"||=="CONFIGURATION"||=="CAJA"||=="NOTIFICACIÓN",namecls:CLASS)   	
+	//Applet asigna rdn y si no falla. Lote lo pone usuario o regla
+	
+	//en replicas con web, si se modifica una linea, debe ser identificable. Si viene de la web, o bien la web indica el codigo de la linea, o bien el xsl de adaptacion nombra la linea con rdn articulo si no se repiten
+	// pero podria repetirse por tener diferentes promociones. Y si la liena se crea en dynagent y replica a la web, sera necesario que la web recuerde el nombre de la linea para ser generico
+	
+	Individual(cls:CLASSNAME,idto:IDTO,ido:IDO<0,STATE==Constants.INDIVIDUAL_STATE_READY)
+	not(DatValue(IDO==ido, PROPNAME=="rdn", rdn:VALOR!=null))	
+			 
+	not(FactHierarchy(IDTO==idto,CLASSSUP=="QUESTION_TASK"||=="LOTE"||=="RESULTADO_BATCH"))		
+	
+	not FactHierarchy(IDTO==idto,CLASSSUP=="VENCIMIENTO")
+	
+	Individual(CLASSNAME=="APLICACIÓN",idoAplicacion:IDO,idtoAplicacion:IDTO)
+	esArticulo:ArrayList() from collect(FactHierarchy(IDTO==idto,CLASSSUP=="ARTÍCULO"))
+then		
+	dma.printRule("=========== RDN CALCULADO EN CLASES "+cls);	
+	if(dma.getDDM().classIndexed(idto)){		
+		dma.printRule("clase indexada");
+		dma.setValue(ido,idto,"rdn",new StringValue("&"+ido+"&"));						
+	}else{		
+		//en articulos, si no está indexado no propongo rdn para evitar que durante un instante, en flujos de mercancia en los que se crea un articulo, exista un stock basado en este rdn temporal
+		//. Y es que aunque el producto se crea porque el usuario teclea en finder un rdn de articulo que no existe, GUI crea un prototipo de articulo que dispara esta regla antes de GUI asignar el 
+		//rdn asignado por el usuario
+		if(esArticulo.size()==0){ 
+			Value valueDelegacion=dma.getValue(idoAplicacion,idtoAplicacion,"delegación");
+			String rdnDelegacion="";
+			String separador=".";
+	
+			if(valueDelegacion!=null){
+				if(	dma.getDDM().getGlobalUtasks().contains(SessionController.getInstance().getActualSession(dma.getDDM()).getUtask())){
+					rdnDelegacion="&delegation&"+separador;			
+				}else{
+					int idoDelegacion=((ObjectValue)valueDelegacion).getValue();
+					int idtoDelegacion=((ObjectValue)valueDelegacion).getValueCls();
+					rdnDelegacion=dma.getValue(idoDelegacion,idtoDelegacion,"rdn").getValue_s()+separador;
+				}
+			}
+	
+			String rdn=(ido>0 ? rdnDelegacion+ido:rdnDelegacion+"&id"+ido+"&") ;
+			dma.setValue(ido,idto,"rdn",new StringValue(rdn));
+		}
+	}	
+end
+
+/*
+rule "RDN CLASES ESTRUCTURALES"
+salience 200
+ agenda-group "rules" when    	   	   	   	 	
+   	FactProp(idProp:PROP,propName:NAME,cat:CAT!=null)
+	eval((cat.intValue())%19==0)			
+	//Hay una precarga especifica para planificar		 			
+	ObjValue(idoRoot:IDO,idtoRoot:IDTO,PROP==idProp,idoEstruct:IDOVALUE!=null, idtoEstruct:VALUECLS,rn:RANGENAME)   
+			
+	DatValue(IDO==idoRoot, PROPNAME=="rdn", rdnRoot:VALOR!=null,chRoot:hasCHANGED)
+	rdnEstructAcum:String() from accumulate(DatValue(IDO==idoEstruct, PROPNAME=="rdn", r:VALOR!=null), init(String res="";),action(res=r;),result(res))
+	eval(idoEstruct<0 && (rdnEstructAcum.length()==0 || rdnEstructAcum.matches(".+\\&id.+\\&")))//rdn estructural no debe actuar cuando rdn root cambia, por que al evolucionar doc cambia lineas que se replican, es un problema para replicas ||idoRoot>0&&chRoot)
+	cardList:ArrayList() from collect(Model(IDTO==idtoRoot,OP==Constants.OP_CARDINALITY,PROP==idProp))
+	Individual(CLASSNAME=="APLICACIÓN",idoAplicacion:IDO,idtoAplicacion:IDTO)
+	not FactHierarchy(IDTO==idtoEstruct,CLASSSUP=="VENCIMIENTO")
+	exp:ArrayList() from collect(DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="expresión_código_barras_compuesto",ver:VALOR!=null))	
+then	
+	
+	dma.printRule("=========== RDN CLASES ESTRUCTURALES "+idtoEstruct+" "+idoEstruct+" "+rn+" cambio rdn root "+chRoot);
+	//El rdn del root es solo univoco para una clase, así que hay que añadir la clase, y no puede ser con idto porque pueden cambiar entre maquinas, sin embargo se supone hay indice de la clase abstracta
+	if(dma.getDDM().classIndexed(idtoEstruct)){		
+		dma.printRule("clase indexada");
+		dma.setValue(idoEstruct,idtoEstruct,"rdn",new StringValue("&"+idoEstruct+"&"));
+	}else{	
+		String rdnEstruct=dma.getStringValue(new Domain(idoEstruct,idtoEstruct),"rdn");
+		if(rdnEstruct==null||!rdnEstruct.contains("#")){//si tiene # es que esta renombrada por una regla
+			dma.printRule("cambiando clase no indexada");
+			Double card=cardList.size()==0?null:((Model)cardList.get(0)).getQMAX();
+			String rdn=null;
+			if(card==null||card.intValue()>1){		
+				Value valueDelegacion=dma.getValue(idoAplicacion,idtoAplicacion,"delegación");
+				String rdnDelegacion="";
+				if(valueDelegacion!=null){
+					int idoDelegacion=((ObjectValue)valueDelegacion).getValue();
+					int idtoDelegacion=((ObjectValue)valueDelegacion).getValueCls();
+					rdnDelegacion=dma.getValue(idoDelegacion,idtoDelegacion,"rdn").getValue_s()+".";
+				}
+	
+				rdn=(idoEstruct>0 ? rdnDelegacion+idoEstruct:rdnDelegacion+"&id"+idoEstruct+"&") ;
+			}else{
+				//en replicas con web, si se modifica un elemento estructural, necesito saber el superior para identificarlo
+				//si card fuera mayor que 1 la web deberia memorizar mismo rdn de objeto estructural
+				//si no pongo ido falla el server porque trata de crearlo antes de eliminar la anterior
+				rdn=idtoRoot+"#"+rdnRoot+"#&id"+idoEstruct+"&Ve2";//utilizo ese campo expresion para saber version reglas
+				//rdn=idtoRoot+"#"+rdnRoot+"#&id"+idoEstruct+"&"+(exp.size()>0?((DatValue)exp.get(0)).getVALOR():"");//utilizo ese campo expresion para saber version reglas
+			}		
+			dma.setValue(idoEstruct,idtoEstruct,"rdn",new StringValue(rdn));
+		}
+	}	
+end
+*/
+
+rule "BLOQUEO ESTRUCTURAL BLOQUEA ROOT"
+ agenda-group "rules" when    	   	   	   	
+   	FactProp(idProp:PROP,propName:NAME,cat:CAT!=null)
+	eval((cat.intValue())%19==0)			 			
+	ObjValue(idoRoot:IDO>0,idtoRoot:IDTO,PROP==idProp,idoEstruct:IDOVALUE!=null, idtoEstruct:VALUECLS)
+	IndividualState(IDO==idoEstruct,STATE==Constants.INDIVIDUAL_STATE_LOCK||==Constants.INDIVIDUAL_STATE_DELETED)   		
+then		
+	dma.printRule("=========== BLOQUEO ESTRUCTURAL BLOQUEA ROOT "+propName);
+	dma.ruleSetLock(idoRoot);	
+end
+
+rule "DELETE ROOT BLOQUEA ESTRUCTURA"
+ agenda-group "rules" when    	   	   	   	
+   	FactProp(idProp:PROP,propName:NAME,cat:CAT!=null)
+	eval((cat.intValue())%19==0)			 			
+	ObjValue(idoRoot:IDO>0,idtoRoot:IDTO,PROP==idProp,idoEstruct:IDOVALUE!=null, idtoEstruct:VALUECLS)
+	Individual(IDO==idoRoot,STATE==Constants.INDIVIDUAL_STATE_DELETED)	
+then		
+	dma.printRule("=========== DELETE ROOT BLOQUEA ESTRUCTURA");
+	dma.ruleSetLock(idoEstruct);	
+end
+
+rule "PRELOAD"
+//PATRON: si la prioridad fuera minima (como -100), un preload dentro de un not en una regla de mayor prioridad, aunque lo que se busca exista en BD, se tomaria como "not", debido a que 
+// que esta regla no se ha disparado todavia, no se ha intentado la busqueda
+salience 100
+ agenda-group "rules" when 
+   	
+   	mapaClaseIndividuos:HashMap(size>0) 
+            	from accumulate(
+            				 (and 
+								Preload(ido:IDO,idto:IDTO)
+             					not(Individual(IDO==ido))
+             				  ),
+                             init(
+                             	HashMap mapaClaseIndividuos2 = new HashMap();
+                             ),
+                             action(
+                             	System.err.println("PRELOAD ACTION "+ido); 
+                             	HashSet listIdos=null;
+                             	if(!mapaClaseIndividuos2.containsKey(idto)){
+	                             	listIdos=new HashSet();
+                             		mapaClaseIndividuos2.put(idto,listIdos);
+                             	}else{
+                             		listIdos=(HashSet)mapaClaseIndividuos2.get(idto);
+                             	}
+                             	listIdos.add(ido);
+                             ),
+                             reverse(
+                             		System.err.println("PRELOAD REVERSE "+ido);
+                             		HashSet listIdos=(HashSet)mapaClaseIndividuos2.get(idto);
+                             		if(listIdos!=null){
+                             			listIdos.remove(ido);
+                             			if(listIdos.size()==0) mapaClaseIndividuos2.remove(idto);                             			
+                             		}
+                             ),
+                             result(mapaClaseIndividuos2))
+then
+	dma.printRule("\n\n========== RULE PRELOAD "+mapaClaseIndividuos);
+	dma.loadIndividuals(mapaClaseIndividuos);
+ end 
+ 
+
+rule "DEBUG ERROR FACT ESTRUCTURAL APUNTANDO A ALGO QUE NO ESTA EN MOTOR NI EN BBDDD"
+ salience 100
+ agenda-group "rules" when 
+	        				 	 f:ObjValue(IDO!=null,idprop:PROP!=null,idApuntado:VALOR!=null,objetoApuntado:OBJECTVALUE,idoApuntado:IDOVALUE<0)
+							     not(Individual(ID==idApuntado))
+	                             eval(dma.getDDM().getCategory(idprop).isStructural())
+then
+ 	dma.printRule(" DEBUG ERROR FACT ESTRUCTURAL APUNTANDO A ALGO QUE NO ESTA EN MOTOR NI EN BBDDD\n:"+f);
+end
+
+/*
+rule "PERFORMANCE: DESBLOQUEO EN MOTOR"
+salience -200
+agenda-group "rules" when 
+        forall(	Lock(idoSub:IDO!=null,LOCKEDBYUSER==true, st:STATE)        
+        		Lock(IDO==idoSub,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+        		ObjValue(idoRoot:IDO,IDOVALUE==idoSub)
+				Lock(IDO==idoRoot,LOCKEDBYUSER==true)
+        	)		
+        
+    	Lock(ido:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK, user:USERCHANGEDSTATE)     
+then
+ 	dma.printRule("========================PERFORMANCE: DESBLOQUEO EN MOTOR");
+ 	dma.getDDM().setLock(ido,false, user, false);
+end*/
+
+rule "COPIAR ARCHIVO EN ARCHIVO ORIGINAL EN INFORMES Y SUBINFORMES"
+ agenda-group "rules" when
+  	IndividualState(CLASSNAME=="INFORME"||=="SUBINFORME", ido:IDO!=null, idto:IDTO, STATE==Constants.INDIVIDUAL_STATE_LOCK, LEVEL==Constants.LEVEL_PROTOTYPE)
+  	DatValue(IDO==ido,prop:PROP,PROPNAME=="archivo",value:DATAVALUE!=null)
+then
+	dma.printRule("COPIAR ARCHIVO EN ARCHIVO ORIGINAL EN INFORMES Y SUBINFORMES");
+	dma.setValue(ido,idto,"archivo_original",value);
+end
+
+
+rule "MENSAJE DE REINICIAR PARA CAMBIOS EN UN INFORME"
+ agenda-group "rules" when
+	ObjValue(idoUTask:IDO, PROPNAME=="targetClass",RANGENAME=="INFORME",ido:IDOVALUE)
+	ObjValue(IDO==idoUTask ,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+  	exists Fact(hasCHANGED==true)
+then
+	dma.printRule("MENSAJE DE REINICIAR PARA CAMBIOS EN UN INFORME");
+	dma.showMessage("RECUERDE: Los cambios realizados no se efectuarán hasta que reinicie la aplicación");
+end

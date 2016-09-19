@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<!DOCTYPE application PUBLIC "-//Sun Microsystems, Inc.//DTD J2EE Application 1.2//EN" "http://java.sun.com/j2ee/dtds/application_1_2.dtd">
+
+<!--
+
+   J2EE application descriptor for `AddressBook', a sample J2EE application
+   that implements a simple address book using a few JSP pages and a single
+   Container Managed Entity Bean.
+
+   See:
+
+      http://www.jollem.com/orion-cmp-primer/
+      http://www.orionserver.com/docs/web.xml
+-->
+
+<application>
+
+   <display-name>dynagent-ejb</display-name>
+
+   <description>A sample J2EE web application that uses a Container Managed
+                Entity Bean</description>
+
+   <!--  <module>
+      <ejb>dynagent-migration.jar</ejb>
+   </module> -->
+   <module>
+      <ejb>dynagent-ejb.jar</ejb>
+   </module>
+   <module>
+      <ejb>dynagent-ruleengine.jar</ejb>
+   </module>
+   <module>
+      <ejb>dynagent-common.jar</ejb>
+   </module>
+
+	<module>
+      <web>
+         <web-uri>dynagent-web.war</web-uri>
+         <context-root>/dynagent</context-root>
+      </web>
+   </module>
+   <security-role>
+		<role-name>administrators</role-name>
+   </security-role>
+</application>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<CONFIG>
+	<UTASKS>
+		<UT A_FUNC="Distribución"  NAME="PEDIDO_DISTRIBUIDOR">
+			<TG_CLASS CLASS="PEDIDO_DISTRIBUIDOR"  />
+		</UT>
+
+		<UT A_FUNC="Distribución" NAME="ALBARÁN_DISTRIBUIDOR">
+			<TG_CLASS CLASS="ALBARÁN_DISTRIBUIDOR"  />
+		</UT>
+		<UT A_FUNC="Distribución" NAME="DISTRIBUIDOR">
+			<TG_CLASS CLASS="DISTRIBUIDOR"  />
+		</UT>
+		
+	</UTASKS>
+</CONFIG>

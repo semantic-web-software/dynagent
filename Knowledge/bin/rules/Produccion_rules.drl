@@ -1,0 +1,1512 @@
+package dynagent.ruleengine.src.ruler.ERPrules
+
+import java.lang.Math;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import dynagent.ruleengine.src.ruler.ERPrules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.knowledge.*;
+import dynagent.common.utils.Auxiliar;
+import org.drools.WorkingMemory;
+import dynagent.ruleengine.src.ruler.ERPrules.datarules.*;
+import dynagent.common.utils.QueryConstants;
+import java.text.*;
+import dynagent.common.basicobjects.*;
+import dynagent.ruleengine.src.ruler.ERPrules.datarules.*;
+
+
+global DataModelAdapter dma;
+//todo VERSIÓN OPTIMIZADA
+//1. QUE SOLO SE DISPARE CON PRODUCTOS DE LINEAS DE PRODUCCIÓN_CADENA
+//2. ACUMULAR LOS PRODUCTOS PARA QUE SEHAGA UNA UNICA QUERY
+
+/* NOTAS
+	Al planificar, los trabajos se crean nuevos, no se modifican los ya existentes, con lo cual no hay problema de 
+	contribuciones de trabajos a stock en valores iniciales.
+	
+	Al confirmar trabajos aislados fuera de la planficacion, no se disparan las reglas de calculo de salida, ya que 
+	exigen haya una planificacion.
+	
+	Dado que al haber una planificacion, lo trabajos son nuevos, su initial valor es siempre nulo, por tanto
+	puedo calcular necesidades restando valores actuales de demanda con valores iniciales de existencia, no 
+	siendo necesario excluir trabajos ejecutados durante la planificacion, pues su ejecución no puede estar
+	reflejada en el valor inicial del stock al ser nuevos trabajos, no hay que compensar en base a estado ejec..
+*/
+
+rule "PRECARGA DE PRODUCTOS AYUDA PARA PLANIFICACION"
+salience 100
+agenda-group "rules" when 
+	
+	Individual(idPlanicacion:ID,CLASSNAME=="PRODUCCIÓN_CADENA")
+	not(ObjValue(ID==idPlanicacion,PROPNAME=="línea",idLinea:VALOR!=null) and
+		Individual(ID==idLinea))
+	lineasList: HashSet(size>0)
+	     from accumulate( ObjValue(ID==idPlanicacion,PROPNAME=="línea",idLinea:VALOR!=null),								
+						init( HashSet<Integer> lineas=new HashSet<Integer>();),
+						action( lineas.add(new Integer(idLinea));),
+						result(lineas))	
+
+						
+	then
+	dma.printRule("\n=======>>>>>>DISPARO RULE:: PRECARGA DE PRODUCTOS AYUDA PARA PLANIFICACION");
+	if(lineasList.size()>0){
+		dma.ruleGetFromServer(lineasList,2,false);
+	}
+	
+end
+
+
+rule "PRECARGA DE ESCANDALLOS POR PRODUCCION"
+salience -100 //quitar prioridad para que de tiempoa a completar
+agenda-group "rules" when 
+	
+	exists (Model(CLASSNAME=="ESCANDALLO",PROPNAME=="rdn",OP==Constants.OP_INTERSECTION))			
+												
+	productos1: HashSet() from accumulate((and	FactHierarchy(classProduc:CLASS, CLASSSUP=="PRODUCCIÓN"||=="PRODUCCIÓN_CADENA")
+													ObjValue(CLASSNAME==classProduc,idoProd:IDO,PROPNAME=="línea"||=="consumo", idLinea:VALOR)
+													ObjValue(ID==idLinea,PROPNAME=="producto",idProducto:VALOR!=null, objProducto:OBJECTVALUE)	
+													not(QueryValue(QUERYKEY=="ESCANDALLO",VALUE==idProducto))
+											),
+								
+												init( HashSet<Value> productosC=new HashSet<Value>();),
+												action( productosC.add(objProducto);),
+												result(productosC))
+
+	productos2: HashSet() from accumulate((and	ObjValue(CLASSNAME=="Generar_produccion_automatica_basada_en_consumos",idto:IDTO,PROPNAME=="iterator",VALUE!=null)
+												ObjValue(CLASSNAME=="STOCK",idoStock:IDO,PROPNAME=="producto", idProducto:VALOR!=null, objProducto:OBJECTVALUE)
+												DatValue(IDO==idoStock,PROPNAME=="cantidad",QMIN<0)			
+												not(QueryValue(QUERYKEY=="ESCANDALLO",VALUE==idProducto))																							
+											),
+								
+												init( HashSet<Value> productosC=new HashSet<Value>();),
+												action( productosC.add(objProducto);),
+												result(productosC))															
+																							
+	eval(productos1.size()>0||productos2.size()>0)
+	then
+	
+	HashSet productos= new HashSet();
+	productos.addAll(productos1);
+	productos.addAll(productos2);
+	dma.printRule("\n=======>>>>>>DISPARO RULE:: PRECARGA DE ESCANDALLOS POR PRODUCCION productos "+productos1);	
+	
+	//Utilizo este patron de consulta porque tengo que fijar el producto a un segundo nivel
+	int idtoproduccion = dma.getIdClass("ESCANDALLO");
+	int idprop_producto = dma.getIdProperty("producto");
+	Domain dominioFilterReceta = dma.creaFilter(idtoproduccion);
+	dma.setValue(dominioFilterReceta,"es_despiece",new BooleanValue(false));
+	ObjectProperty salidaFilter= (ObjectProperty)dma.getDDM().SystemGetProperty(dominioFilterReceta.getIdo(), idtoproduccion, dma.getIdProperty("salida"));
+	LinkedList<Integer> rangeList = salidaFilter.getRangoList();		
+	//fijamos todos los productos.
+	instance filter = dma.getTreeObject(dominioFilterReceta.getIdo());
+	Iterator<Value> itr = productos.iterator();
+	filter.setFilterMode(true);	
+	while(itr.hasNext()){
+		ObjectValue id = (ObjectValue)itr.next();		
+		filter.addValue(rangeList.get(0), idprop_producto, id);
+		dma.logQueryValue("ESCANDALLO",id.getValue_s());
+	 }
+
+	HashSet res=dma.loadIndividualsWithSatisficedFilter(filter);
+	if(res.size()==0){
+		dma.setValue(dominioFilterReceta,"es_despiece",new BooleanValue(true));
+		ObjectProperty componenteFilter= (ObjectProperty)dma.getDDM().SystemGetProperty(dominioFilterReceta.getIdo(), idtoproduccion, dma.getIdProperty("componente"));
+		rangeList = componenteFilter.getRangoList();		
+		//fijamos todos los productos.
+		filter = dma.getTreeObject(dominioFilterReceta.getIdo());
+		itr = productos.iterator();
+		filter.setFilterMode(true);	
+		while(itr.hasNext()){
+			ObjectValue id = (ObjectValue)itr.next();		
+	 		filter.addValue(rangeList.get(0), idprop_producto, id);
+	 		dma.logQueryValue("ESCANDALLO",id.getValue_s());			
+	 	}
+		dma.loadIndividualsWithSatisficedFilter(filter);
+	}
+end
+
+
+
+rule "ASIGNACION ALMACEN PRODUCCION" 
+salience 0
+ agenda-group "rules" when 
+ 
+	FactHierarchy(idtoDoc:IDTO, CLASSSUP=="PRODUCCIÓN") 
+	//TODO debería poder configurarse el almacen por defecto de un centro
+	ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="almacén_salidas_por_defecto", idoAlmacen:IDOVALUE)
+	
+	IndividualState(idoDoc:IDO,IDTO==idtoDoc,STATE==Constants.INDIVIDUAL_STATE_LOCK||==Constants.INDIVIDUAL_STATE_DELETED)
+	ObjValue(IDO==idoDoc,PROPNAME=="destino", idoCentro:IDOVALUE!=null,idtoCentro:VALUECLS)	
+	not(FactHierarchy(IDTO==idtoCentro,CLASSSUP=="ALMACÉN"))
+	ObjValue(IDO==idoDoc,PROPNAME=="línea",idoLinea:IDOVALUE) 
+		
+	DatValue(IDO==idoLinea,PROPNAME=="cantidad",cantidadLinea:DOUBLEVALUE!=null)		
+	ObjValue(IDO==idoLinea,idtoLinea:IDTO,PROPNAME=="producto",idoProducto:IDOVALUE)
+	not( ObjValue(IDO==idoLinea,PROPNAME=="almacén_destino",IDOVALUE!=null) )
+	FactHierarchy(idtoAlmacen:IDTO,CLASSSUP=="ALMACÉN")
+	ObjValue(IDO==idoAlmacen,IDTO==idtoAlmacen,PROPNAME=="centro_trabajo",IDOVALUE==idoCentro)
+	//ObjValue(idoStock:IDO, PROPNAME=="almacén_stock", IDOVALUE==idoAlmacen)
+	//ObjValue(IDO==idoAlmacen, PROPNAME=="centro_trabajo", IDOVALUE==idoCentro)	
+
+then	
+	dma.printRule("\n\n=====================  ASIGNACION ALMACEN PRODUCCION.  idoLinea:"+idoLinea+"  idoAlmacen:"+idoAlmacen);
+	dma.setValue(new Domain(idoLinea,idtoLinea),"almacén_destino",new ObjectValue(idoAlmacen,idtoAlmacen));	
+end
+
+
+
+rule "CREO PROPORCIONES A CERO POR DEFECTO EN TRABAJOS INCOMPLETOS"
+salience 100
+agenda-group "rules" when
+	
+	FactHierarchy(classRoot:CLASS, CLASSSUP=="PRODUCCIÓN")
+	Lock(idTask:ID, idtoTask:IDTO, CLASSNAME==classRoot,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	
+	//Lock(ID==idTask,LOCKEDBYUSER==true)
+	
+	ObjValue(ID==idTask, PROPNAME=="línea", idLineaTaskOUT:VALOR)
+	ObjValue(ID==idLineaTaskOUT, PROPNAME=="producto", idProductoTaskOUT:VALOR)
+	
+	not( ObjValue(ID==idTask, PROPNAME=="consumo")) //todavía incompleto
+			
+	Individual(idProduccion:ID,CLASSNAME=="ESCANDALLO")
+	ObjValue(ID==idProduccion, PROPNAME=="salida", idLineaRecetaOUT:VALOR)
+		ObjValue(ID==idLineaRecetaOUT, PROPNAME=="producto", VALOR==idProductoTaskOUT)		
+
+	ObjValue(ID== idProduccion,PROPNAME=="proporción_intermedia", RANGENAME=="CONTRIBUCIÓN_LINEAL", idLineaPropReceta:VALOR)
+		DatValue(ID== idLineaPropReceta,PROPNAME=="rdn", rdnContribReceta:VALOR, objContribReceta:DATAVALUE)
+		DatValue(ID== idLineaPropReceta,PROPNAME=="contribución_unitaria", contribucionReceta:DATAVALUE)
+	
+	not( (and 	ObjValue(ID==idTask,PROPNAME=="proporción_intermedia",RANGENAME=="CONTRIBUCIÓN_LINEAL", idLineaPropTask:VALOR)
+				DatValue(ID== idLineaPropTask,PROPNAME=="contribución_unitaria", DATAVALUE==contribucionReceta)))
+	then
+	
+	dma.printRule("\n==============>RULE: CREO PROPORCIONES A CERO POR DEFECTO EN TRABAJOS INCOMPLETOS "+rdnContribReceta);	
+	Domain domainPropNew= dma.creaIndividualOfClass("CONTRIBUCIÓN_LINEAL");		
+	dma.setValue(domainPropNew, "cantidad", new DoubleValue(new Double(0)));
+	dma.setValue(domainPropNew, "contribución_unitaria", contribucionReceta);
+	
+	dma.addValue(idTask, idtoTask, "proporción_intermedia", new ObjectValue(domainPropNew));
+end
+
+rule "INICIALIZAR A LA BAJA LAS PROPORCIONES PARA TRABAJOS INCOMPLETOS"
+//Antes de calcular los consumos ajusto las proporciones, si las proporciones superan la salida reescalo esta.
+salience 100 //mas prioridad que completar
+agenda-group "rules" when
+	
+	FactHierarchy(classRoot:CLASS, CLASSSUP=="PRODUCCIÓN")
+	Lock(idTask:ID,CLASSNAME==classRoot,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	//Lock(ID==idTask,LOCKEDBYUSER==true)
+	ObjValue(ID==idTask, PROPNAME=="línea", idLineaTaskOUT:VALOR,idtoLineaTaskOut:VALUECLS,idoLineaTaskOut:IDOVALUE)
+		ObjValue(ID==idLineaTaskOUT, PROPNAME=="producto", idProductoTaskOUT:VALOR)
+		DatValue(ID==idLineaTaskOUT, PROPNAME=="cantidad", cantidadOUT:DOUBLEVALUE)
+	ObjValue(ID==idTask,PROPNAME=="proporción_intermedia",RANGENAME=="CONTRIBUCIÓN_LINEAL", idLineaPropTask:VALOR)
+		DatValue(ID== idLineaPropTask, idoLineaPropTask:IDO, idtoLineaPropTask:IDTO, PROPNAME=="cantidad", cantidadPropTask:DOUBLEVALUE)
+		DatValue(ID== idLineaPropTask,PROPNAME=="contribución_unitaria", contribucionTask:DOUBLEVALUE)
+	
+	not( ObjValue(ID==idTask, PROPNAME=="consumo")) //todavía incompleto
+
+	contribucionOUT: Double()
+	     from accumulate((and	ObjValue(ID==idTask,PROPNAME=="proporción_intermedia",RANGENAME=="CONTRIBUCIÓN_LINEAL", idLineaPropTaskAcum:VALOR)
+								DatValue(ID== idLineaPropTaskAcum,PROPNAME=="cantidad", cantidadPropTaskAcum:DOUBLEVALUE)
+								DatValue(ID== idLineaPropTaskAcum,PROPNAME=="contribución_unitaria", contribucionPropTaskAcum:DOUBLEVALUE)),
+								
+						init( Double total= new Double(0);),
+						action( total= total + cantidadPropTaskAcum*contribucionPropTaskAcum ;),
+						result(total))			
+				
+	eval(contribucionTask < cantidadOUT-contribucionOUT)
+	
+	//..pero no existe otra proporcion mas ajustada. Es decir, no existe otra que siendo mayor también satsifaga lo que falta por contribucion.
+	not( (and 	ObjValue(ID==idTask,PROPNAME=="proporción_intermedia",RANGENAME=="CONTRIBUCIÓN_LINEAL", idLineaPropTask2:VALOR!=idLineaPropTask)
+				DatValue(ID== idLineaPropTask2,PROPNAME=="contribución_unitaria", contribucionTask2:DOUBLEVALUE)
+				eval(contribucionTask2 > contribucionTask && contribucionTask2 < cantidadOUT-contribucionOUT)))
+then
+	
+	double incremento= Math.floor((cantidadOUT-contribucionOUT)/contribucionTask);
+	dma.printRule("\n==============>RULE: INICIALIZAR A LA BAJA LAS PROPORCIONES PARA TRABAJOS INCOMPLETOS");
+	dma.printRule(" salida:"+cantidadOUT+" totalContrib:"+contribucionOUT+" incrementoQ:"+incremento);
+	
+	double newCantidad = cantidadPropTask+incremento;
+	dma.setValue(idoLineaPropTask, idtoLineaPropTask, "cantidad", new DoubleValue(newCantidad));
+	//Ajusto la salida a la nueva proporcion
+	dma.setValue(idoLineaTaskOut, idtoLineaTaskOut, "cantidad", new DoubleValue(Auxiliar.redondea(newCantidad*contribucionTask,3)));
+end
+
+rule "INICIALIZAR AL ALZA PROPORCIONES PARA TRABAJOS INCOMPLETOS"
+//Antes de calcular los consumos ajusto las proporciones, si las proporciones superan la salida reescalo esta.
+salience 80 //menos prioritaria que la de Baja, que debe completar antes, pero más que completar
+agenda-group "rules" when
+	
+	FactHierarchy(classRoot:CLASS, CLASSSUP=="PRODUCCIÓN")
+	Lock(idTask:ID,CLASSNAME==classRoot,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	//Lock(ID==idTask,LOCKEDBYUSER==true)
+	ObjValue(ID==idTask, PROPNAME=="línea", idLineaTaskOUT:VALOR)
+		ObjValue(ID==idLineaTaskOUT, idoLineaTaskOut:IDO, idtoLineaTaskOut:IDTO, PROPNAME=="producto", idProductoTaskOUT:VALOR)
+		DatValue(ID==idLineaTaskOUT, PROPNAME=="cantidad", cantidadOUT:DOUBLEVALUE)
+	ObjValue(ID==idTask,PROPNAME=="proporción_intermedia",RANGENAME=="CONTRIBUCIÓN_LINEAL", idLineaPropTask:VALOR)
+		DatValue(ID== idLineaPropTask, idoLineaPropTask:IDO, idtoLineaPropTask:IDTO, PROPNAME=="cantidad", cantidadPropTask:DOUBLEVALUE)
+		DatValue(ID== idLineaPropTask,PROPNAME=="contribución_unitaria", contribucionTask:DOUBLEVALUE)
+	
+	not( ObjValue(ID==idTask, PROPNAME=="consumo")) //todavía incompleto
+
+	//Todavía las contribuciones no alcanzan o sobrepasan la salida		
+	contribucionOUT: Double(doubleValue<cantidadOUT)
+	     from accumulate((and	ObjValue(ID==idTask,PROPNAME=="proporción_intermedia",RANGENAME=="CONTRIBUCIÓN_LINEAL", idLineaPropTaskAcum:VALOR)
+								DatValue(ID== idLineaPropTaskAcum,PROPNAME=="cantidad", cantidadPropTaskAcum:DOUBLEVALUE)
+								DatValue(ID== idLineaPropTaskAcum,PROPNAME=="contribución_unitaria", contribucionTaskAcum:DOUBLEVALUE)),
+								
+						init( Double total= new Double(0);),
+						action( total= total + cantidadPropTaskAcum*contribucionTaskAcum ;),
+						result(total))	
+	
+	//No existe ninguna proporcion que no se pase
+	not( (and 	ObjValue(ID==idTask,PROPNAME=="proporción_intermedia",RANGENAME=="CONTRIBUCIÓN_LINEAL", idLineaPropTask2:VALOR!=idLineaPropTask)
+				DatValue(ID== idLineaPropTask2,PROPNAME=="contribución_unitaria", DOUBLEVALUE < (cantidadOUT-contribucionOUT))))
+						
+	//Y esta contribución es la menor posible (la que menos se pasa)
+	not( (and 	ObjValue(ID==idTask,PROPNAME=="proporción_intermedia",RANGENAME=="CONTRIBUCIÓN_LINEAL", idLineaPropTask3:VALOR!=idLineaPropTask)
+				DatValue(ID== idLineaPropTask3,PROPNAME=="contribución_unitaria", DOUBLEVALUE < contribucionTask)))
+	
+	then
+	
+	dma.printRule("\n==============>RULE: INICIALIZAR AL ALZA PROPORCIONES PARA TRABAJOS INCOMPLETOS "+cantidadOUT+";"+contribucionOUT+";"+contribucionTask);
+	
+	double newCantidad = Auxiliar.redondea(Math.ceil((cantidadOUT-contribucionOUT)/contribucionTask)+cantidadPropTask,3);
+	dma.setValue(idoLineaPropTask, idtoLineaPropTask, "cantidad",new DoubleValue(newCantidad));
+	dma.setValue(idoLineaTaskOut, idtoLineaTaskOut, "cantidad", new DoubleValue(Auxiliar.redondea(newCantidad*contribucionTask,3)));//Ajusto la salida a la nueva proporcion
+end
+
+
+rule "TRABAJO AGREGADO: INSTALACION-ACTUALIZACION"//al no terner medida todos los componentes mandan a un mismo trabajo. Si tiene medida cada demanda genera un trabajo
+
+agenda-group "rules" when 
+	//Esta regla es a la vez de instalacion y de completar (las otras dos reglas, instalacion y completar que excluyen este caso de despiece sin medidas), son dos debido
+	// a que desde el escandallo no puedo correlar sin saber la medida. La de instalacion tira de la demanda, y la de completar tira de la salida
+  	
+	//De momento exigo que exista una produccion en cadena, aunque como linea de demanda tomo la propia de la p. cadena o un consumo de otro trabajo, pero no
+	//relaciono la produc cadena con dichos trabajos. POr tanto si se crea un trabajo aislado fuera de una produccion en cadena, no se crearian otros trabajos encadenados. 
+	
+	//Esta regla no se dispara por cada produccion, si no por cada escandallo, correlar por la producc en cadena es solo para poder añadirle trabajos, y estar seguro que no se crean trabajos desde
+	// producciones aisladas
+	Lock(idProCadena:ID,idtoProCadena:IDTO,idoProCadena:IDO,CLASSNAME=="PRODUCCIÓN_CADENA",STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	destino:Integer() from accumulate(ObjValue(ID==idProCadena,PROPNAME=="destino", des:IDOVALUE!=null),	sum(des))
+		
+	ObjValue(idEscandallo:ID, idoEscandallo:IDO, idtoEscandallo:IDTO, CLASSNAME=="ESCANDALLO",propEsc:PROPNAME=="salida", idoEsc_agregado:IDOVALUE!=null,claseLINEA_Agregado:RANGENAME)
+	DatValue(IDO== idoEsc_agregado,PROPNAME=="cantidad", qEsc_Agregado:QMIN!=null)		
+	DatValue(ID==idEscandallo,PROPNAME=="rdn",rdnEsc:VALOR)	
+	
+	FactHierarchy(idtoProductoAgregado:IDTO,clsSupProdAg:CLASSSUP=="SERVICIO"||=="GÉNERO")
+	ObjValue(IDO== idoEsc_agregado,PROPNAME=="producto", idoProdAgregado:IDOVALUE!=null,VALUECLS==idtoProductoAgregado,classProducto:RANGENAME,ovProdAgregado:OBJECTVALUE)	
+
+	Med1_EscAgreg:Double() from accumulate(DatValue(IDO==idoEsc_agregado,PROPNAME=="medida1", q:QMIN!=null),sum(q))
+	Med2_EscAgreg:Double() from accumulate(DatValue(IDO==idoEsc_agregado,PROPNAME=="medida2", q:QMIN!=null),sum(q))
+	
+	//not(ObjValue(IDO==idoEscandallo,PROPNAME=="proporción_intermedia",RANGENAME=="CONTRIBUCIÓN_LINEAL", VALOR!=null))
+	contribucionPropIntMinOUT: Double()
+	     from accumulate((and	ObjValue(IDO==idoEscandallo,PROPNAME=="proporción_intermedia",RANGENAME=="CONTRIBUCIÓN_LINEAL", idLineaPropTaskAcum:VALOR)								
+								DatValue(ID== idLineaPropTaskAcum,PROPNAME=="contribución_unitaria", contri:DOUBLEVALUE)),min(contri))
+																									
+	lineaAgregado:TreeMap() from accumulate((and
+												FactHierarchy(idtoRootTrabajoAgreg:IDTO, clsSup:CLASSSUP=="PRODUCCIÓN_MATERIAL"||=="TAREA")														     			
+												ObjValue(IDTO==idtoRootTrabajoAgreg,idoRootTrabajoAgreg:IDO,PROPNAME==(clsSup.equals("TAREA")?"programación":"línea"), idoAgregado:IDOVALUE!=null,idtoAg:VALUECLS)
+												not(Individual(IDO==idoRootTrabajoAgreg,STATE==Constants.INDIVIDUAL_STATE_DELETED))
+												DatValue(IDO==idoAgregado,idtoAgregado:IDTO,PROPNAME=="cantidad", qAgregado:QMIN!=null)
+		     									//Unico objetivo sea sensible a cambios de medida, etc., de lo contrario si primero se pone cantidad, no se da cuenta de la medida
+		     									DatValue(IDO== idoAgregado,PROPNAME=="clave_producto", VALOR!=null)		
+		     									ObjValue(IDO== idoAgregado,PROPNAME=="producto", IDOVALUE==idoProdAgregado)													     														
+											),
+												init(TreeMap res=new TreeMap();),
+												action(
+													
+														Domain ag=new Domain(idoAgregado,idtoAg);
+														//POr mucho que agregado tenga una medida, si escandallo no tiene lo mapeo sin medida 
+														Double med1=Med1_EscAgreg.doubleValue()==0.0?0.0:dma.getDoubleValue(ag,"medida1",true);
+														Double med2=Med2_EscAgreg.doubleValue()==0.0?0.0:dma.getDoubleValue(ag,"medida2",true);
+														ObjectValue talla=dma.getIdProperty("talla")==null?null:(ObjectValue)dma.getValue(ag,"talla");														
+														ObjectValue color=dma.getIdProperty("color")==null?null:(ObjectValue)dma.getValue(ag,"color");
+													
+														String key=codeKey(med1,med2,talla,color);
+														
+														if(key!=null&&key.length()>0){													
+															Domain domAg=(Domain)res.get(key);																												
+														
+															if(domAg==null){																														
+																res.put(key,ag);
+															}
+														}																											
+												),
+												result(res))
+											
+	// demanda de componentes
+	DemandaTransfProd:TreeMap() from accumulate((and 																			
+		     		//Se supone un producto no puede aparecer en mas de un escandallo como agregado. Tampoco uno de sus componentes como componente de otro escandallo 
+		     		//en despiece, la chuleta de cerdo solo puede ser componente del cerdo. En fabrica si un mismo componente puede pertenecer a varios escandallos (harina), salvo en desuaces
+													DatValue(ID==idEscandallo,PROPNAME=="es_despiece",BOOLEANVALOR==true)
+													ObjValue(ID== idEscandallo,propOutEsc:PROPNAME=="componente", idEsc_Componente:VALOR,tipoLineaIN:RANGENAME!=null,ovEscComp:OBJECTVALUE)		
+																																		
+													ObjValue(ID== idEsc_Componente,PROPNAME=="producto", proCompAny:IDOVALUE!=null)
+													DatValue(ID== idEsc_Componente,PROPNAME=="cantidad", qEsc_Comp:QMIN!=null&&!=0)	
+													
+													//Para ese componente de escandallo, busco una demanda a consumir
+													FactHierarchy(idtoProd:IDTO, clsRoot:CLASSSUP=="PRODUCCIÓN"||=="PRODUCCIÓN_CADENA")		     		
+															     										
+		     										ObjValue(idoProd:IDO, IDTO==idtoProd,propLin:PROPNAME=="línea"||=="consumo", idoDemComp:IDOVALUE!=null,ovDemComp:OBJECTVALUE)
+		     										not(Individual(IDO==idoProd,STATE==Constants.INDIVIDUAL_STATE_DELETED))
+														     										
+		     										//eval(!(clsRoot.equals("PRODUCCIÓN")&&userLock))	
+		     										
+														     										
+		     										DatValue(IDO==idoDemComp,PROPNAME=="cantidad", qDem_Comp:QMIN!=null&&!=0)
+		     										ObjValue(IDO== idoDemComp,PROPNAME=="producto", IDOVALUE==proCompAny)
+																					
+		     										//Unico objetivo sea sensible a cambios de medida, etc., de lo contrario si primero se pone cantidad, no se da cuenta de la medida
+		     										DatValue(IDO== idoDemComp,PROPNAME=="clave_producto", VALOR!=null)		     													    
+		     											     												     													
+												),
+												init(	
+														TreeMap res=new TreeMap();
+												),
+												action(
+														Double med1=medidaTransformada(dma,ovEscComp,ovDemComp,Med1_EscAgreg,"medida1");
+														Double med2=medidaTransformada(dma,ovEscComp,ovDemComp,Med2_EscAgreg,"medida2");
+														Domain dom=new Domain(ovDemComp);	
+														ObjectValue talla=dma.getIdProperty("talla")==null?null:(ObjectValue)dma.getValue(dom,"talla");														
+														ObjectValue color=dma.getIdProperty("color")==null?null:(ObjectValue)dma.getValue(dom,"color");
+																																																								
+														String key=codeKey(med1,med2,talla,color);
+														//Demandada mismo componente se suma, demanda de agregado es el maximo de lo que motiva cada componente
+														//EN consecuente se toma ese maximo, aqui hay que sumar primero, para lo cual debo referenciarme en una key que almacenar
+														//La key no puede depender de medidas antes de transformar porque puede no s preopagen al agregado (por ejemplo si esta a nulo en escandallo)
+														//Pero esa key si depende del proudcto componente
+														String keyDemComponente=""+proCompAny+key; 
+												
+														HashMap demandasPorProducto=(HashMap)res.get(key);
+														if(demandasPorProducto==null){																
+															demandasPorProducto=new HashMap();
+															res.put(key,demandasPorProducto);
+														}
+															
+														boolean esDespiece=dma.getBooleanValue(new Domain(idoProd,idtoProd),"es_despiece",true);
+														//La demanda en positivo, la produccion en negativo
+														int signo=(esDespiece&&propLin.equals("consumo")||clsRoot.equals("PRODUCCIÓN")&&!esDespiece&&propLin.equals("línea"))?-1:1;
+														Double newMedTransf=signo*qDem_Comp*qEsc_Agregado/qEsc_Comp;
+														
+														Double sumaDem=(Double)demandasPorProducto.get(keyDemComponente);
+														if(sumaDem==null){
+															sumaDem=0.0;
+														}
+															
+														sumaDem= new Double(sumaDem.doubleValue()+newMedTransf.doubleValue());	
+																									
+														demandasPorProducto.put(keyDemComponente,sumaDem);
+																																														
+												),
+												result(res))												
+			
+	//eval(dma.printRule(" demAbs sin med "+MaxPlaneadoTransformadoSinMedidas+" "+MaxCadenaTransformadoSinMedidas))
+	//Me quedo con la existencia inicial junto a todo lo que produzca
+	existencia: TreeMap()
+	     from accumulate(
+	     				(and						
+							FactHierarchy(CLASSSUP=="STOCK",idtostock:IDTO)
+							ObjValue(IDTO==idtostock,idoStock:IDO,PROPNAME=="producto",IDOVALUE==idoProdAgregado)
+							ObjValue(IDO==idoStock, PROPNAME=="producto", IDOVALUE==idoProdAgregado)
+							
+							ObjValue(IDO==idoStock,PROPNAME=="almacén_stock",IDOVALUE==destino)
+							DatValue(IDO==idoStock,PROPNAME=="cantidad",cantidad:INITIALDOUBLE!=null)
+							//No cuento existencias iniciales para demanda inicial, es decir todo lo que se demanda pretendo fabricarlo
+							),
+							
+							init(TreeMap res=new TreeMap();),
+							action(
+									Domain domStock=new Domain(idoStock,idtostock);
+									Double med1=dma.getDoubleValue(domStock,"medida1",true);
+									Double med2=dma.getDoubleValue(domStock,"medida2",true);
+									ObjectValue talla=dma.getIdProperty("talla")==null?null:(ObjectValue)dma.getValue(domStock,"talla");														
+									ObjectValue color=dma.getIdProperty("color")==null?null:(ObjectValue)dma.getValue(domStock,"color");
+																												
+									String key=codeKey(med1,med2,talla,color);
+									Double sumaQ=(Double)res.get(key);
+														
+									if(sumaQ==null){															
+										sumaQ=0.0;
+									}
+														
+									if(key!=null&&key.length()>0) res.put(key,new Double(sumaQ.doubleValue()+cantidad.doubleValue()));
+							),
+							result(res))						
+
+				
+	DemandaDirectaAgregado:TreeMap() from accumulate((and 	FactHierarchy(idtoAny:IDTO, clsRoot:CLASSSUP=="TAREA"||=="PRODUCCIÓN_MATERIAL"||=="PRODUCCIÓN_CADENA")
+															Individual(IDTO==idtoAny,idoRootAny:IDO,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+															//Lock(IDTO==idtoAny,IDO==idoRootAny,userLock:LOCKEDBYUSER)
+		     												//eval(!(clsRoot.equals("PRODUCCIÓN")&&userLock))	
+															//Si escandallo es despiece, tanto la demanda como la produccion ya se suma en el acum de demanda transformada 
+															DatValue(ID==idEscandallo,PROPNAME=="es_despiece",BOOLEANVALOR==false)
+															ObjValue(IDO==idoRootAny,propLin:PROPNAME=="línea"||=="consumo"||=="programación", idoLineaAgreg:IDOVALUE!=null,idtolin:VALUECLS)
+															ObjValue(IDO==idoLineaAgreg, PROPNAME=="producto", IDOVALUE==idoProdAgregado)
+															DatValue(IDO==idoLineaAgreg, PROPNAME=="cantidad", q:QMIN!=null)
+															//Unico objetivo sea sensible a cambios de medida, etc., de lo contrario si primero se pone cantidad, no se da cuenta de la medida
+	     													DatValue(IDO== idoLineaAgreg,PROPNAME=="clave_producto", VALOR!=null)
+												),																					
+											
+							init(TreeMap res=new TreeMap();),
+							action(									
+							
+									Domain dom=new Domain(idoLineaAgreg,idtolin);
+									Double med1=dma.getDoubleValue(dom,"medida1",true);
+									Double med2=dma.getDoubleValue(dom,"medida2",true);
+									ObjectValue talla=dma.getIdProperty("talla")==null?null:(ObjectValue)dma.getValue(dom,"talla");														
+									ObjectValue color=dma.getIdProperty("color")==null?null:(ObjectValue)dma.getValue(dom,"color");
+																										
+									String key=codeKey(med1,med2,talla,color);
+									Double sumaQ=(Double)res.get(key);
+														
+									if(sumaQ==null){															
+										sumaQ=0.0;
+									}
+														
+									boolean esDespiece=dma.getBooleanValue(new Domain(idoRootAny,idtoAny),"es_despiece",true);
+									//La demanda en positivo, la produccion en negativo. La programación en tareas cuenta como produccion, pero en produccion material como gasto
+									//int signo=clsRoot.equals("PRODUCCIÓN")&&!esDespiece?-1:1;			
+									int signo=(clsRoot.equals("TAREA")&&propLin.equals("programación")||esDespiece&&propLin.equals("consumo")||!clsRoot.equals("PRODUCCIÓN_CADENA")&&!esDespiece&&propLin.equals("línea"))?-1:1;											
+									
+									//dma.printRule("ACUM "+clsRoot+" "+propLin+" signo:"+signo+" oldq,q:"+sumaQ+" "+q);
+									if(key!=null&&key.length()>0) res.put(key,new Double(sumaQ.doubleValue()+signo*q.doubleValue()));															
+							),
+							result(res))	   																														
+	numeroDeTrabajos:Number() from accumulate((and FactHierarchy(idtoAny:IDTO, CLASSSUP=="PRODUCCIÓN")	
+												   ft:Individual(IDTO==idtoAny)),  count(ft))
+	bajoAutomatizacion:ArrayList() from collect(ObjValue(CLASSNAME=="Generar_produccion_automatica_basada_en_consumos",idto:IDTO,PROPNAME=="estadoRealizacion",VALUE!=null))
+	FactHierarchy(idtoEstado:IDTO,CLASSSUP=="ESTADO")
+	DatValue(idoEstadoProg:IDO,IDTO==idtoEstado,PROPNAME=="rdn",VALOR=="Programado")												   
+								
+then
+	dma.printRule("====> TRABAJO AGREGADO: INSTALACION-ACTUALIZACION "+rdnEsc+" "+clsSupProdAg+" lineAgreg:"+lineaAgregado.size()+" transProd:"+DemandaTransfProd.size()+" cad:"+" direc:"+DemandaDirectaAgregado.size());
+	
+	TreeMap demandaTransf= new TreeMap();
+	Iterator keysTransf=DemandaTransfProd.keySet().iterator();
+	while(keysTransf.hasNext()){
+		String key=(String)keysTransf.next();
+		HashMap sumas=(HashMap)DemandaTransfProd.get(key);
+		TreeSet sumasOrdenado=new TreeSet(sumas.values());
+		//Tomo el maximo demandado, por todos los productos componentes (por cada producto diferente la demanda se ha sumado, pero cuando compite con otro componente manda el maximo)
+		//si demando 1 k de chuleta y 2k de lomo, 2k de lomo demanda un cerdo de 100K, y 1K de chuleta demanda un cerdo de 80k, como son excluyentes me quedo con el cerdo de 100K
+		demandaTransf.put(key,sumasOrdenado.last());
+	}
+		
+	//Un mismo producto puede ser demandado a la vez en una linea de produc cadena y en una produccion, pero no puede aparecer a la vez en un componente y en una salida de escandallo
+	//por tanto si un key se encuentra en una demandad de componente o de agregado, no hace falta mirar en la otra, es decir, son listas excluyentes, por tanto recorro ambas
+	keysTransf=demandaTransf.keySet().iterator();
+	Iterator keysDirecta=DemandaDirectaAgregado.keySet().iterator();
+	while(keysTransf.hasNext()||keysDirecta.hasNext()){
+		String key=null;
+		double qAgregado=0.0;
+		boolean esDespiece=false;
+		int origen=1;
+		if(keysTransf.hasNext()){
+			key=(String)keysTransf.next();
+			esDespiece=true;
+		}else{
+			key=(String)keysDirecta.next();
+			origen=2;		
+		}
+						 
+		if(demandaTransf.get(key)!=null){
+			qAgregado=(Double)demandaTransf.get(key);
+			dma.printRule("Suma Transf agregado "+qAgregado);
+			if(origen==2) keysTransf.next();//consumo el iterador
+		}
+		if(DemandaDirectaAgregado.get(key)!=null){
+			qAgregado+=(Double)DemandaDirectaAgregado.get(key);
+			dma.printRule("Suma directa agregado "+DemandaDirectaAgregado.get(key));
+			if(origen==1) keysDirecta.next();//consumo el iterador
+		}
+		Domain domAgregado=(Domain)lineaAgregado.get(key);
+
+		Double qStock=0.0;//DESABILITADO existencia.get(key)==null?0.0:(Double)existencia.get(key);
+		Double demandaAbsoluta = qAgregado -qStock;//Double demandaAbsoluta = Math.max(0, qAgregado -qStock);			
+		Double oldValueLinea=domAgregado!=null ?dma.getDoubleValue(domAgregado,"cantidad",true):0.0;			
+		double newValor = Math.max(0.0,oldValueLinea+demandaAbsoluta);		
+		DoubleValue dvCantidad = new DoubleValue(newValor);
+		
+		boolean variacion= Auxiliar.incrementoRelevante(oldValueLinea.doubleValue(),newValor,0.01);
+		
+		//si la necesidad no satisfecha demanda, es decir el incremento a aplicar, es menor que la minima contribucion por proporciones intermedias, es un ruido a ignorar
+		if(variacion && contribucionPropIntMinOUT.doubleValue()>0.0 && demandaAbsoluta.doubleValue()<contribucionPropIntMinOUT.doubleValue()) variacion=false;
+				
+		if(domAgregado!=null && variacion){
+			dma.printRule("ACTUALIZAR "+key+" ido:"+domAgregado.getIdo()+" new:"+newValor+" qAgreg:"+qAgregado+",old:"+oldValueLinea+",stoc:"+qStock);		
+			dma.setValue(domAgregado, "cantidad", dvCantidad);	
+		}
+		
+		if(domAgregado==null && newValor>0.001){
+		//Instalar
+			dma.printRule("INSTALAR "+key);
+			StringValue faseProducc = (StringValue)dma.getValue(idoEscandallo, idtoEscandallo, "fase");
+			Domain dominioTrabajo = dma.creaIndividualOfClass(clsSupProdAg.equals("SERVICIO")?"TAREA":"PRODUCCIÓN_MATERIAL");
+			
+			if(bajoAutomatizacion.size()>0){
+				dma.setValue(dominioTrabajo,"estado",new ObjectValue(idoEstadoProg,idtoEstado));
+			}
+			if(!clsSupProdAg.equals("SERVICIO")) dma.setValue(dominioTrabajo, "es_despiece", new BooleanValue(esDespiece));
+	
+			//dma.setValue(dominioTrabajo, "rdn", new StringValue(rdnEsc));
+			if(faseProducc != null){
+				dma.setValue(dominioTrabajo, "fase", faseProducc);
+			}
+
+			domAgregado = dma.creaIndividualOfClass(claseLINEA_Agregado);									
+	
+			dma.addValue(dominioTrabajo, clsSupProdAg.equals("SERVICIO")?"programación":"línea", new ObjectValue(domAgregado));						
+			dma.setValue(domAgregado, "producto", ovProdAgregado);
+			
+			dma.printRule("DECODIFICAR "+key);
+			Double med=(Double)decodeKey("medida1",key);
+			if(med!=null)	dma.setValue(domAgregado,"medida1",new DoubleValue(med));
+			
+			med=(Double)decodeKey("medida2",key);
+			if(med!=null)	dma.setValue(domAgregado,"medida2",new DoubleValue(med));
+			
+			Integer idoDetalle=(Integer)decodeKey("talla",key);
+			if(idoDetalle!=null)	dma.setValue(domAgregado,"talla",new ObjectValue(idoDetalle,dma.getIdClass("TALLA")));
+			
+			idoDetalle=(Integer)decodeKey("color",key);
+			if(idoDetalle!=null)	dma.setValue(domAgregado,"color",new ObjectValue(idoDetalle,dma.getIdClass("COLOR")));
+			
+								
+			boolean aplicaNserie=false;
+			if(dma.getMetaData().hasProperty(classProducto,"requiere_n_serie")){
+				BooleanValue bvreqserie=(BooleanValue)dma.getValue(ovProdAgregado.getValue(),ovProdAgregado.getValueCls(),"requiere_n_serie");
+				if(bvreqserie!=null&bvreqserie.getBvalue()){
+					aplicaNserie=true;
+				}
+			}
+	
+			if(aplicaNserie){
+				dma.setValue(domAgregado, "cantidad", new DoubleValue(new Double(1)));
+			}else{
+				dma.setValue(domAgregado, "cantidad", new DoubleValue(new Double(0)));
+			}
+			long tiempo= (long)(System.currentTimeMillis()/Constants.TIMEMILLIS)+3600-numeroDeTrabajos.intValue()*60;
+	
+			dma.setValue(dominioTrabajo, "fecha_inicio", new TimeValue(tiempo));//coste consumo ejecutado fin salida tipotrabajo		
+			dma.setValue(dominioTrabajo, "fecha_fin",  new TimeValue(tiempo));			
+			dma.addValue(idoProCadena,idtoProCadena,"producción",	new ObjectValue(dominioTrabajo));
+			dma.setValue(domAgregado, "cantidad", dvCantidad);
+		}	
+
+	}
+end
+
+function String codeKey(Double med1,Double med2,ObjectValue talla,ObjectValue color){
+	String res="#";
+	
+	if(med1!=null && med1.doubleValue()!=0.0) res+="A"+med1;
+	if(med2!=null && med2.doubleValue()!=0.0) res+="B"+med2;
+	if(talla!=null && talla.getValue().intValue()!=0) res+="T"+talla.getValue();
+	if(color!=null && color.getValue().intValue()!=0) res+="C"+color.getValue();
+
+	return res;
+}
+
+function Object decodeKey(String prop,String key){	
+	if(key.length()>0 && key.startsWith("#")) key=key.substring(1);
+		
+	if(prop.equals("medida1")){
+		int ini=key.indexOf("A");
+	
+		if(ini<0) return null;
+		String[] partes=key.substring(ini+1).split("[ABCDT]");		
+		return Double.parseDouble(partes[0]);
+	}
+	if(prop.equals("medida2")){
+		int ini=key.indexOf("B");
+		
+		if(ini<0) return null;
+		String[] partes=key.substring(ini+1).split("[ABCDT]");		
+		return Double.parseDouble(partes[0]);
+	}
+	
+	if(prop.equals("talla")){
+		int ini=key.indexOf("T");
+		
+		if(ini<0) return null;
+		String[] partes=key.substring(ini+1).split("[ABCDT]");		
+		return Integer.parseInt(partes[0]);
+	}
+	if(prop.equals("color")){
+		int ini=key.indexOf("C");
+		if(ini<0) return null;
+		String[] partes=key.substring(ini+1).split("[ABCDT]");
+		
+		return Integer.parseInt(partes[0]);
+	}
+	
+	return null;
+}
+
+function double medidaTransformada(DataModelAdapter dma,ObjectValue ovEscSource,ObjectValue ovDemSource,double Med_EscTarget,String propMedida){
+	double medEscSource=0.0;
+	DoubleValue medEscSourceDV=(DoubleValue)dma.getValue(new Domain(ovEscSource),propMedida);
+	if(medEscSourceDV!=null) medEscSource=medEscSourceDV.getValue();
+	
+	double medDemSource=0.0;
+	DoubleValue medDemSourceDV=(DoubleValue)dma.getValue(new Domain(ovDemSource),propMedida);
+	if(medDemSourceDV!=null) medDemSource=medDemSourceDV.getValue();
+	
+
+	if( medEscSource==0.0 || medDemSource==0.0 ) return 0.0;
+	
+	double res=medDemSource*Med_EscTarget/medEscSource;
+
+	return res;
+}
+
+
+rule "CALCULO CANTIDAD DE SALIDA DE UN TRABAJO EN PLANIFICACION CON PROPORCIONES"
+salience 10 //mas prioridad que la instalacion
+agenda-group "rules" when 
+  	
+	
+	Lock(idPlan:ID,CLASSNAME=="PRODUCCIÓN_CADENA",STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	
+	destino:Integer() from accumulate(ObjValue(ID==idPlan,PROPNAME=="destino", des:IDOVALUE!=null),
+									sum(des))
+
+	FactHierarchy(classRoot:CLASS, CLASSSUP=="PRODUCCIÓN")
+	Lock(CLASSNAME==classRoot,idTask:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK||==Constants.INDIVIDUAL_STATE_READY)
+		
+			
+	ObjValue(ID==idTask, PROPNAME=="línea",idOut:VALOR,claseLINEA:RANGENAME!=null)   	
+	
+	DatValue(ID==idOut,PROPNAME=="cantidad",cantidadOut:DOUBLEVALUE!=null) 
+	DatValue(ID== idOut,PROPNAME=="clave_producto", idProducto:VALOR)
+	
+	Individual(ID==idProducto,classProducto:CLASSNAME)
+	
+					
+	planeadoTrabajo: Double()
+	     from accumulate((and					
+		     		FactHierarchy(idtoAny:IDTO, CLASSSUP=="PRODUCCIÓN")						
+	     			ObjValue(IDTO==idtoAny,idRootTot:ID,PROPNAME=="línea", idLineaDemTot:VALOR!=idOut)
+	     			Individual( ID==idRootTot,STATE!=Constants.INDIVIDUAL_STATE_DELETED)	     						
+					DatValue(ID==idLineaDemTot,PROPNAME=="clave_producto",VALOR==idProducto)
+					DatValue(ID==idLineaDemTot,PROPNAME=="cantidad",cantidad:DOUBLEVALUE!=null)),
+					sum(cantidad))						
+					
+	existencia: Double()
+	     from accumulate((and						//TODO: que sea configurable no tener en cuenta existencia producto de venta (es de venta por ser de salida)
+							FactHierarchy(CLASSSUP=="STOCK",idtostock:IDTO)
+							DatValue(IDTO==idtostock,idoStock:IDO,PROPNAME=="clave_producto",VALOR==idProducto)
+							DatValue(IDO==idoStock,PROPNAME=="cantidad",cantidad:INITIALDOUBLE!=null)
+							ObjValue(IDO==idoStock,PROPNAME=="almacén_stock",IDOVALUE==destino)
+							not((and 	ObjValue(ID==idPlan, PROPNAME=="línea",idoLinAny:IDOVALUE)
+										DatValue(IDO==idoLinAny, PROPNAME=="clave_producto",VALOR==idProducto)))							
+							),
+							sum( cantidad))	
+	demandaAbsolutaPlanificacion: Double()
+	     from accumulate((and											
+	     			ObjValue(CLASSNAME=="PRODUCCIÓN_CADENA",idRootTot:ID,PROPNAME=="línea", idLineaDemTot:VALOR)
+	     			Individual(ID==idRootTot,STATE!=Constants.INDIVIDUAL_STATE_DELETED)	     			  			
+					DatValue(ID==idLineaDemTot,PROPNAME=="clave_producto",VALOR==idProducto)
+					DatValue(ID==idLineaDemTot,PROPNAME=="cantidad",cantidad:DOUBLEVALUE!=null)),
+					
+					sum(cantidad))	
+					
+	demandaAbsolutaTrabajo: Double()
+	     from accumulate((and											
+	     			ObjValue(idRootTot:ID,PROPNAME=="consumo", idLineaDemTot:VALOR)
+	     			Individual(ID==idRootTot,STATE!=Constants.INDIVIDUAL_STATE_DELETED)	     					
+					DatValue(ID==idLineaDemTot,PROPNAME=="clave_producto",VALOR==idProducto)
+					DatValue(ID==idLineaDemTot,PROPNAME=="cantidad",cantidad:DOUBLEVALUE!=null)),
+					sum( cantidad))	
+							
+					
+	//eval(Math.abs(demandaAbsolutaPlanificacion+ demandaAbsolutaTrabajo-existencia-cantidadTask)> demandaAbsolutaPlanificacion*0.01)
+	
+	ObjValue(ID==idTask,PROPNAME=="proporción_intermedia",RANGENAME=="CONTRIBUCIÓN_LINEAL", idLineaPropTask:VALOR)
+	DatValue(ID== idLineaPropTask, idoLineaPropTask:IDO, idtoLineaPropTask:IDTO, PROPNAME=="cantidad", cantidadPropTask:DOUBLEVALUE)
+	DatValue(ID== idLineaPropTask,PROPNAME=="contribución_unitaria", contribucionPropTask:DOUBLEVALUE)
+				
+	not( 	ObjValue(ID==idTask,PROPNAME=="proporción_intermedia",RANGENAME=="CONTRIBUCIÓN_LINEAL", idLineaPropTask2:VALOR!=idLineaPropTask) and
+			DatValue(ID== idLineaPropTask2,PROPNAME=="contribución_unitaria", DOUBLEVALUE<contribucionPropTask))
+then
+  	dma.printRule("\n ==== RULE CALCULO CANTIDAD DE SALIDA DE UN TRABAJO EN PLANIFICACION CON PROPORCIONES prod,ejecu,deman,exis,curr,propor) "+existencia+","+cantidadOut+","+cantidadPropTask);
+	double incremento=demandaAbsolutaTrabajo+demandaAbsolutaPlanificacion- existencia-(cantidadOut+planeadoTrabajo);	
+	if( incremento > demandaAbsolutaPlanificacion*0.01 || ( incremento < 0 && Math.abs(incremento)>contribucionPropTask)){
+		dma.printRule("\n NUEVA PROP " +(cantidadPropTask + (incremento>0 ? 1:-1)) +" INCREMENTO "+(incremento>0 ? 1:-1));
+		DoubleValue dvCantidad = new DoubleValue(cantidadPropTask + (incremento>0 ? 1:-1));
+		dma.setValue(idoLineaPropTask, idtoLineaPropTask, "cantidad", dvCantidad);
+	}
+end
+
+
+rule "ESCANDALLO DUPLICADO" 
+salience 100 //mas prioridad que la creacion de proporciones por defecto
+ agenda-group "rules" when 
+  		
+	Individual(idoEsc:IDO,CLASSNAME=="ESCANDALLO")
+	ObjValue(IDO==idoEsc, PROPNAME=="salida", idoOUT:IDOVALUE)
+	DatValue(IDO==idoOUT, PROPNAME=="clave_producto", key:VALOR!=null)		
+	Individual(idoEsc2:IDO!=idoEsc,CLASSNAME=="ESCANDALLO")
+	ObjValue(IDO==idoEsc2, PROPNAME=="salida", idoOUT2:IDOVALUE)
+	DatValue(IDO==idoOUT2, PROPNAME=="clave_producto", VALOR==key)	
+	DatValue(IDO==idoEsc,PROPNAME=="es_despiece",esDespiece:BOOLEANVALOR!=null)
+	DatValue(IDO==idoEsc2,PROPNAME=="es_despiece",BOOLEANVALOR==esDespiece)
+	DatValue(IDO==idoEsc, PROPNAME=="rdn",rdn1:VALOR!=null)
+	DatValue(IDO==idoEsc2, PROPNAME=="rdn",rdn2:VALOR!=null)
+	ObjValue(IDO==idoOUT, PROPNAME=="producto", idoProducto:IDOVALUE)
+	DatValue(IDO==idoProducto, PROPNAME=="descripción",rdnP:VALOR!=null)
+then 	
+	throw new OperationNotPermitedException("El producto "+rdnP+" tiene asociado dos escandallos, el "+rdn1+" y "+rdn2+".\n Elimine uno de los escandallos previamente");
+end
+
+
+rule "CANTIDAD POR DEFECTO EN TRABAJOS NUEVOS AISLADOS CON PROPORCIONES ES UNO" 
+salience 100 //mas prioridad que la creacion de proporciones por defecto
+ agenda-group "rules" when 
+  	
+	
+	FactHierarchy(classRoot:CLASS, CLASSSUP=="PRODUCCIÓN")
+	Lock(idTask:ID,CLASSNAME==classRoot,STATE==Constants.INDIVIDUAL_STATE_LOCK)	
+	ObjValue(CLASSNAME=="Task_Trabajo",PROPNAME=="targetClass",VALUE==idTask)
+	
+	ObjValue(ID==idTask, PROPNAME=="línea", idLineaTaskOUT:VALOR)
+	ObjValue(ID==idLineaTaskOUT, idoLineaTaskOUT:IDO, idtoLineaTaskOUT:IDTO, PROPNAME=="producto", idProductoTaskOUT:VALOR)
+		
+	not( ObjValue(ID== idTask,PROPNAME=="cantidad"))
+	//not( ObjValue(ID== idTask,PROPNAME=="proporción_intermedia", RANGENAME=="CONTRIBUCIÓN_LINEAL"))
+	
+	Individual(idProduccion:ID,CLASSNAME=="ESCANDALLO")
+	ObjValue(ID==idProduccion, PROPNAME=="salida", idLineaRecetaOUT:VALOR)
+		ObjValue(ID==idLineaRecetaOUT, PROPNAME=="producto", VALOR==idProductoTaskOUT)	
+			
+	ObjValue(ID== idProduccion,PROPNAME=="proporción_intermedia", RANGENAME=="CONTRIBUCIÓN_LINEAL", idLineaPropReceta:VALOR)
+	DatValue(ID== idLineaPropReceta,PROPNAME=="contribución_unitaria", contribucionReceta:DOUBLEVALUE)
+
+then
+ 	dma.printRule("\n=================>>DISPARO RULE CANTIDAD POR DEFECTO EN TRABAJOS NUEVOS AISLADOS CON PROPORCIONES ES UNO");
+	dma.setValue(idoLineaTaskOUT, idtoLineaTaskOUT, "cantidad", new DoubleValue(new Double(1)));
+end
+
+rule "INSTALACION COMPLETAR CONSUMO DE UN TRABAJO PLANIFICADO"
+//DADO UN JOB con SALIDA, y una producción asociada que declara un consumo >0 relativo a un producto, no consumido en el trabajo, lo añado
+salience 50 //Mas prioridad que la que crea el Task ya que la tarea de agregados se basa en la demanda, y es necesario previamente que los consumos (que tambien demandan) sean coherentes, pero menos prio. que las precargas
+agenda-group "rules" when 
+	FactHierarchy(classRoot:CLASS, CLASSSUP=="PRODUCCIÓN")
+	Individual(idTask:ID, idoTask:IDO, idtoTask:IDTO, CLASSNAME==classRoot,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+	
+	//not((and 	ObjValue(IDO==idoTask,PROPNAME=="estado",idoEstado:IDOVALUE!=null)
+	//			DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR!="Realizado")))
+		
+	Individual(idEsc:ID,CLASSNAME=="ESCANDALLO")
+	
+	cantidadPlanificadaOut:Double()	from accumulate((and 
+										//el producto de salida dentro de la acumulacion para soportar alternativas de salida.
+										//Por ejemplo una clasificacion de acueituna, puede salir (agregado) de categoria 1, 2 ,etc.
+										//Necesito saber la suma de total planificado para todas las alternativas, entendiendo que 
+										//las cantidades de salida se suman en serie, y no en paralelo como en los despieces, aunque 
+										//la cantidad de salida en escandallo se repite para cada alternativa. 
+										//POr ejmeplo, en escandallo 2 kilos de consumo de aceituna sin clasificar dan 1 kilo de categoria 1, o 1 kilo de categoria 2, etc.
+										// con un kilo de merma, pero en la produccion final 2 kilo de consumo da 0.5 de catg1 + 0.5 de cat 2 (total 1 kilo de salida)
+										ObjValue(ID== idEsc,propOutEsc:PROPNAME=="salida", idEsc_OUT:VALOR,idoEsc_agregado:IDOVALUE)											
+										ObjValue(ID== idEsc_OUT,PROPNAME=="producto",idoProductoOut:IDOVALUE!=null)	
+										DatValue(ID== idEsc_OUT,PROPNAME=="rdn", rdnEscan:VALOR!=null)			
+										DatValue(ID== idEsc_OUT,PROPNAME=="cantidad", cantidadRecetaOut:DOUBLEVALUE!=null&&!=0)
+	
+										ObjValue(ID== idTask,propOutProd:PROPNAME=="línea", output:VALOR,idoAgregado:IDOVALUE,ovDemSource:OBJECTVALUE)		
+	
+										ObjValue(ID== output,PROPNAME=="producto",IDOVALUE==idoProductoOut)		
+										DatValue(ID== output, PROPNAME=="cantidad", qOut:DOUBLEVALUE!=null)
+
+										forall(	ObjValue(ID== idEsc_OUT,p:PROPNAME=="talla"||=="color",detalle:VALOR!=null)
+											ObjValue(ID== output,PROPNAME==p,VALOR==detalle)
+										)
+									),
+								sum( qOut/cantidadRecetaOut ))
+								
+	eval(Math.abs(cantidadPlanificadaOut.doubleValue())>=0.001)
+
+	//Consumo de escandallo	
+		ObjValue(ID== idEsc,proIN:PROPNAME=="componente", idoEsc_IN:IDOVALUE,tipoLineaIN:RANGENAME!=null)	
+			
+		Med1_IN:Double()	from accumulate((and 	ObjValue(ID== idTask,PROPNAME=="línea",idoAgAny:IDOVALUE)
+													DatValue(IDO==idoAgAny,PROPNAME=="medida1",med1Out:QMIN!=null)
+													ObjValue(ID== idEsc,PROPNAME=="salida", idEsc_OUT:VALOR)
+													DatValue(ID==idEsc_OUT,PROPNAME=="medida1",EscMed1Out:QMIN!=null)
+													DatValue(IDO==idoEsc_IN,PROPNAME=="medida1",EscMed1In:QMIN!=null)),
+											max(EscMed1In/EscMed1Out*med1Out))
+														
+		Med2_IN:Double()	from accumulate((and 	ObjValue(ID== idTask,PROPNAME=="línea",idoAgAny:IDOVALUE)
+													DatValue(IDO==idoAgAny,PROPNAME=="medida2",med2Out:QMIN!=null)
+													ObjValue(ID== idEsc,PROPNAME=="salida", idEsc_OUT:VALOR)
+													DatValue(ID==idEsc_OUT,PROPNAME=="medida2",EscMed2Out:QMIN!=null)
+													DatValue(IDO==idoEsc_IN,PROPNAME=="medida2",EscMed2In:QMIN!=null)),
+											max(EscMed2In/EscMed2Out*med2Out))											   											    													     																						
+	
+		ObjValue(IDO==idoEsc_IN,PROPNAME=="producto",idoProductoIN:IDOVALUE!=null, ovProdEscIn:OBJECTVALUE)		
+		DatValue(IDO==idoProductoIN,PROPNAME=="rdn",rdnProIN:VALOR!=null)
+
+		ids:HashSet()	from accumulate((and 	ObjValue(ID== idTask,PROPNAME=="línea",idoAgAny:IDOVALUE)
+												f:ObjValue(IDO==idoAgAny,PROPNAME=="talla"||=="color",ob:OBJECTVALUE!=null)),
+											init(HashSet res=new HashSet();),
+											action(res.add(f);),
+											result(res))
+																								
+		
+			DatValue(idtoGastoIN:IDTO,IDO== idoEsc_IN,PROPNAME=="cantidad", cantidadRecetaIN:DOUBLEVALUE > 0)			
+						
+	consumObject:ObjectValue() from accumulate((and 
+												ObjValue(ID==idTask, PROPNAME=="consumo", idoLineaTaskIN:IDOVALUE!=null,ovlin:OBJECTVALUE!=null)
+												ObjValue(IDO==idoLineaTaskIN, idtoLineaTaskIn:IDTO,PROPNAME=="producto", IDOVALUE==idoProductoIN)											
+											
+												forall(	ObjValue(IDO== idoEsc_IN,p:PROPNAME=="talla"||=="color",detalle:VALOR!=null)
+														ObjValue(IDO== idoLineaTaskIN,PROPNAME==p,VALOR==detalle))			
+																								
+												not((and 	eval(Med1_IN.doubleValue()!=0.0)
+															DatValue(IDO==idoLineaTaskIN, PROPNAME=="medida1",QMIN!=Med1_IN)))
+																
+												not((and 	eval(Med2_IN.doubleValue()!=0.0)
+															DatValue(IDO==idoLineaTaskIN, PROPNAME=="medida2",QMIN!=Med2_IN)))															
+												),
+												init(TreeMap res=new TreeMap();),
+												//Con treeMap priorizo lineas que no tiene lote, por si partir elimina lote, esa linea ajusto su cantidad para satisfacer demanda
+        										action( Integer tieneLote=new Integer(0);        												
+        												if(dma.getValue(idoLineaTaskIN,idtoLineaTaskIn,"lote")!=null) tieneLote=new Integer(1);        												        										     										
+        												res.put(tieneLote,ovlin);
+        										),        													        													        													 
+        										result(res.size()==0 ? new ObjectValue(0,0):((ObjectValue)res.get(res.firstKey()))) )
+        										
+    												
+	consumoCantidad: Double()
+	     from accumulate((and	ObjValue(ID==idTask,PROPNAME=="consumo", idoLineaTaskAny:IDOVALUE!=null)
+	     						//eval(!idoLineaTaskAny.equals(consumObject.getValue()))	     						
+	     						ObjValue(IDO==idoLineaTaskAny, PROPNAME=="producto", IDOVALUE==idoProductoIN)
+								forall(	ObjValue(IDO== idoEsc_IN,p:PROPNAME=="talla"||=="color",detalle:VALOR!=null)
+										ObjValue(IDO== idoLineaTaskAny,PROPNAME==p,VALOR==detalle))
+								
+								not((and 	eval(Med1_IN.doubleValue()!=0.0)
+											DatValue(IDO==idoLineaTaskAny, PROPNAME=="medida1",QMIN!=Med1_IN)))
+																
+								not((and 	eval(Med2_IN.doubleValue()!=0.0)
+											DatValue(IDO==idoLineaTaskAny, PROPNAME=="medida2",QMIN!=Med2_IN)))
+																							
+								DatValue(IDO==idoLineaTaskAny, PROPNAME=="cantidad", q:DOUBLEVALUE )),
+								
+						sum(q))													
+													
+	then 
+	dma.printRule("=============>INSTALACION COMPLETAR CONSUMO DE UN TRABAJO PLANIFICADO: ESC IN "+idoTask+" "+rdnProIN+" "+ids.size()+" "+Med1_IN+" " +consumObject+" "+cantidadRecetaIN+" taskOut:"+cantidadPlanificadaOut);
+	double demandaConsumo= cantidadRecetaIN*cantidadPlanificadaOut;
+
+	Domain domainLineIN_target=new Domain(consumObject);
+	boolean instalar=false;
+	double newValor=Math.max(0.0,demandaConsumo);
+	boolean obviar=false;
+	
+	if(consumObject.getValue()!=0){		
+		Double oldValueTarget=dma.getDoubleValue(domainLineIN_target,"cantidad",true);
+		dma.printRule(" OLDVALUE "+oldValueTarget);
+		//nuevo valor es la demanda total (newValor) - lo ya consumido resto lineas (consumoCantidad-oldValueTarget)
+		newValor=oldValueTarget+newValor-consumoCantidad;
+		if(Math.abs(Math.abs(newValor)-Math.abs(oldValueTarget))<0.001) obviar=true;
+	}
+		
+	if(consumObject.getValue()==0 && newValor!=0.0){	
+		String newProp="consumo";	
+	
+		domainLineIN_target = dma.creaIndividualOfClass(tipoLineaIN);
+		dma.addValue(idoTask, idtoTask, newProp, new ObjectValue(domainLineIN_target));
+		instalar=true;
+		dma.printRule("\nCrear linea ");
+
+		dma.setValue(domainLineIN_target,"producto",ovProdEscIn);
+			
+		Iterator itr=ids.iterator();
+		while(itr.hasNext()){
+			ObjValue propAdic=(ObjValue)itr.next();
+			dma.setValue(domainLineIN_target,propAdic.getPROPNAME(),propAdic.getCVALUE());				
+		}
+	
+		if(Med1_IN.doubleValue()>Double.MIN_VALUE){
+			dma.setValue(domainLineIN_target,"medida1",new DoubleValue(Med1_IN));
+		}
+	
+		if(Med2_IN.doubleValue()>Double.MIN_VALUE){
+			dma.setValue(domainLineIN_target,"medida2",new DoubleValue(Med2_IN));
+		}
+	
+		dma.setValue(domainLineIN_target, "cantidad", new DoubleValue(newValor));
+		if(dma.getDDM().hasProperty(idtoGastoIN, dma.getIdProperty("porcentaje_dedicación"))){	
+			DoubleValue porciento=(DoubleValue)dma.getValue(new Domain(idoEsc_IN,idtoGastoIN),"porcentaje_dedicación");
+			dma.setValue(domainLineIN_target, "porcentaje_dedicación", porciento);
+		}
+	}
+		
+	if(domainLineIN_target.getIdo()!=0 && !obviar){
+		dma.printRule(" demanda IDO:"+domainLineIN_target.getIdo()+" q:"+demandaConsumo+" resto "+consumoCantidad +" new cantidad "+newValor);
+		dma.setValue(domainLineIN_target, "cantidad", new DoubleValue(newValor));
+	}		
+
+end
+
+rule "PARTIR PRODUCCION POR DISPONIBILIDAD"
+salience -200
+agenda-group "rules" when 
+	
+		
+	FactHierarchy(idtoTask:IDTO, CLASSSUP=="PRODUCCIÓN")
+	Individual(IDTO==idtoTask,idoTask:IDO, STATE!=Constants.INDIVIDUAL_STATE_DELETED)			
+	ObjValue(clsTask:CLASSNAME,IDO==idoTask,PROPNAME=="estado",idoEstado:IDOVALUE!=null,stCh:initialValuesChanged)
+	DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR=="Planificado")
+	
+	ObjValue(idoCadena:IDO,idtoCadena:IDTO,PROPNAME=="producción",IDOVALUE==idoTask)
+	
+	DatValue(IDO==idoTask,PROPNAME=="es_despiece",esDespiece:BOOLEANVALOR!=null)
+	
+	FactHierarchy(idtoProducto:IDTO, CLASSSUP=="GÉNERO")
+	DatValue(IDTO==idtoProducto,idoProducto:IDO,PROPNAME=="stock_pendiente_aprovisionar",qStockDispon:QMIN!=null,qStockInit:INITIALDOUBLE)
+	
+	qOut:Double(doubleValue>0) from accumulate((and 	ObjValue(IDO==idoTask,p:PROPNAME==(esDespiece? "consumo":"línea"),idoLinOutAny:IDOVALUE)	
+														ObjValue(IDO==idoLinOutAny,PROPNAME=="producto",IDOVALUE==idoProducto)
+														DatValue(IDO==idoLinOutAny,PROPNAME=="cantidad",cantidadLinea:QMAX>0,initLin:INITIALDOUBLE)),
+												sum(cantidadLinea-(stCh?0:1)*(initLin!=null?initLin:0)))
+													
+	/*qStockDispon:Double() from accumulate((and 	ObjValue(IDO==idoTask,p:PROPNAME==(esDespiece? "consumo":"línea"),idoLinOutAny:IDOVALUE)	
+																ObjValue(IDO==idoLinOutAny,PROPNAME=="producto",IDOVALUE==idoProducto)
+																DatValue(IDO==idoLinOutAny,PROPNAME=="stock_disponible",q:QMAX!=null,initLin:INITIALDOUBLE)),
+												sum(q-(initLin!=null?initLin:0)))		*/										
+													
+	eval((qStockDispon.doubleValue()-qStockInit)<qOut.doubleValue() && Auxiliar.incrementoRelevante(qStockDispon.doubleValue()-qStockInit,qOut.doubleValue(),0.01))
+												
+	qAgregado:Double() from accumulate((and 	DatValue(IDO==idoTask,PROPNAME=="es_despiece",BOOLEANVALOR==true)
+												ObjValue(IDO==idoTask,p:PROPNAME=="línea",idoLinAgAny:IDOVALUE)															
+												DatValue(IDO==idoLinAgAny,PROPNAME=="cantidad",cantidadLinea:QMAX!=null,initLin:INITIALDOUBLE)),
+										sum(cantidadLinea-(stCh?0:1)*(initLin!=null?initLin:0)))														
+	
+	 FactHierarchy(idtoEstado:IDTO,CLASSSUP=="ESTADO")
+	 DatValue(idoEstadoProp:IDO,IDTO==idtoEstado,PROPNAME=="rdn",VALOR=="Propuesta")  
+	then	
+	LinkedList<Value> agregadoList= dma.getValues(new Domain(idoTask,idtoTask),"línea");
+	
+	dma.printRule("================ PARTIR PRODUCCION POR DISPONIBILIDAD task IN:"+idoTask+" "+agregadoList.size()+" qOut:"+qOut+",Stok:"+qStockDispon+","+qStockInit);
+			
+	ObjectValue ovProductoAg= new ObjectValue(idoProducto,idtoProducto);
+	
+	if(agregadoList!=null && agregadoList.size()>0){
+		Domain domainTask = dma.creaIndividualOfClass(clsTask);	
+		dma.setValue(domainTask,"estado",new ObjectValue(idoEstadoProp,idtoEstado));
+		dma.setValue(domainTask,"es_despiece",new BooleanValue(esDespiece));
+		dma.addValue(idoCadena, idtoCadena, "producción", new ObjectValue(domainTask));	
+	
+		if(esDespiece){				
+			ObjectValue ag=(ObjectValue)agregadoList.get(0);
+			ovProductoAg= (ObjectValue)dma.getValue(new Domain(ag),"producto");		
+		}		
+		if(!esDespiece) qAgregado=qOut;
+		
+		Double deficitQ_Out= qOut-(qStockDispon.doubleValue()-qStockInit);
+		Double porcentDeficit=deficitQ_Out/qOut;
+		Double deficitAg=deficitQ_Out;
+		
+		if(esDespiece) deficitAg=qAgregado*porcentDeficit;
+		
+		dma.printRule(" QOUT task prop:"+domainTask.getIdo()+" out:"+qOut+",stock:"+qStockDispon+",porcent:"+porcentDeficit+",agregado:"+qAgregado+" deficAg:"+deficitAg);
+	
+		Domain domainLinAg = dma.creaIndividualOfClass("LÍNEA_MATERIA");
+		dma.setValue(domainLinAg,"cantidad",new DoubleValue(deficitAg));
+		dma.setValue(domainLinAg,"producto",ovProductoAg);
+		dma.addValue(domainTask,(esDespiece? "consumo":"línea"),new ObjectValue(domainLinAg));
+		
+		for(int i=0;i<agregadoList.size();i++){	
+			ObjectValue ag=(ObjectValue)agregadoList.get(i);
+			Domain agDom_i=new Domain(ag);
+			Double qAg= dma.getDoubleValue(agDom_i,"cantidad",true);
+			dma.printRule(" QAG "+qAg+" "+deficitAg);
+			if(qAg>0.0){
+				Double sobra=Math.min(qAg,deficitAg);
+				dma.setValue(agDom_i,"cantidad",new DoubleValue(qAg-sobra));
+				
+				deficitAg=deficitAg-sobra;								
+				if(deficitAg<=0) break;
+			}		
+		}
+	}	
+end
+
+rule "LINEAS PRODUCCIONES A CERO: LIMPIEZA"
+salience -200
+agenda-group "rules" when 
+		
+	FactHierarchy(idtoRoot:IDTO, CLASSSUP=="PRODUCCIÓN")
+	Individual(IDTO==idtoRoot,idoTask:IDO, STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+	
+	ObjValue(IDO==idoTask,p:PROPNAME=="consumo"||=="línea"||=="programación"||=="subtarea",idoLin:IDOVALUE!=null,ovLinea:OBJECTVALUE)			
+	DatValue(IDO==idoLin,PROPNAME=="cantidad",QMIN==0)
+	
+	num_lineas:Long() from accumulate((and Model(IDTO==idtoRoot,OP=="CAR",QMIN>=1,PROPNAME==p)
+										   ObjValue(IDO==idoTask,PROPNAME==p,idoLinAny:IDOVALUE!=null)), count(idoLinAny))
+	then	
+	dma.printRule("================> LINEAS PRODUCCIONES A CERO: LIMPIEZA");
+	dma.delValue(idoTask, idtoRoot,p,ovLinea);	
+	dma.deleteObject(idoLin, ovLinea.getValueCls());
+	//si es obligatoria y solo queda la que estoy eliminado, elimino el padre
+	if(num_lineas.intValue()==1){
+		dma.deleteObject(idoTask, idtoRoot);
+	}
+end
+
+rule "PRODUCCIONES A CERO: LIMPIEZA"
+salience -200
+agenda-group "rules" when 
+		
+	FactHierarchy(idtoRoot:IDTO, CLASSSUP=="PRODUCCIÓN")
+	Lock(IDTO==idtoRoot,idoTask:IDO, STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+	
+	not(ObjValue(IDO==idoTask,PROPNAME=="consumo"||=="línea"||=="programación"||=="subtarea"||=="ejecutado",idoLin:IDOVALUE!=null))			
+			
+	referencias:ArrayList() from collect(ObjValue(IDOVALUE==idoTask))
+	then	
+	dma.printRule("================> PRODUCCIONES A CERO: LIMPIEZA");
+	for(Object ref:referencias){
+		ObjValue ov=(ObjValue)ref;
+		dma.delValue(ov.getIDO(),ov.getIDTO(),ov.getPROPNAME(),ov.getOBJECTVALUE());
+	}
+	dma.deleteObject(idoTask, idtoRoot);
+end
+
+rule "LAS ENTRADAS Y SALIDAS DE TRABAJOS COMPLETOS, CON PROPORCIONES, DEBEN AJUSTARSE A LAS CONTRIBUCIONES"
+//Antes de calcular los consumos ajusto las proporciones, si las proporciones superan la salida reescalo esta.
+salience 70
+agenda-group "rules" when
+	
+
+	FactHierarchy(classRoot:CLASS, CLASSSUP=="PRODUCCIÓN")
+	Lock(idTask:ID,CLASSNAME==classRoot,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+		
+	//Lock(ID==idTask,LOCKEDBYUSER==true)
+			
+	ObjValue(ID==idTask, PROPNAME=="línea", idLineaTaskOUT:VALOR)
+	ObjValue(ID==idLineaTaskOUT, idoLineaTaskOUT:IDO, idtoLineaTaskOUT:IDTO, PROPNAME=="producto", idProductoTaskOUT:VALOR)
+	DatValue(ID==idLineaTaskOUT, PROPNAME=="cantidad", cantidadOUT:DOUBLEVALUE!=null)
+	
+	//Se trata de un trabajo completo y con proporciones, solamente cuando está incompleto se calculan proporciones, o tb puede modificarlas el usuario
+	exists( ObjValue(ID==idTask,PROPNAME=="proporción_intermedia",RANGENAME=="CONTRIBUCIÓN_LINEAL"))
+	exists( ObjValue(ID==idTask,PROPNAME=="consumo"))
+	
+	contribucionOUT: Double(doubleValue!=cantidadOUT)
+	     from accumulate((and	ObjValue(ID==idTask,PROPNAME=="proporción_intermedia",RANGENAME=="CONTRIBUCIÓN_LINEAL", idLineaPropTaskAcum:VALOR)
+								DatValue(ID== idLineaPropTaskAcum,PROPNAME=="cantidad", cantidadPropTaskAcum:DOUBLEVALUE)
+								DatValue(ID== idLineaPropTaskAcum,PROPNAME=="contribución_unitaria", contribucionTaskAcum:DOUBLEVALUE)),
+								
+						init( Double total= new Double(0);),
+						action( total= total + cantidadPropTaskAcum*contribucionTaskAcum; ),
+						result(Auxiliar.redondea(total,3)))	
+	eval(!contribucionOUT.equals(cantidadOUT))
+	then
+
+	dma.printRule("\n==============>RULE: LAS ENTRADAS Y SALIDAS DE TRABAJOS COMPLETOS, CON PROPORCIONES, DEBEN AJUSTARSE A LAS CONTRIBUCIONES contri, out "+contribucionOUT+","+cantidadOUT);	
+	//basta afectar a la salida, y otra regla ante un cambio de la salida reescala los consumos
+	DoubleValue dvCantidad = new DoubleValue(Auxiliar.redondea(contribucionOUT,3));
+	dma.setValue(idoLineaTaskOUT, idtoLineaTaskOUT, "cantidad", dvCantidad);
+end
+
+
+rule "PRECARGA EMBALAR"
+salience 100
+agenda-group "rules" when
+	ObjValue(CLASSNAME=="Planificar_Pedidos", idUTask:ID, idoUTask:IDO, idtoUTask:IDTO, PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)	
+	then
+		dma.printRule("==============PRECARGA EMBALAR");
+		
+		HashMap<String, Value> values=new HashMap<String, Value> ();							
+		values.put("rdn", new StringValue("Embalar"));		
+		instance instancefilter=dma.buildInstanceWith("SERVICIO", values, null, null,null);
+		HashSet<IDIndividual> idos=dma.loadIndividualsWithSatisficedFilter(instancefilter);
+		dma.printRule("LOCALIZADO= "+idos.size());
+end
+	 
+rule "PLANIFICAR PEDIDOS"
+
+agenda-group "rules" when
+    
+    f:ObjValue(CLASSNAME=="Planificar_Pedidos", idUTask:ID, idoUTask:IDO, idtoUTask:IDTO, PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+
+	ObjValue(ID==idUTask, PROPNAME=="sourceClass",idoPedido:IDOVALUE!=null,idtoPedido:VALUECLS)
+	FactHierarchy(IDTO==idtoPedido, clsSrc:CLASSSUP=="PEDIDO"||=="ARRENDAMIENTO")
+   	ObjValue(IDO==idoPedido,PROPNAME=="línea", idoLinea:IDOVALUE!=null)
+    DatValue(IDO==idoLinea,idtoLinea:IDTO,PROPNAME=="clave_producto", key:VALOR!=null)
+    ObjValue(IDO==idoLinea,PROPNAME=="producto",idoProducto:IDOVALUE!=null,clase:RANGENAME)	
+        
+    not((and 	FactHierarchy(IDTO==idtoPedido, CLASSSUP=="PEDIDO")
+    			ObjValue(IDO==idoUTask,PROPNAME=="targetClass", idoTg:IDOVALUE)
+				ObjValue(IDO==idoTg,PROPNAME=="línea", idoLineaAny:IDOVALUE)
+    			DatValue(IDO==idoLineaAny,PROPNAME=="clave_producto", VALOR==key)))
+	
+	not((and 	FactHierarchy(IDTO==idtoPedido, CLASSSUP=="ARRENDAMIENTO")
+    			ObjValue(IDO==idoUTask,PROPNAME=="targetClass", idoTg:IDOVALUE)
+				ObjValue(IDO==idoTg,PROPNAME=="subtarea", idoLineaAny:IDOVALUE)
+    			ObjValue(IDO==idoLineaAny,PROPNAME=="producto", IDOVALUE==idoProducto)))
+	
+		
+	cantidadAgregada:Double(doubleValue!=0.0) from accumulate((and	DatValue(idoLineaAny:IDO,PROPNAME=="clave_producto", VALOR==key)
+															ObjValue(ID==idUTask, PROPNAME=="sourceClass",idPedidoAny:VALOR!=null)
+    														ObjValue(ID==idPedidoAny,PROPNAME=="línea", IDOVALUE==idoLineaAny)
+    														DatValue(IDO==idoLineaAny,PROPNAME=="cantidad", q:DOUBLEVALUE!=null)),
+    													sum(q))
+    													
+									
+	target: ArrayList() from collect(ObjValue(IDO==idoUTask,PROPNAME=="targetClass", VALOR!=null))
+	
+	embalar:Domain() from accumulate((and 	ObjValue(IDO==idoUTask,PROPNAME=="targetClass", idoCad:IDOVALUE)
+											FactHierarchy(idtoTask:IDTO, CLASSSUP=="TAREA")
+											ObjValue(IDO==idoCad,PROPNAME=="producción",VALUECLS==idtoTask, idoTask:IDOVALUE!=null)
+											exists((and ObjValue(IDO==idoTask,PROPNAME=="programación", idoProgAny:IDOVALUE!=null)		
+														ObjValue(IDO==idoProgAny,PROPNAME=="documento", IDOVALUE==idoPedido)))											
+										),
+										init(Domain res=new Domain(0,0);),
+										action(res=new Domain(idoTask,idtoTask);),
+										result(res))	
+	
+	//ids:ArrayList()	from collect(IndividualValue(IDO==idoLinea,PROPNAME=="producto"||=="lote"||=="medida1"||=="medida2"||=="talla"||=="color",VALOR!=null))	
+		
+	cantEnv1: Double() from accumulate(DatValue(IDO==idoPedido,PROPNAME=="total_cantidad_envase1", q:QMIN!=null), sum(q))
+
+	servicioEmbalar:ArrayList() from collect(DatValue(CLASSNAME=="SERVICIO",PROPNAME=="rdn",VALOR=="Embalar"))
+												
+then
+	dma.printRule("====================  RULE PLANIFICAR PEDIDOS "+servicioEmbalar.size()+" "+cantEnv1+" "+embalar.getIdo());
+
+	Domain domainPlanif=null;
+	boolean esArrendamiento=clsSrc.equals("ARRENDAMIENTO");
+	
+	if( target.size()>0 ){
+		ObjValue oPlan=(ObjValue)target.get(0);
+		ObjectValue planValue=oPlan.getOBJECTVALUE();
+		domainPlanif= new Domain(planValue);
+	}else{
+		domainPlanif = dma.creaIndividualOfClass((esArrendamiento ? "TAREA":"PRODUCCIÓN_CADENA"));
+		dma.addValue(idoUTask, idtoUTask, "targetClass", new ObjectValue(domainPlanif));
+	}
+	
+	Domain domainLinea = new Domain(idoLinea,idtoLinea);//dma.creaIndividualOfClass(clase.equals("GÉNERO")?"LÍNEA_MATERIA":"LÍNEA_SERVICIO");
+	if(esArrendamiento){
+		domainLinea=dma.cloneIndividual(idoLinea,idtoLinea, dma.getIdClass("SUBTAREA"), "");
+	}
+	
+	dma.setValue(domainLinea, "cantidad",new DoubleValue(cantidadAgregada) );
+	dma.addValue(domainPlanif, (esArrendamiento?"subtarea":"línea"), new ObjectValue(domainLinea));	
+	
+	if(cantEnv1.doubleValue()>0.0 && servicioEmbalar.size()>0){
+		if(embalar.getIdo()==0){
+			dma.printRule("creando embalar");
+			embalar = dma.creaIndividualOfClass("TAREA");
+			Domain linEmb = dma.creaIndividualOfClass("LÍNEA_SERVICIO");
+			dma.setValue(linEmb, "cantidad",new DoubleValue(cantEnv1) );
+			
+			DatValue dv=(DatValue)servicioEmbalar.get(0);
+			dma.setValue(linEmb, "producto",new ObjectValue(dv.getIDO(),dv.getIDTO()));
+			
+			dma.addValue(embalar, "programación", new ObjectValue(linEmb));
+			dma.addValue(domainPlanif, "producción", new ObjectValue(embalar));				
+		}
+		dma.printRule("añadir programacion");
+		dma.addValue(embalar, "programación", new ObjectValue(domainLinea));
+	}	
+end
+
+rule "FECHA ESTIMADA ENTREGA ES LA MAXIMA DE SU PRODUCCION Y EMBALADO"
+agenda-group "rules" when 
+	FactHierarchy(idtoPedido:IDTO, CLASSSUP=="PEDIDO")
+	Individual(IDTO==idtoPedido,idoPedido:IDO,STATE!=Constants.INDIVIDUAL_STATE_DELETED)	
+	FactHierarchy(idtoTask:IDTO, CLASSSUP=="TAREA")
+	DatValue(IDTO==idtoTask,idoTask:IDO,PROPNAME=="fecha_fin",fEnd:DATE!=null)
+	exists((and ObjValue(IDO==idoTask,PROPNAME=="programación", idoProgAny:IDOVALUE!=null)
+				ObjValue(IDO==idoProgAny,PROPNAME=="documento", IDOVALUE==idoPedido)))	
+		
+then
+	dma.setValue(idoPedido,idtoPedido,"fecha_estimada_entrega",new TimeValue(fEnd));
+end
+
+rule "ESTADO DE PRODUCCIONES EN CADENA"
+salience 10 //mas prioridad que la instalacion
+agenda-group "rules" when 
+  	
+	Lock(idoCadena:IDO,CLASSNAME=="PRODUCCIÓN_CADENA",STATE==Constants.INDIVIDUAL_STATE_LOCK)	
+	ObjValue(IDO==idoCadena,idtoCadena:IDTO,PROPNAME=="estado",estado:OBJECTVALUE!=null,hasCHANGED==true)														
+then	
+	dma.printRule("==================== ESTADO DE PRODUCCIONES EN CADENA");
+	
+	LinkedList<Value> lineas= dma.getValues(new Domain(idoCadena,idtoCadena),"producción");			
+	for(int i=0;i<lineas.size();i++){	
+		ObjectValue ag=(ObjectValue)lineas.get(i);		
+		dma.setValue(new Domain(ag),"estado",estado);
+	}	
+	lineas= dma.getValues(new Domain(idoCadena,idtoCadena),"línea");			
+	for(int i=0;i<lineas.size();i++){	
+		ObjectValue ag=(ObjectValue)lineas.get(i);		
+		dma.setValue(new Domain(ag),"estado",estado);
+	}		
+end
+
+
+rule "ESCANDALLO RECURSIVO NO PERMITIDO"
+agenda-group "rules" when 
+		
+	FactHierarchy(idtoEscandallo:IDTO,CLASSSUP=="ESCANDALLO")
+	Lock(IDTO==idtoEscandallo,idoEscandallo:IDO,CLASSNAME=="ESCANDALLO",STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(IDO== idoEscandallo,PROPNAME=="componente", idoIN:IDOVALUE)	
+	ObjValue(IDO== idoIN,PROPNAME=="producto", idoProducto:IDOVALUE!=null,chIN:hasCHANGED)
+	DatValue(IDO== idoProducto,PROPNAME=="rdn", rdnProducto:VALOR!=null)					
+	ObjValue(IDO== idoEscandallo,PROPNAME=="salida", idoOUT:IDOVALUE)							
+	ObjValue(IDO== idoOUT,PROPNAME=="producto", IDOVALUE==idoProducto,chOUT:hasCHANGED)
+	eval(chIN||chOUT)
+then
+	throw new OperationNotPermitedException("El producto "+rdnProducto+" no puede aparecer a la vez en salida y entrada.");
+end
+
+rule "PRODUCCION EN BASE A CONSUMOS:INICIALIZACION"
+agenda-group "rules" when 
+    ObjValue(CLASSNAME=="Generar_produccion_automatica_basada_en_consumos",idoUTask:IDO, PROPNAME=="estadoRealizacion",idoEstado:IDOVALUE!=null)
+    DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    //Tambien interesa stock que son parte de un consumo de escandallo, por si son ficticios y hay que saldarlos con stock reales
+then
+	dma.printRule("====================  PRODUCCION EN BASE A CONSUMOS:INICIALIZACION");
+	String sql=	"	select distinct stock.\"tableId\" from stock 																			inner join 		\n"+
+				"	\"v_línea\" as lin 										on(	stock.producto=lin.producto and 													\n"+
+				"																lin.\"productoIdto\" in(select id from clase where rdn='GÉNERO'))		inner join		\n"+				
+				"	\"v_escandallo#línea_materia, línea_servicio\" as esc 	on(	lin.\"tableId\"=esc.\"línea_materia, línea_servicioId\" and 						\n"+
+				"																lin.idto=esc.\"línea_materia, línea_servicioIdto\")									\n"+				
+				"	where stock.cantidad<0 and esc.\"idProperty\" in(select id from propiedad_objeto where rdn in('salida','componente'))";													
+	
+	ArrayList<HashMap<Integer,Integer>> sources=new ArrayList<HashMap<Integer,Integer>>();
+	List<List<String>> resultadosbbdd=Query.executeQuery(dma.getDDM(), sql,false);
+	for(int i=0;i<resultadosbbdd.size();i++){
+		List<String> columnasfilai=resultadosbbdd.get(i);
+		Object objetoRepresentaFila=null;
+		if(!columnasfilai.isEmpty()){			 														 
+	   		int idoStock= QueryConstants.getIdo(Integer.parseInt(columnasfilai.get(0)),dma.getIdClass("STOCK"));
+	   		HashMap<Integer,Integer> map=new HashMap<Integer, Integer>();
+			map.put(idoStock, dma.getIdClass("STOCK"));
+			sources.add(map);
+	   		//dma.ruleGetFromServer(idoStock,dma.getIdClass("STOCK"),1,false);	   		
+	   	}
+	}		
+	if(sources.size()>0){
+		dma.printRule("ENCONTRADOS "+sources.size());
+	 	dma.setSourceBatch(sources);
+	}		
+end
+
+rule "DEBUG RUNTIME"
+salience 200 //menor prioridad que PRECARGA DE ESCANDALLOS POR TRABAJOS
+agenda-group "rules" when 
+    Individual(idProd:ID, CLASSNAME=="PRODUCCIÓN_MATERIAL")	
+then
+	dma.printRule("==================== DEBUG RUNTIME "+idProd);
+end
+
+rule "PRODUCCION EN BASE A CONSUMOS:RUNTIME"
+salience -200 //menor prioridad que PRECARGA DE ESCANDALLOS POR TRABAJOS
+agenda-group "rules" when 
+     ObjValue(CLASSNAME=="Generar_produccion_automatica_basada_en_consumos",idoUTask:IDO,idtoTask:IDTO, PROPNAME=="iterator",idoStock:IDOVALUE!=null,ovStock:OBJECTVALUE)
+     DatValue(IDO==idoStock, PROPNAME=="cantidad",cantidad:DOUBLEVALUE<0)
+     ObjValue(IDO==idoStock, PROPNAME=="producto",idoProducto:IDOVALUE!=null,ovProducto:OBJECTVALUE)
+     ObjValue(IDO==idoStock, PROPNAME=="lote",idoLote:IDOVALUE,ovLote:OBJECTVALUE!=null)         
+     FactHierarchy(idtoEstado:IDTO,CLASSSUP=="ESTADO")
+	 DatValue(idoEstado:IDO,IDTO==idtoEstado,PROPNAME=="rdn",VALOR=="Programado") 
+	  
+	 ids:ArrayList()	from collect(IndividualValue(IDO==idoStock,PROPNAME=="lote"||=="medida1"||=="medida2"||=="talla"||=="color",VALOR!=null))	
+	 
+	 provisional:ArrayList() from collect(DatValue(IDO==idoLote,PROPNAME=="provisional",BOOLEANVALOR==true))
+	 
+	 not((and 	FactHierarchy(idtoP:IDTO,CLASSSUP=="PRODUCCIÓN_MATERIAL"||=="PRODUCCIÓN_CADENA")
+	 			ObjValue(IDTO==idtoP,PROPNAME=="línea"||=="consumo",idoLinTmp:IDOVALUE)
+	 			ObjValue(IDO==idoLinTmp, PROPNAME=="producto",IDOVALUE==idoProducto)))
+	 			
+then
+	dma.printRule("====================  PRODUCCION EN BASE A CONSUMOS:RUNTIME "+provisional.size()+" "+ids.size());
+	
+	if(provisional.size()==0){
+		Domain domainCad= dma.creaIndividualOfClass("PRODUCCIÓN_CADENA");
+		//dma.setValue(domainCad, "rdn",new StringValue("&"+domainCad.getIdo()+"&"));
+		dma.setValue(domainCad, "estado",new ObjectValue(idoEstado,idtoEstado));
+	
+		dma.printRule("RUNTIME:CREANDO PROD CADENA NO PROVISIONAL q:"+cantidad+" stock:"+idoStock);
+		Domain domainLin= dma.creaIndividualOfClass("LÍNEA_MATERIA");
+		//COmo la cantidad es negativa tengo que cambiarle el signo para demandar
+		dma.setValue(domainLin, "cantidad",new DoubleValue(-cantidad));
+		dma.addValue(domainCad, "línea",new ObjectValue(domainLin));
+		dma.setValue(domainLin, "producto",ovProducto);
+		for(int i=0;i<ids.size();i++){
+			IndividualValue propAdic=(IndividualValue)ids.get(i);
+			dma.setValue(domainLin,propAdic.getPROPNAME(),propAdic.getCVALUE());				
+		}
+	}else{//Se trata de un stock seguramente ficticio generado negativo para no detener una primera ejecuciion de produccion auto.	
+		  // Tras meter las entradas reales de mercancia necesarias, en una segunda ejecucion precargamos las producciones que utilizan
+		  // los lotes con stock negativos, con objeto que la regla de partir compruebe si esta vez si hay sotck y parta para que se reasigne  
+		  
+		  	HashMap<Integer,HashSet<Integer>> idosmap=new HashMap<Integer,HashSet<Integer>>();
+		  	HashSet idosProd=new HashSet<Integer>();
+		  	Integer idtoProduccMat=dma.getIdClass("PRODUCCIÓN_MATERIAL");
+		  	
+		  	idosmap.put(idtoProduccMat,idosProd);
+		  	
+		  	String sql="select pro.\"tableId\" from \"producción_material\" as pro inner join \"línea_materia\" as lm on(lm.\"producción_materialIdCONSUMO\"=pro.\"tableId\")\n"+
+						" where lm.\"loteLOTE_PERECEDERO\"="+ovLote.getValue()/1000;
+			List<List<String>> resultadosbbdd=Query.executeQuery(dma.getDDM(), sql,false);
+			for(int i=0;i<resultadosbbdd.size();i++){
+				List<String> columnasfilai=resultadosbbdd.get(i);
+				Object objetoRepresentaFila=null;
+				if(!columnasfilai.isEmpty()){			 
+	   				Integer idoPro= QueryConstants.getIdo(Integer.parseInt(columnasfilai.get(0)),idtoProduccMat);
+					idosProd.add(idoPro);
+				}
+			}
+			if(idosProd.size()>0) dma.loadIndividuals(idosmap);
+			////////////
+			//VERSION FILTER
+			//int idtoproduccion = dma.getIdClass("PRODUCCIÓN_MATERIAL");
+			//int idprop_lote = dma.getIdProperty("lote");
+			//dma.printRule("RUNTIME:PRECARG INFO PROVISIONAL");
+			//Domain dominioFilter = dma.creaFilter(idtoproduccion);
+			//ObjectProperty consumoFilter= (ObjectProperty)dma.getDDM().SystemGetProperty(dominioFilter.getIdo(), idtoproduccion, dma.getIdProperty("consumo"));
+			//LinkedList<Integer> rangeList = consumoFilter.getRangoList();		
+				//fijamos todos los productos.
+			//instance filter = dma.getTreeObject(dominioFilter.getIdo());
+				//para depurar filter.setValue(dominioFilter.getIdo(),2,null,new StringValue("8000/22215367"));
+			//filter.addValue(rangeList.get(0), idprop_lote, ovLote);
+
+			//dma.loadIndividualsWithSatisficedFilter(filter);
+			//FIN VERSION
+	}			
+end
+
+rule "PARTIR LINEAS POR STOCK FICTICIOS"
+salience -200 //Para esten cargados los escandallos
+agenda-group "rules" when 
+	ObjValue(CLASSNAME=="Generar_produccion_automatica_basada_en_consumos",idto:IDTO,PROPNAME=="estadoRealizacion",VALUE!=null)
+	Individual(idoRoot:IDO, CLASSNAME=="PRODUCCIÓN_MATERIAL")	
+	
+	
+    ObjValue(IDO==idoRoot,propLinea:PROPNAME=="consumo",idoLineaIN:IDOVALUE,idtoLineaIN:VALUECLS)  
+    ObjValue(IDO==idoLineaIN, PROPNAME=="lote",idoLote:IDOVALUE,hasCHANGED==false)
+    DatValue(IDO==idoLineaIN, PROPNAME=="clave_producto",key:VALOR!=null)   
+	DatValue(IDO==idoLote, PROPNAME=="provisional",BOOLEANVALOR==true)
+	
+	FactHierarchy(CLASSSUP=="ALMACÉN",idtoAlmacen:IDTO)
+	ObjValue(VALUECLS==idtoAlmacen,IDO==idoLineaIN||==idoRoot, PROPNAME=="almacén_origen"||=="origen", idoAlmacen:IDOVALUE!=null)
+	
+	(or //O se trata de una linea de una produccion ya existente, que solo puede haber sido precargada debido a un stock negativo asociado
+		eval(idoLineaIN.intValue()>0)
+		//O bien teniendo uno provisional (que no tiene stock) hay un stock con existencias. Esto solo pasaria
+		// si la regla de producir lote aleatoriamente se dispara antes en un consumo que en una salida, no se puede checkear siempre 
+		// stock ya que no esta precargado por no estar bloqueada la linea
+		exists((and FactHierarchy(CLASSSUP=="STOCK",idtostock:IDTO)
+				DatValue(IDTO==idtostock,idoStock:IDO,PROPNAME=="clave_producto", VALOR==key)
+				DatValue(IDO==idoStock,PROPNAME=="cantidad",cantidad:QMIN>0)						   
+				ObjValue(IDO==idoStock,PROPNAME=="almacén_stock",IDOVALUE==idoAlmacen))))	        	    			  
+then
+	dma.printRule("====================  PARTIR LINEAS POR STOCK FICTICIOS ");	
+    dma.delValues(idoLineaIN,idtoLineaIN,"lote");
+end 
+
+
+rule "MANTENIMIENTO: ORDENES: INICIALIZACION"
+agenda-group "rules" when 
+
+    ObjValue(CLASSNAME=="Mantenimiento_ordenes",idoUTask:IDO, PROPNAME=="estadoRealizacion",idoEstado:IDOVALUE!=null)
+    DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    	
+	DatValue(IDO==idoUTask,PROPNAME=="rdn",param:VALOR!=null)
+	eval(param.contains("RESET"))
+then
+	dma.printRule("====================  MANTENIMIENTO: ORDENES: INICIALIZACION");
+	
+ 	String sql="";		 
+ 	
+	sql=	"select pm.\"tableId\" from \"producción_material\" as pm inner join estado on(estado.\"tableId\"=pm.estado) where estado.rdn in('Planificado','Propuesta')";
+						
+	List<List<String>> resultadosbbdd=Query.executeQuery(dma.getDDM(), sql,false);
+	dma.printRule(" query size "+resultadosbbdd.size());
+	int idtoProduccion=dma.getIdClass("PRODUCCIÓN_MATERIAL");
+	for(int i=0;i<resultadosbbdd.size();i++){
+		List<String> columnasfilai=resultadosbbdd.get(i);
+		Object objetoRepresentaFila=null;
+		if(!columnasfilai.isEmpty()){			 	
+			dma.printRule(" nueva fila "+i+" col "+columnasfilai.get(0) ); 													 
+	   		int idoLinea= QueryConstants.getIdo(Integer.parseInt(columnasfilai.get(0)),idtoProduccion);
+	   		dma.deleteObject(idoLinea, dma.getIdClass("PRODUCCIÓN_MATERIAL"));	   		   	
+	   	}
+	}				
+	
+end
+
+rule "PLANIFICACION AUTOMATICA: FLUJO"
+salience -200
+agenda-group "rules" when 
+	ObjValue(flujo:CLASSNAME=="Mantenimiento_ordenes"||=="Provision_demanda_futura"||=="Generar_ordenes",idoUTask:IDO,idtoTask:IDTO,PROPNAME=="estadoRealizacion",idoEstado:IDOVALUE!=null)      
+	DatValue(IDO==idoUTask,PROPNAME=="rdn",rdnAction:VALOR!=null,hasCHANGED==true)
+	eval(rdnAction.contains("REPLANNING"))	
+then
+	dma.printRule("====================  PLANIFICACION AUTOMATICA: FLUJO "+flujo+", "+rdnAction);
+	ArrayList<Domain> sources= new ArrayList<Domain>();	
+	HashMap<String,Object> mapParamValue= new HashMap<String,Object>();	
+	String nextAction="";
+	String param="";
+	
+	if(flujo.equals("Mantenimiento_ordenes")){
+		nextAction="Provision_demanda_futura";
+		param="REPLANNING.SEGMENTO=FABRICADO";		
+		dma.printRule("next action Provision_demanda_futura fabricado");
+	}else	
+	if(flujo.equals("Provision_demanda_futura")){
+		nextAction="Generar_ordenes";
+		param=rdnAction;
+		dma.printRule("next action Generar_ordenes mismo param "+param);
+	}else	
+	if(flujo.equals("Generar_ordenes") && rdnAction.contains("FABRICADO")){
+		nextAction="Provision_demanda_futura";
+		param="REPLANNING.SEGMENTO=MATERIA_PRIMA";		
+		dma.printRule("next action Provision_demanda_futura MATERIA_PRIMA");
+	}	
+	if(nextAction!=null && nextAction.length()>0){
+		dma.printRule("ejecutando Next action");
+		dma.requestExecutionAction(nextAction,param, sources, mapParamValue);		
+	}else{
+		dma.printRule("No hay Next action");
+	}
+	dma.consumirEventoCambio(idoUTask,"rdn");
+end
+
+/*
+rule "PLANIFICACION AUTOMATICA: TRIGGER USUARIO: PRODUCCION EXISTENTE CAMBIADA"
+agenda-group "rules" when 
+	FactHierarchy(CLASSSUP=="PRODUCCIÓN",idtoProd:IDTO)
+	Lock(IDTO==idtoProd,idoProd:IDO>0,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+	not UserChoice(NAME=="REPLANNING")
+	
+    exists((and ObjValue(IDO==idoProd,PROPNAME=="consumo"||=="línea",idoLinea:IDOVALUE,chLin1:hasCHANGED)
+    			IndividualValue(IDO==idoLinea,chLin2:hasCHANGED)
+    			eval(chLin1||chLin2)))    			  
+	jb:JBossEngine()    			
+then
+	dma.printRule("====================|  PLANIFICACION AUTOMATICA: TRIGGER USUARIO: PRODUCCION EXISTENTE CAMBIADA");
+	
+	if(dma.showQuestion("¿Desea replanificar la producción?")){
+		ArrayList<Domain> sources= new ArrayList<Domain>();	
+		HashMap<String,Object> mapParamValue= new HashMap<String,Object>();	
+		dma.requestExecutionAction("Mantenimiento_ordenes","REPLANNING.RESET", sources, mapParamValue);
+	}
+end
+*/

@@ -1,0 +1,54 @@
+package dynagent.tools.replica.importers;
+
+public class ConstantsImportReplica {
+	
+	//NODOS
+	public final static String UPDATE_REPLICA = "UPDATE_REPLICA";
+	public final static String REPLICATION = "REPLICATION";
+	public final static String NOMODIFYDB = "NOMODIFYDB";
+	
+	public final static String CENTRAL = "CENTRAL";
+	public final static String TIENDAS = "TIENDAS";
+	public final static String CLASS = "CLASS";
+	
+	//ATRIBUTOS
+	public final static String ALMACEN_CENTRAL = "ALMACEN_CENTRAL";
+	public final static String CLASSES_NAME = "CLASSES_NAME";
+	public final static String PROP_LINK = "PROP_LINK";
+	public final static String CLASSES_NAME_SUP = "CLASSES_NAME_SUP";
+	
+	/*<UPDATE_REPLICA ALMACEN_CENTRAL="">
+	  	<REPLICATION>
+		 	<CENTRAL>
+		 		<TABLE TABLE_NAME="" TABLE_NAME_INSTANCIAS="">
+					<CLASS CLASSES_NAME="" CLASSES_NAME_SUP="" PROP_LINK="" DESTINATION_IS_ACTUAL=""/> DESTINATION_IS_ACTUAL es Y o N
+				</TABLE>
+		 	</CENTRAL>
+		 	<TIENDAS>
+		 		<TABLE TABLE_NAME="" TABLE_NAME_INSTANCIAS="">
+					<CLASS CLASSES_NAME="" CLASSES_NAME_SUP="" PROP_LINK="" DESTINATION_IS_ACTUAL=""/> DESTINATION_IS_ACTUAL es Y o N
+				</TABLE>
+		 	</TIENDAS>
+	  	</REPLICATION>
+	  	<REPLICATION_SEND>
+			<TABLE TABLE_NAME="" SEND_DESTINATION="" SEND_INCREMENTAL="" SEND_ORIGIN=""/>
+	  	</REPLICATION_SEND>
+	  	<REPLICATION_NOLOCALCONTROL>
+		 	<CENTRAL>
+				<CLASS CLASSES_NAME="" CLASSES_NAME_SUP="" PROP_LINK="" DESTINATION_IS_ACTUAL=""/> DESTINATION_IS_ACTUAL es Y o N
+		 	</CENTRAL>
+		 	<TIENDAS>
+				<CLASS CLASSES_NAME="" CLASSES_NAME_SUP="" PROP_LINK="" DESTINATION_IS_ACTUAL=""/>
+		 	</TIENDAS>
+	  	</REPLICATION_NOLOCALCONTROL>
+		<NOMODIFYDB>
+			<CENTRAL>
+				<CLASS CLASSES_NAME=""/>
+		 	</CENTRAL>
+		 	<TIENDAS>
+				<CLASS CLASSES_NAME=""/>
+		 	</TIENDAS>
+		</NOMODIFYDB>
+	  </UPDATE_REPLICA>*/
+	
+}

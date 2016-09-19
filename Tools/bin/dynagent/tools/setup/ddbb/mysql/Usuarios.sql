@@ -1,0 +1,1 @@
+INSERT INTO Usuarios (Login,Pwd) VALUES ('poner_login',AES_ENCRYPT('poner_pwd', 'dynamicIntelligent'));

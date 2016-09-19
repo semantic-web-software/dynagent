@@ -1,0 +1,236 @@
+//created on: 18-may-2011
+package dynagent.ruleengine.src.ruler.ERPrules
+
+import dynagent.common.basicobjects.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import org.drools.WorkingMemory;
+import dynagent.tools.owl.*;
+global DataModelAdapter dma;
+
+/*rule "DEBUG FACT MODULOS NEGOCIO"
+ salience 200
+ agenda-group "rules" when 
+	IndividualValue(CLASSNAME=="MÓDULO_NEGOCIO",idModulo:ID!=null,PROPNAME=="rdn", nombreModulo:VALOR!=null)
+ 	valores:ArrayList(size>0) from collect(IndividualValue(ID==idModulo, claseModulo:VALOR!=null))
+    
+then
+	System.err.println("\n\n==> DEBUG FACT MODULOS NEGOCIO modulo:"+nombreModulo+"  valores:"+valores);
+end
+*/
+
+rule "DETECTAR DEPENDENCIAS ENTRE MÓDULOS"
+ salience 200
+ agenda-group "rules" when 
+	IndividualValue(CLASSNAME=="MÓDULO_NEGOCIO",idModulo:ID!=null,PROPNAME=="rdn", nombreModulo:VALOR!=null)
+ 	IndividualValue(ID==idModulo,PROPNAME=="clases", claseModulo:VALOR!=null)
+  	IHerencia(CLASSSUP==claseModulo,claseB:CLASS)
+    IModel(RANGENAME==claseB,propiedad:PROPNAME,claseA:CLASSNAME,OP!=null)
+    
+    not(IHerencia(CLASS==claseA,CLASSSUP=="UTASK"))
+    
+    IModel(PROPNAME==propiedad,CLASSNAME==claseA,QMIN>=1,OP=="CAR")
+    //claseA no sea de ese modulo
+    not(
+    	(and
+    		IndividualValue(ID==idModulo,PROPNAME=="clases", claseModulo2:VALOR!=null)
+ 	   		IHerencia(CLASSSUP==claseModulo2,CLASS==claseA)
+ 	   )) 	
+ 	not(IHerencia(CLASS==claseA,CLASSSUP=="UTASK"))   
+//OBTENEMOS SI LA CLASE A QUE DEPENDE DE LA B PERTENECE A ALGÚN MODULO
+modulosClaseA: ArrayList() 
+            	from accumulate(
+            				 (and 
+            				 		IndividualValue(CLASSNAME=="MÓDULO_NEGOCIO",idModulo2:ID!=null,PROPNAME=="rdn", nombreModulo2:VALOR!=null)
+ 									IndividualValue(ID==idModulo2,PROPNAME=="clases", claseAosup:VALOR!=null)
+  									IHerencia(CLASSSUP==claseAosup,CLASS==claseA)
+            				 	
+            				 	
+            				  ),
+                              init	(ArrayList<String> lineasfacturadas2 = new ArrayList<String>();
+          		              ),
+                              action( 
+                              		lineasfacturadas2.add(nombreModulo2);
+                           ),                            
+                             result(lineasfacturadas2))	
+
+ 	
+ 	
+ 	
+then
+	System.err.println("\n\n========> DETECTAR DEPENDENCIAS/INCONSISTENCIAS MÓDULOS=====================");
+	if(modulosClaseA.size()>0){
+		System.err.println("\n  La claseA:"+claseA+" que pertence al modulo/s="+modulosClaseA+"  depende de claseB:"+claseB+" del modulo:"+ nombreModulo+" por enlace obligatorio con propiedad:"+propiedad);
+	}else{
+		System.err.println("\n  La claseA:"+claseA+" que no pertenece a ningún  modulo  depende de claseB:"+claseB+" del modulo:"+ nombreModulo+" por enlace obligatorio con propiedad:"+propiedad);
+	}
+end
+
+rule "MODELO NO ADAPTADO A IMPLEMENTACION BBDD RELACIONAL"
+salience 1
+agenda-group "rules" when 
+		F:IModel(OP=="AND"||=="OR",claseHija:CLASSNAME,propiedad:PROPNAME)
+		//eval(Auxiliar.printAndReturnTrue("debug rule f:"+F))
+		IPropiedad(NAME==propiedad,OBJECTPROPERTY==true)
+		IHerencia(CLASS==claseHija,clasePadre:CLASSSUP!=CLASS)
+		exists(IModel(OP!=null,CLASSNAME==clasePadre,PROPNAME==propiedad))//la clase padre tiene la propiedad	
+		not(IHerencia(CLASS==claseHija,CLASSSUP=="UTASK"||=="REPORT"||=="PARAMS"))//clases que no persisten no tienen pq tener esa limitacion bd relacional
+		//eval(Auxiliar.printAndReturnTrue("debug rule f:"+F))
+
+		not(
+			(and
+				IModel(OP=="AND"||=="OR",CLASSNAME==claseHija,PROPNAME==propiedad, rangoHija:RANGENAME!=null)
+				IModel(OP=="AND"||=="OR",CLASSNAME==clasePadre,PROPNAME==propiedad,rangoPadre:RANGENAME!=null)		
+				IHerencia(rangoCompatible:CLASS,CLASSSUP==rangoHija)
+				IHerencia(CLASS==rangoCompatible,CLASSSUP==rangoPadre)				
+				//IHerencia(CLASS==rangoHija,CLASSSUP==rangoPadre)								
+			)
+		)
+	then
+		System.err.println("\n\n\n=================ERROR--ERROR: MODELO NO ADAPTADO A IMPLEMENTACION BBDD RELACIONAL:");
+		System.err.println("... propiedad="+propiedad+"   clasePadre="+clasePadre+"  claseHija:"+claseHija);
+end
+
+
+rule "WARNING PROPIEDAD SIN RANGO"
+salience 2
+agenda-group "rules" when 
+		fmodel:IModel(clase:CLASSNAME!="UTASK"&&!="ACTION"&&!="ACTION_PARAMS"&&!="EXPORT"&&!="QUESTION_TASK",propiedad:PROPNAME)
+		not(IModel(CLASSNAME==clase,OP=="AND"||=="OR"||=="ONEOF"||=="DEFVAL",PROPNAME==propiedad,RANGENAME!=null))
+	then
+		System.err.println("\n\n=======WARNING PROPIEDAD SIN RANGO: PROPIEDAD:"+propiedad+" DOMINIO:"+clase+" factmodel:\n"+fmodel);
+end
+
+rule "ERROR INVERSA, NO EXISTE DEFINICION DE LA PROP INVERSA"
+agenda-group "rules" when 
+		IPropiedad(propiedad:NAME!=null,propInversa:INVERSA!=null)
+		IModel(OP=="AND"||=="OR",dominio:CLASSNAME,rango:RANGENAME,PROPNAME==propiedad)
+		eval(!rango.contains(","))//las virtualabstracts estan mal definidas se sabe y no se quiere que lance warning
+		not(IModel(OP!=null,CLASSNAME==rango,PROPNAME==propInversa, rangoInversa:RANGENAME!=null))
+	then
+		System.err.println("\n\n\n=================ERROR--ERROR: ERROR INVERSA, NO EXISTE DEFINICION DE LA PROP INVERSA: propiedad="+propiedad+"   dominio="+dominio+" rango= "+rango+" inversa="+propInversa);
+end
+
+rule "ERROR EN INVERSA, NO SON COHERENTES LOS RANGOS"
+salience 3
+agenda-group "rules" when 
+		IPropiedad(propiedad:NAME!=null,propInversa:INVERSA!=null)
+		IModel(OP=="AND"||=="OR",dominio:CLASSNAME,rango:RANGENAME,PROPNAME==propiedad)
+		IModel(op:OP=="AND"||=="OR",CLASSNAME==rango,PROPNAME==propInversa, rangoInversa:RANGENAME!=null)
+	//	eval(Auxiliar.printAndReturnTrue("debug errorInversa no coher rangos: dominio:"+dominio+" propiedad:"+propiedad+"  rango:"+rango+"  propInversa:"+propInversa+"  rangoInversa:"+rangoInversa))
+		not(
+			(and
+				IModel(OP=="AND"||=="OR",CLASSNAME==dominio,rangoAux:RANGENAME,PROPNAME==propiedad)
+				IModel(OP=="AND"||=="OR",CLASSNAME==rangoAux,PROPNAME==propInversa, rangoInversaAux:RANGENAME!=null)
+				IHerencia(CLASS==rangoInversaAux,CLASSSUP==dominio)
+			)
+		)
+		not(
+			(and
+				IModel(OP=="AND"||=="OR",CLASSNAME==dominio,rangoAux2:RANGENAME,PROPNAME==propiedad)
+				IModel(OP=="AND"||=="OR",CLASSNAME==rangoAux2,PROPNAME==propInversa, rangoInversaAux2:RANGENAME!=null)
+				IHerencia(CLASS==dominio,CLASSSUP==rangoInversaAux2)
+			)
+		)			
+	then
+		System.err.println("\n\n\n=================ERROR--ERROR: ERROR EN INVERSA, NO SON COHERENTES LOS RANGOS: propiedad="+propiedad+"   propiedad inversa:"+propInversa);
+		System.err.println("  dominio="+dominio+"  rango:"+rango+"\n   rangoInversa:"+rangoInversa+"  inversa="+propInversa+"   OPpropiedadinversa:"+op);
+end
+
+rule "WARNING DATAPROPERTY SIN CARDMAXIMA 1"
+salience 1
+agenda-group "rules" when 
+		IPropiedad(propiedad:NAME!="imagen"&&!="clases"&&!="propiedades",DATAPROPERTY==true)
+		IModel(clase:CLASSNAME,PROPNAME==propiedad)
+		not(IModel(CLASSNAME==clase,PROPNAME==propiedad,OP=="CAR",QMAX<=1))
+then
+	System.err.println("  WARNING DATAPROPERTY SIN CARD MAXIMA 1: clase:"+clase+"  propiedad:"+propiedad);
+end
+
+//REGLAS DEBUG, MUY INTERESANTES PARA DEPURAR PROBLEMAS
+/*rule "ERROR FACT INDIVIDUALLEVEL CON LEVEL FILTER"
+salience 100 //mas prioridad que instalacion
+no-loop true
+ agenda-group "rules" when 
+   	
+	i:IndividualValue(LEVEL==Constants.LEVEL_FILTER)
+then
+	dma.printRule("\n\n ===============ERROR FACT INDIVIDUALLEVEL CON LEVEL FILTER:"+i.toStringAmpliado());
+end
+
+rule "DEBUG INDIVIDUALLEVEL DE STOCK"
+salience 500 //mas prioridad que instalacion
+no-loop true
+ agenda-group "rules" when 
+   	
+   	Individual(idoStock:IDO!=null,CLASSNAME=="STOCK")
+   	facts:ArrayList() from collect(IndividualValue(IDO==idoStock))
+then
+	dma.printRule("\n\n ===============DEBUG INDIVIDUALLEVEL DE STOCK idoStock"+idoStock+"   FACTS:\n "+facts);
+end
+
+rule "ERROR MODEL CON IDO NO NULL O OP NULL"
+salience 100 //mas prioridad que instalacion
+no-loop true
+ agenda-group "rules" when 
+   	
+	 i:Model(OP==null||IDO!=null,PROPNAME!="sourceClass"&&!="targetClass")
+then
+	dma.printRule("\n\n ===============  ERROR MODEL CON IDO NO NULL O OP NULL:"+i);
+end
+
+rule "ERROR RANGE FILTER op no or"
+salience 100 //mas prioridad que instalacion
+no-loop true
+ agenda-group "rules" 
+ when 
+   	
+	rf:RangeFilter(OP!=Constants.OP_UNION)
+then
+	dma.printRule("\n\n ===============ERROR RANGE FILTER op no or:"+rf);
+end
+
+rule "ERROR RANGE FILTER APUNTANDO A ALGO QUE NO ES UN FILTRO O NO ESTA EN MOTOR"
+salience 100 //mas prioridad que instalacion
+no-loop true
+ agenda-group "rules" when 
+   	
+	rf:RangeFilter(idfiltro:VALUE)
+	eval(dma.getDDM().getLevelOf(Integer.parseInt(idfiltro))!=Constants.LEVEL_FILTER)
+then
+	dma.printRule("\n\n ===============ERROR RANGE FILTER APUNTANDO A ALGO QUE NO ES UN FILTRO O NO ESTA EN MOTOR:"+rf);
+end
+
+rule "ERROR PROPNAME O CLASSNAME NULL"
+salience 100 //mas prioridad que instalacion
+no-loop true
+ agenda-group "rules" when 
+   	
+   	facts:ArrayList(size>0) from collect(	f:Fact(PROPNAME==null||CLASSNAME==null))
+
+then
+	if(facts.size()<15){
+		dma.printRule("\n\n =============ERROR PROPNAME O CLASSNAME NULL:"+Auxiliar.IteratorToStringByRows(facts.iterator()));
+	}
+	else{
+		dma.printRule("\n\n =============ERROR PROPNAME O CLASSNAME NULL. numero facts erroneos:"+facts.size()+"  fact.get(0):"+facts.get(0));
+	}
+end
+
+rule "ERROR IDO NULL EN FACT QUE NO ES DE MODEL"
+salience 100 //mas prioridad que instalacion
+no-loop true
+ agenda-group "rules" when 
+   	
+	f:Fact(IDO==null)
+	eval(!(f instanceof Model))
+then
+	dma.printRule("\n\n =============ERROR IDO NULL EN FACT QUE NO ES DE MODEL:"+f);
+end
+*/

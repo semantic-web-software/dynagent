@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="iso-8859-2"?>
+<TRANSFORMATION>
+
+	<!-- <DELETE IDOS_MAYORES_QUE="78403"/> lo hare manualmente porque hay que ejecutar DBCC CHECKIDENT ('o_Reg_Instancias_Index', RESEED, 78403) -->
+
+	<CLASS CLASS_NEW="CLIENTE_EMPRESA" CLASS_OLD="CLIENTE"> <!-- si classOld ya no esta en instance borrar-->
+		<!--<PROPERTY PROP_OLD="nombre" PROP_NEW="razón_social"/>-->   <!--cambio de nombre asociado a un cambio de clase-->
+	</CLASS>
+
+	<ACTION_PROPERTY CLASS="GÉNERO" PROP="aplica_trazabilidad" VALUE="true" ACTION="DEFAULT"/>  <!--si no la tiene, creo las DPs, para saber el tipo d la property a crear necesito un motor-->
+
+	<!--<PROPERTY CLASS="CLIENTE_EMPRESA" PROP_NEW="nombre" PROP_OLD="razon_social"/>   es un cambio de nombre, se permite, pero aqui no hace falta-->
+
+	<SEGMENTATION_DATA CLASS_DEST="EMBALADO_DE_CONTENEDOR" PROP_NEW="tipo_embalado" CLASS_SRC_SPEC="GÉNERO">   <!--PARA DEFINIR EL ENLACE, OPCIONAL CLASS_SRC, de momento obligatorio-->
+		<DATA PROP_OLD="bultos_por_palet" PROP_NEW="envase1Xenvase2" VALUE_CLS="double"/>
+		<DATA PROP_OLD="unidades_por_bulto" PROP_NEW="cantidadXenvase1" VALUE_CLS="double"/>
+	</SEGMENTATION_DATA>
+	<SEGMENTATION_DATA CLASS_DEST="LOCALIDAD" PROP_NEW="localidad">  <!--specializados de classSrc CLASS_SRC_SPEC="INFORMACIÓN_CONTACTO"-->
+		<DATA PROP_OLD="localidad" PROP_NEW="rdn"/>  <!--PASO DE DATOS JUNTO CON POSIBLE CAMBIO DE NOMBRE-->
+		<DATA PROP_OLD="provincia" PROP_NEW="provincia"/>  <!--PASO DE DATOS JUNTO CON POSIBLE CAMBIO DE NOMBRE-->
+	</SEGMENTATION_DATA>
+
+	<!--<ACTION_PROPERTY VALUE_CLS="PROVINCIA" PROP="provincia" ACTION="DEL"/>  borrado de PROPs, usado ahora mismo para OP valuecls opcional, specializados de class CLASS_SPEC="INFORMACIÓN_CONTACTO" -->
+
+	<ACTION_PROPERTY CLASS_SPEC="DISTRIBUIDOR" PROPERTIES_OF_CLASS="SUJETO_COMERCIAL" ACTION="DEL"/>
+	
+	<ACTION_PROPERTY CLASS_SPEC="LÍNEA" PROP="descripción" ACTION="DEL"/>
+	
+	<PROPERTY PROP_NEW="documento" PROP_OLD="pedido"/>  <!--los idProp antiguos permanecen al importar el modelo si se elige mantener los ids -->
+	<PROPERTY PROP_NEW="documento" PROP_OLD="albarán"/>
+
+</TRANSFORMATION>

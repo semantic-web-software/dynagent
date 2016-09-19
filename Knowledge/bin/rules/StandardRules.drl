@@ -1,0 +1,84 @@
+package dynagent.ruleengine.src.ruler.ERPrules;
+import dynagent.ruleengine.src.ruler.ERPrules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+
+import java.security.Security;
+import javax.crypto.*;
+import javax.crypto.spec.SecretKeySpec;
+
+global DataModelAdapter dma;
+
+rule "PRODUCCION AUTO INFERIDA: LICENCIA CUSTOM"
+agenda-group "rules" when 	
+	ObjValue(CLASSNAME=="Generar_produccion_automatica_basada_en_consumos",idto:IDTO,PROPNAME=="estadoRealizacion",VALUE!=null)
+	eval(dma.isSubscriptionStandard())
+then
+	dma.printRule("=============PRODUCCION AUTO INFERIDA: LICENCIA CUSTOM MARZO 2013");
+	
+   	Calendar current=Calendar.getInstance();   		
+	Calendar limite=Calendar.getInstance();
+	limite.set(Calendar.YEAR,2013);
+	limite.set(Calendar.DAY_OF_YEAR,180);
+
+	if(current.after(limite))	throw new OperationNotPermitedException("El tiempo de prubea para ejecutar esta acción ha sido excedido.\nAdquiera la versión custom");
+end
+
+rule "MI EMPRESA HA DE SER UNICA"
+salience -200
+agenda-group "inicializerules" when 
+	
+	FactHierarchy(CLASSSUP=="MI_EMPRESA", namecls:CLASS)
+	Individual(CLASSNAME==namecls, id1:ID!=null,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+	Individual(CLASSNAME==namecls, id2:ID!=null&&!=id1,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+	eval(dma.isSubscriptionStandard())
+then
+	dma.printRule("\n\n =============MI EMPRESA HA DE SER UNICA:  idEmpresa1="+id1+" idEmpresa2="+id2);
+	throw new OperationNotPermitedException("SÓLO SE PUEDE DEFINIR UNA EMPRESA EN LA VERSIÓN STANDARD");
+end
+
+rule "MI EMPRESA HA DE SER UNICA: grupo rules"
+salience -200
+agenda-group "rules" when 
+	
+	FactHierarchy(CLASSSUP=="MI_EMPRESA", namecls:CLASS)
+	Individual(CLASSNAME==namecls, id1:ID!=null,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+	Individual(CLASSNAME==namecls, id2:ID!=null&&!=id1,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+	eval(dma.isSubscriptionStandard())
+then
+	dma.printRule("\n\n ============= MI EMPRESA HA DE SER UNICA: grupo rules:  idEmpresa1="+id1+" idEmpresa2="+id2);
+	throw new OperationNotPermitedException("SÓLO SE PUEDE DEFINIR UNA EMPRESA EN LA VERSIÓN STANDARD");
+end
+
+rule "NO PERMITIR SUBIR DISEÑO REPORTS"
+agenda-group "inicializerules" when
+	jb:JBossEngine();
+   	Model(name:CLASSNAME=="INFORME"||=="SUBINFORME", PROPNAME=="archivo", prop:PROP, idto:IDTO, OP=="AND")//esta definida la clase informe o subinforme en el modelo
+   	eval(dma.isSubscriptionStandard())
+then
+   	dma.printRule("\n\n ============= NO PERMITIR SUBIR DISEÑO REPORTS: "+name);
+   	FactAccess factAccess=new FactAccess(idto,null,prop,null,null,null,null,null,1,4,Constants.MAX_ACCESS_PRIORITY,dma.getDDM());
+	jb.insertFact(factAccess);
+end
+
+rule "NO PERMITIR ENVIO DE CONFIGURACIONES A BASE DE DATOS"
+agenda-group "rules"	when   	
+	FactHierarchy(CLASSSUP=="ALIAS"||=="FUNCTIONAL_AREA"||=="CAMPO_DESTACADO"||=="CAMPO_REQUERIDO"||=="COLUMNAS_TABLA"||=="GRUPO_CAMPOS"||=="MÁSCARA_CAMPO"||=="MENÚ"||=="ORDEN_RELATIVO_CAMPOS"||=="USERROL"||=="PERMISO"||=="TAMAÑO_TABLA"||=="TAMAÑO_CAMPO"||=="VALOR_POR_DEFECTO",namecls:CLASS)
+	Individual(CLASSNAME==namecls,idto:IDTO,ido:IDO)
+	ObjValue(idoUTask:IDO, PROPNAME=="targetClass",IDOVALUE==ido)
+	ObjValue(IDO==idoUTask ,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+    eval(dma.isSubscriptionStandard())
+then
+	dma.printRule("\n\n ============= NO PERMITIR ENVIO DE CONFIGURACIONES A BASE DE DATOS:"+namecls);
+	throw new OperationNotPermitedException("No se puede modificar ni crear "+dma.getDDM().getAliasOfClass(idto)+" en la versión Standard");	
+end
+

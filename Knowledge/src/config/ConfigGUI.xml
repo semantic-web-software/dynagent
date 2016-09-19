@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<CONFIG>
+	<PROPERTIES>
+	</PROPERTIES>
+	<CLASSES>
+	</CLASSES>
+
+	<UTASKS>
+		
+		<!--AREA CONFIGURACIÓN-->
+
+	
+				
+		<UT A_FUNC="Configuración"  USERROL="administrador"  NAME="USUARIO">
+			<TG_CLASS CLASS="USER"  />
+		</UT>
+		<UT A_FUNC="Configuración"  USERROL="administrador"  NAME="PERFIL_USUARIO">
+			<TG_CLASS CLASS="USERROL"  />
+		</UT>
+		
+
+		<!--AREA CONFIGURACIÓN AVANZADA-->
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="CAMPOS_DESTACADOS">
+			<TG_CLASS CLASS="CAMPOS_DESTACADOS"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="NÚMERO VALORES">
+			<TG_CLASS CLASS="CARDINALIDAD"  />
+		</UT>
+
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="COLUMNAS_TABLA">
+			<TG_CLASS CLASS="COLUMNAS_TABLA"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="ÍNDICE">
+			<TG_CLASS CLASS="ÍNDICE"  />
+		</UT>
+
+
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="ORDEN_RELATIVO_CAMPOS">
+			<TG_CLASS CLASS="ORDEN_RELATIVO_CAMPOS"  />
+		</UT>
+
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="TAMAÑO_TABLA">
+			<TG_CLASS CLASS="TAMAÑO_TABLA"  />
+		</UT>
+		
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="GRUPO_CAMPOS">
+			<TG_CLASS CLASS="GRUPO_CAMPOS"  />
+		</UT>
+		
+		
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="ACCIÓN">
+			<TG_CLASS CLASS="ACCIÓN"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="INDIVIDUO">
+			<TG_CLASS CLASS="INDIVIDUO"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="ALIAS">
+			<TG_CLASS CLASS="ALIAS"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="ÁREA FUNCIONAL">
+			<TG_CLASS CLASS="FUNCTIONAL_AREA"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="MÁSCARA_CAMPO">
+			<TG_CLASS CLASS="MÁSCARA_CAMPO"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="CLASE">
+			<TG_CLASS CLASS="CLASE"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="PROPIEDAD">
+			<TG_CLASS CLASS="PROPIEDAD"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="MENÚ">
+			<TG_CLASS CLASS="MENÚ"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="PERMISO">
+			<TG_CLASS CLASS="PERMISO"  />
+		</UT>
+		
+		
+		
+	</UTASKS>	
+
+
+	<GROUPS>
+		
+		<GP GROUP="DATOS_FILTRO" PROP="campo_filtro"/>
+		<GP GROUP="DATOS_FILTRO" PROP="valor_filtro"/>
+
+	</GROUPS>
+
+	<ALIAS>
+	</ALIAS>
+
+	<ESSENTIALPROP>
+		
+	
+	</ESSENTIALPROP>
+
+	<COLUMNPROP>
+		
+		<CP CLASS="ÍNDICE" PROP="dominio" PRIORITY="1"/>
+		<CP CLASS="ÍNDICE" PROP="campo_en_prefijo" PRIORITY="3"/>
+		<CP CLASS="ÍNDICE" PROP="prefijo" PRIORITY="4"/>
+		<CP CLASS="ÍNDICE" PROP="inicio_contador" PRIORITY="5"/>
+		<CP CLASS="ÍNDICE" PROP="sufijo" PRIORITY="6"/>
+		<CP CLASS="ÍNDICE" PROP="campo_filtro" PRIORITY="7"/>
+		<CP CLASS="ÍNDICE" PROP="valor_filtro" PRIORITY="8"/>
+		
+		<CP CLASS="VALOR_POR_DEFECTO" PROP="rdn" PRIORITY="1"/>
+		<CP CLASS="VALOR_POR_DEFECTO" PROP="dominio" PRIORITY="2"/>
+		<CP CLASS="VALOR_POR_DEFECTO" PROP="propiedad" PRIORITY="3"/>
+		<CP CLASS="VALOR_POR_DEFECTO" PROP="valor" PRIORITY="4"/>
+		
+
+		
+		<CP  CLASS="ORDEN_CAMPO"  PROP="propiedad" PRIORITY="1"/>
+		<CP  CLASS="ORDEN_CAMPO"  PROP="orden" PRIORITY="2"/>
+
+
+			</COLUMNPROP>
+	<USUARIOS>
+		<USU LOGIN="zamora" PWD="zamora"/>
+		<USU LOGIN="alfonso" PWD="alfonso"/>
+		<USU LOGIN="fran" PWD="fran"/>
+		<USU LOGIN="maca" PWD="maca"/>
+		<USU LOGIN="dynagent" PWD="domocenter"/>
+	</USUARIOS>
+	<ROLES>
+		<RL NAME_ROL="administrador"/>
+
+	</ROLES>
+	<USUARIO_ROLES>
+		<USU_RL USUARIO="dynagent" ROL="administrador"/>
+
+		<USU_RL USUARIO="zamora" ROL="administrador"/>
+		<USU_RL USUARIO="maca" ROL="administrador"/>
+		<USU_RL USUARIO="alfonso" ROL="administrador"/>
+		<USU_RL USUARIO="fran" ROL="administrador"/>
+		<USU_RL USUARIO="venta_publico" ROL="venta_publico"/>
+	</USUARIO_ROLES>
+	<ACCESS>
+
+		<AC DENNIED="SI" ACCESSTYPE="SET;VIEW"  PROP="rdn"   PRIORITY="0" />
+		<AC DENNIED="NO" ACCESSTYPE="SET;VIEW"  PROP="rdn"    CLASS="GRUPO_CAMPOS"                 PRIORITY="1" />
+		<AC DENNIED="NO" ACCESSTYPE="SET;VIEW"  PROP="rdn"    CLASS="FUNCTIONAL_AREA"                 PRIORITY="1" />	
+		<AC DENNIED="NO" ACCESSTYPE="SET;VIEW"  PROP="rdn"    CLASS="USERROL"                 PRIORITY="1" />	
+		<AC DENNIED="NO" ACCESSTYPE="SET;VIEW"  PROP="rdn"    CLASS="USER"                 PRIORITY="1" />	
+		<AC DENNIED="NO" ACCESSTYPE="VIEW"  PROP="rdn"    CLASS="CLASE"                 PRIORITY="1" />	
+		<AC DENNIED="NO" ACCESSTYPE="VIEW"  PROP="rdn"    CLASS="PROPIEDAD"                 PRIORITY="1" />			
+		<AC DENNIED="NO" ACCESSTYPE="VIEW"  PROP="rdn"    CLASS="ACCIÓN"                 PRIORITY="1" />			
+		<AC DENNIED="NO" ACCESSTYPE="VIEW"  PROP="rdn"    CLASS="MENÚ"                 PRIORITY="1" />			
+		
+	<!-- PERMISOS SISTEMA-->
+
+	</ACCESS>
+	<ORDERPROPERTIES>
+		<!--Resumen: Base, recargo, retencio, total iva e importe-->
+
+
+				<!--indices-->	
+		<OP SEC="20" PROP="dominio" ORDER="1" />
+		<OP SEC="20" PROP="campo_en_prefijo" ORDER="3" />
+		<OP SEC="20" PROP="prefijo" ORDER="4" />
+		<OP SEC="20" PROP="inicio_contador" ORDER="5" />
+		<OP SEC="20" PROP="sufijo" ORDER="6" />
+		<OP SEC="20" PROP="campo_filtro" ORDER="7" />
+		<OP SEC="20" PROP="valor_filtro" ORDER="8" />
+
+	</ORDERPROPERTIES>
+
+	<INDEX>
+		<IN CLASS="CLASE" PROPINDEX="id" INDEX="170" />
+		<IN CLASS="PROPIEDAD" PROPINDEX="id" INDEX="51" />
+		<IN CLASS="MENÚ" PROPINDEX="id" INDEX="80" />
+		
+		<IN CLASS="RESERVA_ID_PROPIEDAD" PROPINDEX="id" INDEX="101" />
+		<IN CLASS="RESERVA_ID_CLASE" PROPINDEX="id" INDEX="31" />
+		
+		
+		<IN CLASS="ACCIÓN" PROPINDEX="rdn" INDEX="41"/>
+		
+	</INDEX>
+
+	<CARDMED>
+		
+	</CARDMED>
+	
+
+	<CARDINALITIES>
+	
+	</CARDINALITIES>
+	<RANGES>
+	</RANGES>
+	<DEFVALUES>
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!--TODO POR DEFECTO 0 EN PRIORIDAD_PERMISO-->
+	
+	
+
+
+
+			</DEFVALUES>
+</CONFIG>
+
+
+
+
+
+

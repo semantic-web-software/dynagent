@@ -1,0 +1,682 @@
+<?xml version="1.0"?>
+<rdf:RDF
+    xmlns:swrlb="http://www.w3.org/2003/11/swrlb#"
+    xmlns="http://www.owl-ontologies.com/Ontology1174894499.owl#"
+    xmlns:swrl="http://www.w3.org/2003/11/swrl#"
+    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
+    xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+    xmlns:owl="http://www.w3.org/2002/07/owl#"
+  xml:base="http://www.owl-ontologies.com/Ontology1174894499.owl">
+  <owl:Ontology rdf:about="">
+    <owl:versionInfo rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >classified</owl:versionInfo>
+  </owl:Ontology>
+  <owl:Class rdf:ID="ROL"/>
+  <owl:Class rdf:ID="PROCESS"/>
+  <owl:Class rdf:ID="OBSERVADOR">
+    <rdfs:subClassOf rdf:resource="#ROL"/>
+  </owl:Class>
+  <owl:Class rdf:ID="OBJETO_PRUEBA">
+    <rdfs:subClassOf rdf:resource="#ROL"/>
+  </owl:Class>
+  <owl:Class rdf:ID="GENERO">
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="PRODUCTO"/>
+    </rdfs:subClassOf>
+    <owl:disjointWith>
+      <owl:Class rdf:ID="SERVICIO"/>
+    </owl:disjointWith>
+  </owl:Class>
+  <owl:Class rdf:ID="MERCADO">
+    <rdfs:subClassOf rdf:resource="#ROL"/>
+  </owl:Class>
+  <owl:Class rdf:ID="PERSONA"/>
+  <owl:Class rdf:ID="OPERACION_INMOBILIARIA">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:someValuesFrom>
+          <owl:Class>
+            <owl:oneOf rdf:parseType="Collection">
+              <owl:Class rdf:ID="COMERCIALIZANDO"/>
+              <owl:Class rdf:ID="REGISTRADA"/>
+              <owl:Class rdf:about="#REGISTRADA"/>
+              <owl:Class rdf:ID="PRESUPUESTO"/>
+              <owl:Class rdf:ID="PEDIDO"/>
+            </owl:oneOf>
+          </owl:Class>
+        </owl:someValuesFrom>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="estado"/>
+        </owl:onProperty>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="OPERACION_COMERCIAL"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:ID="SECOND_R">
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="TIME_MEASURAMENT_RELATIVE"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:about="#COMERCIALIZANDO">
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="ESTADOS_OPERACION"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:ID="ENTRADA">
+    <rdfs:subClassOf rdf:resource="#GENERO"/>
+  </owl:Class>
+  <owl:Class rdf:ID="ABONO">
+    <rdfs:subClassOf rdf:resource="#GENERO"/>
+  </owl:Class>
+  <owl:Class rdf:ID="ALQUILER">
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="CONTRATO"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:about="#CONTRATO">
+    <rdfs:subClassOf rdf:resource="#PROCESS"/>
+  </owl:Class>
+  <owl:Class rdf:ID="DAY_R">
+    <rdfs:subClassOf rdf:resource="#TIME_MEASURAMENT_RELATIVE"/>
+  </owl:Class>
+  <owl:Class rdf:ID="MILISECOND">
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="TIME_MEASURAMENT"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:ID="STANDARD_PERIOD">
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="PERIOD"/>
+    </rdfs:subClassOf>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:allValuesFrom>
+          <owl:Class rdf:ID="MINUTE_R"/>
+        </owl:allValuesFrom>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="start"/>
+        </owl:onProperty>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="end"/>
+        </owl:onProperty>
+        <owl:allValuesFrom>
+          <owl:Class rdf:about="#MINUTE_R"/>
+        </owl:allValuesFrom>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:ID="EMPRESA"/>
+  <owl:Class rdf:ID="ENCUESTADO">
+    <rdfs:subClassOf rdf:resource="#ROL"/>
+  </owl:Class>
+  <owl:Class rdf:ID="COMERCIALIZAR">
+    <rdfs:subClassOf rdf:resource="#PROCESS"/>
+  </owl:Class>
+  <owl:Class rdf:ID="PERFORM">
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="UTASK"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:ID="DISCO_DURO">
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="PRODUCTOS_INFORMATICOS"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:ID="OPERACION_CONTABLE"/>
+  <owl:Class rdf:about="#REGISTRADA">
+    <rdfs:subClassOf rdf:resource="#ESTADOS_OPERACION"/>
+  </owl:Class>
+  <owl:Class rdf:ID="PRUEBA">
+    <rdfs:subClassOf rdf:resource="#PROCESS"/>
+  </owl:Class>
+  <owl:Class rdf:about="#PRESUPUESTO">
+    <rdfs:subClassOf rdf:resource="#ESTADOS_OPERACION"/>
+  </owl:Class>
+  <owl:Class rdf:ID="DOLAR">
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="MONEDA"/>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:ID="INMUEBLE">
+    <rdfs:subClassOf rdf:resource="#GENERO"/>
+  </owl:Class>
+  <owl:Class rdf:ID="PROPIETARIO">
+    <rdfs:subClassOf rdf:resource="#ROL"/>
+  </owl:Class>
+  <owl:Class rdf:about="#SERVICIO">
+    <rdfs:subClassOf rdf:resource="#PRODUCTO"/>
+    <owl:disjointWith rdf:resource="#GENERO"/>
+  </owl:Class>
+  <owl:Class rdf:about="#MINUTE_R">
+    <rdfs:subClassOf rdf:resource="#TIME_MEASURAMENT_RELATIVE"/>
+  </owl:Class>
+  <owl:Class rdf:ID="TAQUILLA_PARTIDOS">
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="#OPERACION_COMERCIAL"/>
+    </rdfs:subClassOf>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:allValuesFrom>
+          <owl:Class>
+            <owl:unionOf rdf:parseType="Collection">
+              <owl:Class rdf:about="#ENTRADA"/>
+              <owl:Class rdf:about="#ABONO"/>
+            </owl:unionOf>
+          </owl:Class>
+        </owl:allValuesFrom>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="rolArticulo"/>
+        </owl:onProperty>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:ID="PROPIEDAD">
+    <rdfs:subClassOf rdf:resource="#CONTRATO"/>
+  </owl:Class>
+  <owl:Class rdf:ID="ALTA">
+    <rdfs:subClassOf rdf:resource="#UTASK"/>
+  </owl:Class>
+  <owl:Class rdf:ID="APROVISIONAR">
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:minCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+        >1</owl:minCardinality>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:about="#rolArticulo"/>
+        </owl:onProperty>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <rdfs:subClassOf rdf:resource="#PROCESS"/>
+  </owl:Class>
+  <owl:Class rdf:about="#PEDIDO">
+    <rdfs:subClassOf rdf:resource="#ESTADOS_OPERACION"/>
+  </owl:Class>
+  <owl:Class rdf:ID="INSTANT"/>
+  <owl:Class rdf:ID="ENCUESTA">
+    <rdfs:subClassOf rdf:resource="#PROCESS"/>
+  </owl:Class>
+  <owl:Class rdf:ID="STANDARD_INSTANT">
+    <rdfs:subClassOf rdf:resource="#INSTANT"/>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:hasValue>
+          <INSTANT rdf:ID="begin1970">
+            <relativeTime>
+              <MILISECOND rdf:ID="cMILISECOND"/>
+            </relativeTime>
+            <from rdf:resource="#begin1970"/>
+          </INSTANT>
+        </owl:hasValue>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="from"/>
+        </owl:onProperty>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:allValuesFrom rdf:resource="#TIME_MEASURAMENT_RELATIVE"/>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="relativeTime"/>
+        </owl:onProperty>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:ID="CLIENTE">
+    <rdfs:subClassOf rdf:resource="#ROL"/>
+  </owl:Class>
+  <owl:Class rdf:ID="TEMPORADA">
+    <rdfs:subClassOf rdf:resource="#PERIOD"/>
+  </owl:Class>
+  <owl:Class rdf:ID="ARRENDADOR">
+    <rdfs:subClassOf rdf:resource="#ROL"/>
+  </owl:Class>
+  <owl:Class rdf:ID="EURO">
+    <rdfs:subClassOf rdf:resource="#MONEDA"/>
+  </owl:Class>
+  <owl:Class rdf:ID="FORMA_DE_PAGO"/>
+  <owl:Class rdf:ID="VENTA_MATERIAL_INFORMATICO">
+    <rdfs:subClassOf>
+      <owl:Class rdf:about="#OPERACION_COMERCIAL"/>
+    </rdfs:subClassOf>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="rolArticulo"/>
+        </owl:onProperty>
+        <owl:allValuesFrom>
+          <owl:Class rdf:about="#PRODUCTOS_INFORMATICOS"/>
+        </owl:allValuesFrom>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:about="#rolArticulo"/>
+        </owl:onProperty>
+        <owl:minCardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+        >1</owl:minCardinality>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="rolCliente"/>
+        </owl:onProperty>
+        <owl:cardinality rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+        >1</owl:cardinality>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:ID="ARTICULO">
+    <rdfs:subClassOf rdf:resource="#ROL"/>
+  </owl:Class>
+  <owl:Class rdf:ID="PLANING"/>
+  <owl:Class rdf:ID="PROVEEDOR">
+    <rdfs:subClassOf rdf:resource="#ROL"/>
+  </owl:Class>
+  <owl:Class rdf:about="#PRODUCTOS_INFORMATICOS">
+    <rdfs:subClassOf rdf:resource="#GENERO"/>
+  </owl:Class>
+  <owl:Class rdf:ID="MILISECOND_R">
+    <rdfs:subClassOf rdf:resource="#TIME_MEASURAMENT_RELATIVE"/>
+  </owl:Class>
+  <owl:Class rdf:ID="COMERCIAL">
+    <rdfs:subClassOf rdf:resource="#ROL"/>
+  </owl:Class>
+  <owl:Class rdf:ID="MINUTE">
+    <rdfs:subClassOf rdf:resource="#TIME_MEASURAMENT"/>
+  </owl:Class>
+  <owl:Class rdf:ID="BIEN_INMUEBLE">
+    <rdfs:subClassOf rdf:resource="#ROL"/>
+  </owl:Class>
+  <owl:Class rdf:ID="DERECHO">
+    <rdfs:subClassOf rdf:resource="#ROL"/>
+  </owl:Class>
+  <owl:Class rdf:ID="CONSUMIDOR">
+    <rdfs:subClassOf rdf:resource="#ROL"/>
+  </owl:Class>
+  <owl:Class rdf:about="#OPERACION_COMERCIAL">
+    <rdfs:subClassOf>
+      <owl:Class rdf:ID="ORDEN"/>
+    </rdfs:subClassOf>
+    <rdfs:subClassOf rdf:resource="#PROCESS"/>
+  </owl:Class>
+  <owl:Class rdf:ID="CPU">
+    <rdfs:subClassOf rdf:resource="#PRODUCTOS_INFORMATICOS"/>
+  </owl:Class>
+  <owl:Class rdf:ID="DAY">
+    <rdfs:subClassOf rdf:resource="#TIME_MEASURAMENT"/>
+  </owl:Class>
+  <owl:Class rdf:ID="SECOND">
+    <rdfs:subClassOf rdf:resource="#TIME_MEASURAMENT"/>
+  </owl:Class>
+  <owl:Class rdf:ID="ENCUENTRO">
+    <rdfs:subClassOf rdf:resource="#PERIOD"/>
+  </owl:Class>
+  <owl:Class rdf:ID="PANTALLA">
+    <rdfs:subClassOf rdf:resource="#PRODUCTOS_INFORMATICOS"/>
+  </owl:Class>
+  <owl:Class rdf:ID="ENSEÑAR">
+    <rdfs:subClassOf rdf:resource="#PERFORM"/>
+    <rdfs:subClassOf>
+      <owl:Restriction>
+        <owl:onProperty>
+          <owl:ObjectProperty rdf:ID="target"/>
+        </owl:onProperty>
+        <owl:allValuesFrom rdf:resource="#PRUEBA"/>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:ID="SPECIALIZAR">
+    <rdfs:subClassOf rdf:resource="#UTASK"/>
+  </owl:Class>
+  <owl:ObjectProperty rdf:about="#rolArticulo">
+    <rdfs:domain>
+      <owl:Class>
+        <owl:unionOf rdf:parseType="Collection">
+          <owl:Class rdf:about="#COMERCIALIZAR"/>
+          <owl:Class rdf:about="#APROVISIONAR"/>
+          <owl:Class rdf:about="#OPERACION_COMERCIAL"/>
+        </owl:unionOf>
+      </owl:Class>
+    </rdfs:domain>
+    <rdfs:range rdf:resource="#ARTICULO"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="duration">
+    <rdfs:range rdf:resource="#PERIOD"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="enabled">
+    <rdfs:range rdf:resource="#PERIOD"/>
+    <rdfs:domain rdf:resource="#ROL"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="rol">
+    <rdfs:domain rdf:resource="#PROCESS"/>
+    <rdfs:range rdf:resource="#ROL"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="rolMercado">
+    <rdfs:domain rdf:resource="#COMERCIALIZAR"/>
+    <rdfs:range rdf:resource="#MERCADO"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="pruebaRange"/>
+  <owl:ObjectProperty rdf:ID="contabilidad">
+    <rdfs:domain rdf:resource="#OPERACION_COMERCIAL"/>
+    <rdfs:range rdf:resource="#OPERACION_CONTABLE"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="playBienInmueble">
+    <rdfs:range rdf:resource="#INMUEBLE"/>
+    <rdfs:domain rdf:resource="#BIEN_INMUEBLE"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="playProveedor">
+    <rdfs:domain rdf:resource="#PROVEEDOR"/>
+    <rdfs:range rdf:resource="#PERSONA"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="playComercial">
+    <rdfs:domain rdf:resource="#COMERCIAL"/>
+    <rdfs:range rdf:resource="#PERSONA"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="#relativeTime">
+    <rdfs:range rdf:resource="#TIME_MEASURAMENT"/>
+    <rdfs:domain rdf:resource="#INSTANT"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="rolPropietario">
+    <rdfs:domain rdf:resource="#PROPIEDAD"/>
+    <rdfs:range rdf:resource="#PROPIETARIO"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="playObservador">
+    <rdfs:domain rdf:resource="#OBSERVADOR"/>
+    <rdfs:range rdf:resource="#PERSONA"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="#start">
+    <rdfs:domain rdf:resource="#PERIOD"/>
+    <rdfs:range rdf:resource="#INSTANT"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="playAgente">
+    <rdfs:range rdf:resource="#PERSONA"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="rolBienInmueble">
+    <rdfs:range rdf:resource="#BIEN_INMUEBLE"/>
+    <rdfs:domain>
+      <owl:Class>
+        <owl:unionOf rdf:parseType="Collection">
+          <owl:Class rdf:about="#PROPIEDAD"/>
+          <owl:Class rdf:about="#ALQUILER"/>
+        </owl:unionOf>
+      </owl:Class>
+    </rdfs:domain>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="#target">
+    <rdfs:domain rdf:resource="#PERFORM"/>
+    <rdfs:range rdf:resource="#PROCESS"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="rolArrendador">
+    <rdfs:domain rdf:resource="#ALQUILER"/>
+    <rdfs:range rdf:resource="#ARRENDADOR"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="#playArticulo">
+    <rdfs:range rdf:resource="#PRODUCTO"/>
+    <rdfs:domain rdf:resource="#ARTICULO"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="#estado">
+    <rdfs:domain rdf:resource="#OPERACION_COMERCIAL"/>
+    <rdfs:range rdf:resource="#ESTADOS_OPERACION"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="play">
+    <rdfs:domain rdf:resource="#ROL"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="forma_de_pago">
+    <rdfs:domain rdf:resource="#COMERCIAL"/>
+    <rdfs:range rdf:resource="#FORMA_DE_PAGO"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="rolConsumidor">
+    <rdfs:domain rdf:resource="#APROVISIONAR"/>
+    <rdfs:range rdf:resource="#CONSUMIDOR"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="playArrendador">
+    <rdfs:domain rdf:resource="#ARRENDADOR"/>
+    <rdfs:range rdf:resource="#PERSONA"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="playPropietario">
+    <rdfs:range>
+      <owl:Class>
+        <owl:unionOf rdf:parseType="Collection">
+          <owl:Class rdf:about="#PERSONA"/>
+          <owl:Class rdf:about="#EMPRESA"/>
+        </owl:unionOf>
+      </owl:Class>
+    </rdfs:range>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="playObjeto_Prueba">
+    <rdfs:range rdf:resource="#PRODUCTO"/>
+    <rdfs:domain rdf:resource="#OBJETO_PRUEBA"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="rolComercial">
+    <rdfs:domain>
+      <owl:Class>
+        <owl:unionOf rdf:parseType="Collection">
+          <owl:Class rdf:about="#COMERCIALIZAR"/>
+          <owl:Class rdf:about="#OPERACION_COMERCIAL"/>
+        </owl:unionOf>
+      </owl:Class>
+    </rdfs:domain>
+    <rdfs:range rdf:resource="#COMERCIAL"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="#end">
+    <rdfs:domain rdf:resource="#PERIOD"/>
+    <rdfs:range rdf:resource="#INSTANT"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="rolProveedor">
+    <rdfs:domain rdf:resource="#APROVISIONAR"/>
+    <rdfs:range rdf:resource="#PROVEEDOR"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="#rolCliente">
+    <rdfs:range rdf:resource="#CLIENTE"/>
+    <rdfs:domain rdf:resource="#OPERACION_COMERCIAL"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="play_propietario">
+    <rdfs:domain rdf:resource="#PROPIETARIO"/>
+    <rdfs:range rdf:resource="#PERSONA"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="precio">
+    <rdfs:domain rdf:resource="#ARTICULO"/>
+    <rdfs:range rdf:resource="#MONEDA"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:about="#from">
+    <rdfs:domain rdf:resource="#INSTANT"/>
+    <rdfs:range rdf:resource="#INSTANT"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="playConsumidor">
+    <rdfs:range rdf:resource="#PERSONA"/>
+    <rdfs:domain rdf:resource="#CONSUMIDOR"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="rolAgente"/>
+  <owl:ObjectProperty rdf:ID="contrato">
+    <rdfs:domain rdf:resource="#ARTICULO"/>
+    <rdfs:range rdf:resource="#CONTRATO"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="playEncuestado">
+    <rdfs:domain rdf:resource="#ENCUESTADO"/>
+    <rdfs:range rdf:resource="#PERSONA"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="playCliente">
+    <rdfs:domain rdf:resource="#CLIENTE"/>
+    <rdfs:range rdf:resource="#PERSONA"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="rolEncuestado">
+    <rdfs:range rdf:resource="#ENCUESTADO"/>
+  </owl:ObjectProperty>
+  <owl:DatatypeProperty rdf:ID="numero">
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#int"/>
+    <rdfs:domain rdf:resource="#INMUEBLE"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="pulgadas">
+    <rdfs:domain rdf:resource="#PANTALLA"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="descuento">
+    <rdfs:domain rdf:resource="#VENTA_MATERIAL_INFORMATICO"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="nombre">
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <rdfs:domain rdf:resource="#PERSONA"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="provincia">
+    <rdfs:domain rdf:resource="#INMUEBLE"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="actividad">
+    <rdfs:domain rdf:resource="#EMPRESA"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="velocidad_procesador">
+    <rdfs:domain rdf:resource="#CPU"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="longitud">
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#float"/>
+    <rdfs:domain rdf:resource="#PRODUCTOS_INFORMATICOS"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="altura">
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#float"/>
+    <rdfs:domain rdf:resource="#PRODUCTOS_INFORMATICOS"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="nombreEmpresa">
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <rdfs:domain rdf:resource="#EMPRESA"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="domicilio">
+    <rdfs:domain rdf:resource="#PERSONA"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="localidad">
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <rdfs:domain rdf:resource="#INMUEBLE"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="gastos_envio">
+    <rdfs:domain rdf:resource="#VENTA_MATERIAL_INFORMATICO"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#float"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="cantidad">
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#int"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="prueba_datatype">
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#int"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="dni">
+    <rdfs:domain rdf:resource="#PERSONA"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#int"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="numero_trabajadores">
+    <rdfs:domain rdf:resource="#EMPRESA"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#int"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="peso">
+    <rdfs:domain rdf:resource="#PRODUCTOS_INFORMATICOS"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#float"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="calle">
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <rdfs:domain rdf:resource="#INMUEBLE"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="referencia">
+    <rdfs:domain rdf:resource="#ARTICULO"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="placa_base"/>
+  <owl:DatatypeProperty rdf:ID="satisfacion">
+    <rdfs:domain rdf:resource="#OBSERVADOR"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="anchura">
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+    <rdfs:domain rdf:resource="#PRODUCTOS_INFORMATICOS"/>
+  </owl:DatatypeProperty>
+  <owl:FunctionalProperty rdf:ID="importe">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#DatatypeProperty"/>
+    <rdfs:domain rdf:resource="#OPERACION_COMERCIAL"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#string"/>
+  </owl:FunctionalProperty>
+  <PRODUCTO rdf:ID="BIEN_INMUEBLE_9">
+    <rdf:type rdf:resource="#GENERO"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Thing"/>
+  </PRODUCTO>
+  <owl:DataRange>
+    <owl:oneOf rdf:parseType="Resource">
+      <rdf:rest rdf:parseType="Resource">
+        <rdf:rest rdf:resource="http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"/>
+        <rdf:first rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+        >CONTRATO</rdf:first>
+      </rdf:rest>
+      <rdf:first rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+      >PRODUCTO</rdf:first>
+    </owl:oneOf>
+  </owl:DataRange>
+  <PERSONA rdf:ID="Juan">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Thing"/>
+    <dni rdf:datatype="http://www.w3.org/2001/XMLSchema#int">1</dni>
+    <domicilio rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >C/Arenan 10, Sevilla</domicilio>
+    <nombre rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >Juan Martinez Campos</nombre>
+  </PERSONA>
+  <EMPRESA rdf:ID="Sevillana">
+    <play_propietario rdf:resource="#Juan"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Thing"/>
+    <nombreEmpresa rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >Sevillana de Electriciad</nombreEmpresa>
+    <numero_trabajadores rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    ></numero_trabajadores>
+  </EMPRESA>
+  <ARTICULO rdf:ID="ARTICULO_3"/>
+  <PERSONA rdf:ID="Marta">
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Thing"/>
+    <nombre rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >Marta Aguilera Garcia</nombre>
+    <dni rdf:datatype="http://www.w3.org/2001/XMLSchema#int">2</dni>
+    <domicilio rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >C/Alhamar 24, Granada</domicilio>
+  </PERSONA>
+  <TEMPORADA rdf:ID="TEMPORADA_2">
+    <end rdf:resource="#begin1970"/>
+    <start rdf:resource="#begin1970"/>
+  </TEMPORADA>
+  <INMUEBLE rdf:ID="Resolana_29">
+    <rdf:type rdf:resource="#ROL"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Thing"/>
+    <rdf:type rdf:resource="#PRODUCTO"/>
+    <calle rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    ></calle>
+    <provincia rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >Sevilla</provincia>
+    <numero rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+    >0</numero>
+    <localidad rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >Sevilla</localidad>
+    <rdf:type rdf:resource="#PROPIETARIO"/>
+    <rdf:type rdf:resource="#GENERO"/>
+  </INMUEBLE>
+  <ORDEN rdf:ID="ORDEN_4"/>
+  <PRODUCTO rdf:ID="Marmoles15">
+    <rdf:type rdf:resource="#GENERO"/>
+    <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Thing"/>
+    <rdf:type rdf:resource="#INMUEBLE"/>
+    <provincia rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >Sevilla</provincia>
+    <calle rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >Marmoles</calle>
+    <numero rdf:datatype="http://www.w3.org/2001/XMLSchema#int"
+    >15</numero>
+    <localidad rdf:datatype="http://www.w3.org/2001/XMLSchema#string"
+    >Sevilla</localidad>
+  </PRODUCTO>
+  <ENCUENTRO rdf:ID="ENCUENTRO_1">
+    <end rdf:resource="#begin1970"/>
+    <start rdf:resource="#begin1970"/>
+  </ENCUENTRO>
+</rdf:RDF>
+
+<!-- Created with Protege (with OWL Plugin 3.2.1, Build 365)  http://protege.stanford.edu -->

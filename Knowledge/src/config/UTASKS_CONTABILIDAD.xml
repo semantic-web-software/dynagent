@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<CONFIG>
+	<UTASKS>
+		<!--AREA CONTABILIDAD-->
+
+		<UT A_FUNC="Contabilidad"    NAME="ASIENTO">
+			<TG_CLASS CLASS="ASIENTO_BASE"  />
+		</UT>
+		<UT A_FUNC="Contabilidad"    NAME="APUNTE">
+			<TG_CLASS CLASS="APUNTE"  />
+		</UT>
+		<UT A_FUNC="Contabilidad"    NAME="CUENTA_CONTABLE">
+			<TG_CLASS CLASS="CUENTA_CONTABLE"  />
+		</UT>
+		<UT A_FUNC="Contabilidad"    NAME="PREDEFINIDO">
+			<TG_CLASS CLASS="PREDEFINIDO"  />
+		</UT>
+	</UTASKS>
+</CONFIG>
+	

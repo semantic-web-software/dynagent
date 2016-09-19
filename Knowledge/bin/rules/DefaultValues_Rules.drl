@@ -1,0 +1,837 @@
+package dynagent.ruleengine.src.ruler.ERPrules
+
+import dynagent.ruleengine.src.ruler.ERPrules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.exceptions.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import org.drools.WorkingMemory;
+import dynagent.common.basicobjects.*;
+global DataModelAdapter dma;
+
+rule "ASIGNACIÓN DATAVALOR POR DEFECTO NUEVO A PROTOTIPO (EL CONFIGURABLE POR USUARIO)"
+salience -100
+agenda-group "rules" when 
+	
+	ObjValue(idoDefecto:IDO,CLASSNAME=="VALOR_POR_DEFECTO",PROPNAME=="dominio",idoClaseDominio:IDOVALUE!=null)
+	DatValue(IDO==idoClaseDominio,PROPNAME=="rdn",claseDominioSup:VALOR!=null)
+
+	ObjValue(IDO==idoDefecto,PROPNAME=="propiedad",idopropiedad:IDOVALUE!=null)	
+	DatValue(IDO==idopropiedad,PROPNAME=="rdn",propiedad:VALOR!=null)
+	
+	FactHierarchy(claseDominio:CLASS,CLASSSUP==claseDominioSup)
+	Individual(CLASSNAME==claseDominio, idoProto:IDO, idtoProto:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	not(DatValue(IDO==idoProto, PROPNAME==propiedad, VALOR!=null))
+	
+	DatValue(IDO==idoDefecto,PROPNAME=="valor",valorDefecto:VALOR!=null)
+	Model(CLASSNAME==claseDominio,PROPNAME==propiedad,dataType:VALUECLS,OP=="AND")//ASEGURAMOS QUE LA CLASE HIJA TIENE LA PROP Y QUE ES DATA PROPERTY
+	eval(Constants.isDataType(dataType))
+		
+	not((and 	not(Model(IDTO==idtoProto,OP=="CAR",QMIN>0,PROPNAME==propiedad,OP==Constants.OP_CARDINALITY))
+				eval(idoProto>0)))
+				
+	forall(	ObjValue(IDO==idoDefecto,PROPNAME=="mi_empresa",idoEmpresa:IDOVALUE!=null)
+			ObjValue(IDO==idoProto,PROPNAME=="mi_empresa"||=="empresa",IDOVALUE==idoEmpresa))
+then
+	dma.printRule("\n\n===========RULE ASIGNACIÓN DATAVALOR POR DEFECTO NUEVO (EL CONFIGURABLE POR USUARIO) A PROTOTIPO clase:"+claseDominio+"  propiedad:"+propiedad+"  valor:"+valorDefecto);
+	//if( dma.getValue(idoProto, idtoProto,propiedad)==null){
+		Value val = null;
+		boolean incorrecto=false;
+		
+		if(propiedad.contains("fecha")){
+			
+			long segundosRelativo=Auxiliar.segundosPeriodoRelativo(valorDefecto);
+			dma.printRule(" tiene fecha "+segundosRelativo);
+			if(segundosRelativo!=0){
+				Calendar c= Calendar.getInstance();
+	 			valorDefecto=""+ (c.getTimeInMillis()/Constants.TIMEMILLIS+ segundosRelativo);
+	 			dma.printRule(" defecto "+valorDefecto);			
+			}else incorrecto=true;
+		}
+
+		if(!incorrecto){	
+			val = dma.buildDataValue(propiedad, valorDefecto);
+			dma.setValue(idoProto, idtoProto, propiedad, val);
+		}
+	//}
+end
+
+rule "ESTADO PEDIDO PLANIFICADO DEFECTO"
+agenda-group "rules" when 
+	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="PEDIDO_DE_CLIENTE"||=="PEDIDO_TRASPASO_ALMACENES")
+	Individual(IDTO==idtoDoc,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	not(ObjValue(IDO==idoDoc,PROPNAME=="estado"))
+	DatValue(CLASSNAME=="ESTADO",idtoEstado:IDTO,idoEstPlan:IDO,PROPNAME=="rdn",VALOR=="Planificado")
+then
+	dma.printRule("=========== ESTADO PEDIDO PLANIFICADO DEFECTO");
+	dma.setValue(idoDoc,idtoDoc,"estado",new ObjectValue(idoEstPlan,idtoEstado));
+end 
+
+rule "ASIGNACIÓN OBJECTVALOR POR DEFECTO NUEVO A PROTOTIPO (EL CONFIGURABLE POR USUARIO)"
+agenda-group "rules" when 
+	
+	ObjValue(idoDefecto:IDO,CLASSNAME=="VALOR_POR_DEFECTO",PROPNAME=="dominio",idoClaseDominio:IDOVALUE!=null)
+	DatValue(IDO==idoClaseDominio,PROPNAME=="rdn",claseDominioSup:VALOR)
+	FactHierarchy(claseDominio:CLASS,CLASSSUP==claseDominioSup)
+	ObjValue(IDO==idoDefecto,PROPNAME=="propiedad",idoPropiedad:IDOVALUE!=null)
+	DatValue(IDO==idoPropiedad,PROPNAME=="rdn",rdnPropiedad:VALOR!=null)
+	
+	Individual(CLASSNAME==claseDominio, idoProto:IDO, idtoProto:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)	
+	not(ObjValue(IDO==idoProto, PROPNAME==rdnPropiedad, VALOR!=null))
+
+	DatValue(IDO==idoDefecto,PROPNAME=="valor",rdnvalorDefecto:VALOR!=null)
+	Model(CLASSNAME==claseDominio,PROPNAME==rdnPropiedad,idtoRangoSup:VALUECLS,OP=="AND")//ASEGURAMOS QUE LA CLASE HIJA TIENE LA PROP Y QUE ES OBJECT PROPERTY
+	eval(!Constants.isDataType(idtoRangoSup))
+		
+	not((and 	not(Model(IDTO==idtoProto,OP=="CAR",QMIN>0,PROPNAME==rdnPropiedad,OP==Constants.OP_CARDINALITY))
+				eval(idoProto>0)))
+	FactHierarchy(idtoRango:IDTO,IDTOSUP==idtoRangoSup)
+	DatValue(idoValor:IDO,IDTO==idtoRango,PROPNAME=="rdn",VALOR==rdnvalorDefecto)//hay que conseguir el ido del valor, el usuario lo que guarda no es el ido sino el rdn del valor
+	forall(	ObjValue(IDO==idoDefecto,PROPNAME=="mi_empresa",idoEmpresa:IDOVALUE!=null)
+			ObjValue(IDO==idoProto,PROPNAME=="mi_empresa"||=="empresa",IDOVALUE==idoEmpresa)) 
+then
+	dma.printRule("\n\n===========RULE ASIGNACIÓN OBJECTVALOR POR DEFECTO NUEVO (EL CONFIGURABLE POR USUARIO) A PROTOTIPO clase:"+claseDominio+"  propiedad:"+rdnPropiedad+"  rdnvalorDefecto:"+rdnvalorDefecto);
+	dma.setValue(idoProto, idtoProto, rdnPropiedad, new ObjectValue(idoValor,idtoRango));
+end
+
+rule "PRECARGA VALOR POR DEFECTO DE TIPO OBJECTVALOR POR DEFECTO NUEVO A PROTOTIPO (EL CONFIGURABLE POR USUARIO)"
+agenda-group "rules" when 
+	
+	ObjValue(CLASSNAME=="VALOR_POR_DEFECTO",PROPNAME=="dominio",idoclaseP:VALOR!=null,idValorPorDef:ID!=null)
+	DatValue(ID==idoclaseP,PROP==Constants.IdPROP_RDN,claseP:VALOR)
+	FactHierarchy( CLASSSUP==claseP,clase:CLASS)
+	Lock(CLASSNAME==clase, idProto:ID,idoProto:IDO, idtoProto:IDTO,LEVEL==Constants.LEVEL_PROTOTYPE, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(ID==idValorPorDef,PROPNAME=="propiedad",idopropiedad:VALOR!=null)
+	DatValue(ID==idopropiedad,PROP==Constants.IdPROP_RDN,propiedad:VALOR)
+	DatValue(ID==idValorPorDef,PROPNAME=="valor",rdnvalorDefecto:VALOR!=null)
+	Model(CLASSNAME==clase,PROPNAME==propiedad,rango:VALUECLS,claseRango:RANGENAME,OP=="AND"||=="OR")//ASEGURAMOS QUE LA CLASE HIJA TIENE LA PROP Y QUE ES OBJECT PROPERTY
+	eval(!Constants.isDataType(rango))
+	not(DatValue(ID==idProto, PROPNAME==propiedad, VALOR!=null))
+	not(DatValue(idoValor:IDO,IDTO==rango,PROPNAME=="rdn",VALOR==rdnvalorDefecto))
+then
+	dma.printRule("\n\n===========PRECARGA VALOR POR DEFECTO NUEVO DE TIPO OBJECTVALOR POR DEFECTO A PROTOTIPO (EL CONFIGURABLE POR USUARIO) clase:"+clase+"  propiedad:"+propiedad+"  rdnvalorDefecto:"+rdnvalorDefecto);
+	 HashMap<String, Value> properties=new HashMap<String,Value>();
+	 properties.put("rdn",new StringValue(rdnvalorDefecto));
+	 instance instanceFilter=dma.buildInstanceWith(claseRango, properties,null,null,null);
+	dma.loadIndividualsWithSatisficedFilter(instanceFilter);
+end
+
+//====================================================================================================
+//==================================FECHAS POR DEFECTO LA ACTUAL"
+rule "FECHA POR DEFECTO LA ACTUAL"
+salience -100
+agenda-group "rules" when
+ 		
+ 		
+ 		Lock(nameclass:CLASSNAME, ido:IDO, idto:IDTO, STATE==Constants.INDIVIDUAL_STATE_LOCK, LEVEL==Constants.LEVEL_PROTOTYPE)
+ 		
+ 		//No incluyo fecha inicio y fin porque una tarea sin recursos no debe tener fechas, para no mostrarse con otras que si estan programadas
+		Model(CLASSNAME==nameclass, idprop:PROP, OP==Constants.OP_INTERSECTION, propiedad:PROPNAME=="fecha_min_entrega"||=="fecha_mínima_inicio"||=="fecha"||=="fecha_creación"||=="fecha_alta"||=="fecha_inicio")
+		//Ahora no interesa que se dispare en ticket pq x motivos graficos se crea el prototipo mucho antes que el ticket se use
+		//not( FactHierarchy(CLASS==nameclass, CLASSSUP=="TICKET"||=="PERIODO"||=="LÍNEA_SERVICIO"||=="DISPONIBILIDAD" ))
+		//el comportamiento de no ponerse en tickets era algo a medida para celop en los formularios incrustados, quitamos de momento esa limitación
+		
+		//En tareas no interesa ponga fechas de inicio si solo esta planificada, para no enrrarecer el calendario, pero en produccion material si interesa para que actue 
+		//las reglas que asignan lote (en base a codigos de fecha)
+		forall( FactHierarchy(CLASS==nameclass, CLASSSUP=="PRODUCCIÓN_MATERIAL" )
+				Model(CLASSNAME==nameclass, OP==Constants.OP_INTERSECTION, PROPNAME=="fecha_inicio"))
+				
+		not FactHierarchy(CLASS==nameclass, CLASSSUP=="FACTURA_PROVEEDOR" )
+		
+		forall(	FactHierarchy(CLASS==nameclass, CLASSSUP=="PRECIO_BASE" )
+				Lock(IDO==ido,LOCKEDBYUSER==true)
+				FactHierarchy(idtoRoot:IDTO, CLASSSUP=="ARTÍCULO" )//Y que no venga de una clase parametros 
+				ObjValue(IDTO==idtoRoot,PROPNAME=="tarifas_venta",IDOVALUE==ido))
+				
+		not( (and 	FactHierarchy(CLASS==nameclass, CLASSSUP=="PRECIO_BASE" )
+					ObjValue(IDO==ido,PROPNAME=="tarifa_precio",t:IDOVALUE!=null)
+					DatValue(IDO==t,PROPNAME=="rdn",VALOR!="PVP")					
+			 		not((and																			
+						ObjValue(idoRoot:IDO,PROPNAME=="tarifas_venta",IDOVALUE==ido)
+						ObjValue(IDO==idoRoot,PROPNAME=="tarifas_venta",ido2:IDOVALUE!=ido)
+						ObjValue(IDO==ido2,PROPNAME=="tarifa_precio",IDOVALUE==t)
+					))
+			))							
+				
+		not( FactHierarchy(CLASS==nameclass, CLASSSUP=="LÍNEA_SERVICIO"||=="DISPONIBILIDAD"||=="COMISIÓN" ))
+		
+		FactHierarchy(CLASS==nameclass, clsSup:CLASSSUP)
+		not(eval(clsSup.equals("LOTE")&& propiedad.equals("fecha")))
+		
+		not( DatValue(IDO==ido, PROP==idprop) )
+		//NO está emitido
+		not( DatValue(IDO==ido, PROPNAME=="emitido", VALOR=="true") )
+	then
+		dma.printRule("\n\n================  RULE FECHA POR DEFECTO LA ACTUAL EN PROPIEDAD="+propiedad +" "+nameclass);
+		//TimeValue tValue = new TimeValue(Auxiliar.getFechaActual());
+		long sgActual=dma.getServerDate();
+		if(propiedad.contains("inicio")||propiedad.contains("fin")||propiedad.contains("entrega")){
+			Calendar c = Calendar.getInstance();
+			c.setTimeInMillis(sgActual*Constants.TIMEMILLIS);
+			if(propiedad.contains("inicio")){
+				c.set(Calendar.HOUR_OF_DAY,0);
+				c.set(Calendar.MINUTE,0);
+				c.set(Calendar.SECOND,0);
+			}else{
+				c.set(Calendar.HOUR_OF_DAY,23);
+				c.set(Calendar.MINUTE,59);
+				c.set(Calendar.SECOND,59);
+			}
+			sgActual=c.getTimeInMillis()/Constants.TIMEMILLIS;
+		}
+		//TimeValue tValue = new TimeValue(sgActual);
+		dma.setTimeValue(ido, idto, idprop, sgActual,true);
+end
+	
+rule "FECHA POR DEFECTO TICKET ES LA DE CUANDO SE CREA LA PRIMERA LÍNEA"
+agenda-group "rules" when
+ 		
+ 		Lock(nameclass:CLASSNAME, id:ID, idto:IDTO, STATE==Constants.INDIVIDUAL_STATE_LOCK, LEVEL==Constants.LEVEL_PROTOTYPE)
+		FactHierarchy(CLASS==nameclass, CLASSSUP=="TICKET")
+		ObjValue(ID==id, VALOR!=null, PROPNAME=="línea")
+		not( DatValue(ID==id, PROPNAME=="fecha") )
+	then
+		dma.printRule("\n\n===============  RULEFECHA POR DEFECTO TICKET ES LA DE CUANDO SE CREA LA PRIMERA LÍNEA");
+		TimeValue tValue = new TimeValue(Auxiliar.getFechaActual());
+		dma.setValue(id, idto, "fecha", tValue);
+end
+	
+rule "LOS ARTÍCULOS DE UNA LÍNEA DE DOCUMENTO DE VENTAS TIENEN X DEFECTO COMO CATALOGO EL DE VENTAS"
+agenda-group "rules" when
+    
+    FactHierarchy(nameclass:CLASS, CLASSSUP=="DOCUMENTO_VENTA")
+    ObjValue(CLASSNAME==nameclass, idDoc:ID, ido:IDO!=null, PROPNAME=="línea", idLinea:VALUE!=null)
+    //MUY IMPORTANTE QUE NO SE DISPARÉ CON FILTROS, SINO CONDICIONA LA BUSQUEDA DE DOCUMENTOS DESDE LA VENTA PRINCIPAL DE BUSQUEDA
+    Individual(ID==idDoc, idoDoc:IDO!=null)
+	not( DatValue(ID==idDoc, PROPNAME=="emitido", VALOR=="true") )
+	ObjValue(ID==idLinea, PROPNAME=="producto", idProducto:VALUE!=null, idtoClaseArt:VALUECLS)
+	Model(IDTO==idtoClaseArt, PROPNAME=="catálogo", OP==Constants.OP_INTERSECTION)
+	DatValue(CLASSNAME=="CATÁLOGO", VALOR=="Catálogo_Ventas", PROPNAME==Constants.PROP_RDN, idcatal:ID!=null,idocatal:IDO,idtocatal:IDTO)
+	not(
+		(and
+			ObjValue(ID==idProducto, PROPNAME=="catálogo", idcatalogo:VALOR!=null)
+			DatValue(ID==idcatalogo, PROPNAME=="rdn", VALOR=="Catálogo_Ventas")
+		)
+	)
+	Individual(ID==idProducto)
+then
+	dma.printRule("\n\n=============  LOS ARTÍCULOS DE UNA LÍNEA DE DOCUMENTO DE VENTAS TIENEN X DEFECTO COMO CATALOGO EL DE VENTAS DOCUMENTO="+nameclass+" idProducto="+idProducto);
+	dma.addValue(Integer.parseInt(idProducto), idtoClaseArt, "catálogo", new ObjectValue(idocatal,idtocatal)); 
+end
+
+
+rule "LOS ARTÍCULOS DE UNA LÍNEA DE DOCUMENTO DE COMPRAS TIENEN X DEFECTO COMO CATALOGO EL DE COMPRAS"
+agenda-group "rules" when
+    
+    FactHierarchy(nameclass:CLASS, CLASSSUP=="DOCUMENTO_COMPRA")
+    ObjValue(CLASSNAME==nameclass, idDoc:ID,idoDoc:IDO!=null, PROPNAME=="línea", idLinea:VALUE!=null)
+	//MUY IMPORTANTE QUE NO SE DISPARÉ CON FILTROS, SINO CONDICIONA LA BUSQUEDA DE DOCUMENTOS DESDE LA VENTA PRINCIPAL DE BUSQUEDA
+    Individual(ID==idDoc)///
+	not( DatValue(ID==idDoc, PROPNAME=="emitido", VALOR=="true") )
+    ObjValue(ID==idLinea, PROPNAME=="producto", idProducto:VALUE!=null, idtoClaseArt:VALUECLS)
+    Model(IDTO==idtoClaseArt, PROPNAME=="catálogo", OP==Constants.OP_INTERSECTION)
+	DatValue(CLASSNAME=="CATÁLOGO", VALOR=="Catálogo_Compras", idocatal:IDO,idtocatal:IDTO,PROPNAME==Constants.PROP_RDN, idcatal:ID!=null)
+	not(
+		(and
+			ObjValue(ID==idProducto, PROPNAME=="catálogo", idcatalogo:VALOR!=null)
+			DatValue(ID==idcatalogo, PROPNAME=="rdn", VALOR=="Catálogo_Compras")
+		)
+	)
+	Individual(ID==idProducto)
+then
+	dma.printRule("\n\n=================> LOS ARTÍCULOS DE UNA LÍNEA DE DOCUMENTO DE COMPRAS TIENEN X DEFECTO COMO CATALOGO EL DE COMPRAS DOCUMENTO="+nameclass+" idProducto="+idProducto);
+	dma.addValue(Integer.parseInt(idProducto), idtoClaseArt, "catálogo", new ObjectValue(idocatal,idtocatal)); 
+end
+
+rule "LOS ARTÍCULOS DESDE UNA UTASK ESPECÍFICA DE ARTICULO EN AREA FUNCIONAL COMPRAS TIENEN CATALOGO COMPRAS"
+salience -100
+agenda-group "rules" when
+    
+    ObjValue(taskname:CLASSNAME, idtask:ID!=null, PROPNAME=="targetClass", idarticulo:VALUE!=null, idtoarti:VALUECLS,nameclass:RANGENAME)
+	FactHierarchy(CLASS==nameclass, CLASSSUP=="ARTÍCULO")
+    Model(CLASSNAME==nameclass, PROPNAME=="catálogo", OP==Constants.OP_INTERSECTION)
+    ObjValue(ID==idtask, PROPNAME=="myFunctionalArea", idarea:VALOR!=null)
+	DatValue(ID==idarea, PROPNAME=="rdn", area:VALOR=="Compras")
+	Lock(idtoClaseArt:IDTO, CLASSNAME==nameclass, LEVEL==Constants.LEVEL_PROTOTYPE, ID==idarticulo,idoart:IDO, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	/*not(
+		(and
+			ObjValue(ID==idarticulo, PROPNAME=="catálogo", idcatalogo:VALOR)
+			DatValue(ID==idcatalogo, PROPNAME=="rdn", VALOR=="Catálogo_Compras")
+		)
+	)*/
+	not(ObjValue(ID==idarticulo, PROPNAME=="catálogo"))
+	DatValue(CLASSNAME=="CATÁLOGO", VALOR=="Catálogo_Compras", PROPNAME==Constants.PROP_RDN, idocatal:IDO!=null,idtocatal:IDTO)
+then
+    dma.printRule("\n======= LOS ARTÍCULOS DESDE UNA UTASK ESPECÍFICA DE ARTICULO EN AREA FUNCIONAL COMPRAS TIENEN CATALOGO COMPRAS="+taskname);
+	dma.addValue(new Domain(idoart,idtoarti), "catálogo", new ObjectValue(idocatal,idtocatal)); 
+end
+
+rule "LOS ARTÍCULOS DESDE UNA UTASK ESPECÍFICA DE ARTICULO EN AREA FUNCIONAL VENTAS TIENEN CATALOGO VENTAS"
+agenda-group "rules" when
+    
+    ObjValue(taskname:CLASSNAME, idtask:ID!=null, PROPNAME=="targetClass", idarticulo:VALUE!=null, nameclass:RANGENAME)
+	FactHierarchy(CLASS==nameclass, CLASSSUP=="ARTÍCULO")
+    Model(CLASSNAME==nameclass, PROPNAME=="catálogo", OP==Constants.OP_INTERSECTION)
+    ObjValue(ID==idtask, PROPNAME=="myFunctionalArea", idarea:VALOR!=null)
+	DatValue(ID==idarea, PROPNAME=="rdn", area:VALOR=="Ventas")
+	Lock(idtoClaseArt:IDTO, CLASSNAME==nameclass, LEVEL==Constants.LEVEL_PROTOTYPE, ID==idarticulo, idoart:IDO,idtoarti:IDTO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	/*not(
+		(and
+			ObjValue(ID==idarticulo, PROPNAME=="catálogo", idcatalogo:VALOR)
+			DatValue(ID==idcatalogo, PROPNAME=="rdn", VALOR=="Catálogo_Ventas")
+		)
+	)*/
+	not(ObjValue(ID==idarticulo, PROPNAME=="catálogo"))
+	DatValue(CLASSNAME=="CATÁLOGO", VALOR=="Catálogo_Ventas", PROPNAME==Constants.PROP_RDN, idocatal:IDO!=null,idtocatal:IDTO)
+then
+    dma.printRule("======= RLOS ARTÍCULOS DESDE UNA UTASK ESPECÍFICA DE ARTICULO EN AREA FUNCIONAL VENTAS TIENEN CATALOGO VENTAS: UTASK="+taskname);
+	dma.addValue(new Domain(idoart,idtoarti), "catálogo", new ObjectValue(idocatal,idtocatal)); 
+end
+
+
+rule "CENTRO TRABAJO POR DEFECTO" 
+salience 10//MAS PRIORIDAD QUE ALMACEN POR DEFECTO
+ agenda-group "rules" when 
+ 	FactHierarchy(idtoLocalizacion:IDTO,CLASSSUP=="CENTRO_TRABAJO"||=="DELEGACIÓN")
+  	Model(idtoDoc:IDTO, propLocalizacion:PROPNAME=="origen"||=="destino"||=="delegación", VALUECLS==idtoLocalizacion)	  	
+  	not(FactHierarchy(IDTO==idtoDoc, CLASSSUP=="CONDICIÓN_ESPECIAL_VENTA"||=="ALMACÉN"||=="LIQUIDACIÓN_PROVEEDOR_CAMBIO_PRECIO"||=="DISTRIBUIDOR"))
+	Lock(IDTO==idtoDoc,idoDoc:IDO!=null, STATE==Constants.INDIVIDUAL_STATE_LOCK) 		
+	
+	not(DatValue(ID==idoDoc, PROPNAME=="emitido", VALOR=="true"))
+	not(IndividualValue(IDO==idoDoc, PROPNAME==propLocalizacion))
+	ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME==propLocalizacion, VALOR!=null, centroTrabajo:OBJECTVALUE!=null)
+then	
+	dma.printRule("\n\n=====================  CENTRO TRABAJO POR DEFECTO=" +propLocalizacion);
+	dma.setValue(idoDoc, idtoDoc, propLocalizacion, centroTrabajo);
+end
+
+rule "DELEGACION DE ALMACEN" 
+salience 10//MAS PRIORIDAD QUE ALMACEN POR DEFECTO
+ agenda-group "rules" when   	   
+	FactHierarchy(idtoAlm:IDTO,CLASSSUP=="ALMACÉN")
+	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="DOCUMENTO")		
+	ObjValue(cls:CLASSNAME,idoDoc:IDO,IDTO==idtoDoc,propn:PROPNAME=="almacén_origen"||=="origen"||=="almacén_destino"||=="destino", idoAlm:IDOVALUE!=null,VALUECLS==idtoAlm)
+	not(FactHierarchy(IDTO==idtoDoc,CLASSSUP=="TRASPASO_ALMACENES"||=="PEDIDO_TRASPASO_ALMACENES"))//habria ambiguedad	
+	ObjValue(IDO==idoAlm,PROPNAME=="delegación", idoDel:IDOVALUE!=null,ovDel:OBJECTVALUE)
+	exists(Model(IDTO==idtoDoc, PROPNAME=="delegación"))		
+	not(ObjValue(IDO==idoDoc, PROPNAME=="delegación", IDOVALUE==idoDel))
+	//solo considero que la delegacion es la del almacen si es una venta y almacen origen, o una compra u almacen destino
+	not((and ObjValue(IDO==idoDoc,sujeto:PROPNAME=="cliente"||=="proveedor",VALOR!=null)
+			 eval(sujeto.equals("cliente")&& !propn.contains("origen") || sujeto.equals("proveedor")&& !propn.contains("destino"))))
+		
+then	
+	dma.printRule("=====================  DELEGACION DE ALMACEN "+cls);
+	dma.setValue(idoDoc, idtoDoc, "delegación", ovDel);
+end
+
+/*
+	Ahora mismo, fuerza a que si el cliente tiene definida una 'Mi Empresa', ésta será la empresa
+	asociada al DOCUMENTO_VENTA. 
+*/
+
+rule "LINEA: MI EMPRESA DE PRODUCTO"
+salience 100 //mas prioridad que "PRECIO LÍNEA EN VENTAS" que exige tenga ya empresa la linea
+agenda-group "rules" when   	 	
+  	Model(CLASSNAME=="LÍNEA_ARTÍCULOS", PROPNAME=="mi_empresa", OP==Constants.OP_INTERSECTION)
+  	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="DOCUMENTO_COMERCIAL")
+  	ObjValue(cls:CLASSNAME,IDTO==idtoDoc,idoDoc:IDO,PROPNAME=="mi_empresa",idoEmpDoc:IDOVALUE!=null,ovEmpresaDoc:OBJECTVALUE,chDoc:hasCHANGED)
+  	ObjValue(IDO==idoDoc,PROPNAME=="línea",idoLinea:IDOVALUE!=null,chLin:hasCHANGED)
+  	ObjValue(IDO==idoLinea,idtoLinea:IDTO,PROPNAME=="producto",idoProducto:IDOVALUE!=null,chPro:hasCHANGED)
+  	
+  	evolucionandoTarget:Long() from accumulate((and FactHierarchy(supAction:CLASSSUP=="Facturar_Documentos_Venta"||=="Facturar_Documentos_Compra"||=="Pasar_a_Pedido_Compra"||=="Pasar_a_Pedido_Venta",clsAccion:CLASS)
+   												 ObjValue(CLASSNAME==clsAccion, idoUTask:IDO,idtoUtask:IDTO,claseAccion:CLASSNAME!=null,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+ 												 DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+ 												 ObjValue(IDO==idoUTask,PROPNAME=="targetClass",IDOVALUE==idoDoc)),count(idEstado)) 	
+ 	//la empresa de la linea suele ser automatica, no la cambia el usuario, pero el usuario puede forzar en parametros la empresa con la que facturar. 
+ 	//En cualquier caso siempre aplica la logica de obligaciones por franquicias/replicas que no puede ser desautorizada en linea, solo cambia consumir evento cambio
+ 	
+  	eval(chDoc||chPro||chLin||evolucionandoTarget.intValue()>0)
+  	
+  	listaEmpresaProducto:ArrayList() from collect(ObjValue(IDO==idoProducto,PROPNAME=="empresa",IDOVALUE!=null,RANGENAME=="MI_EMPRESA"))
+  	
+  	existenGruposEmpresa:ArrayList() from collect(ObjValue(IDO==idoEmpDoc,PROPNAME=="delegacion_central",idoDelDoc:IDOVALUE!=null))
+  	  	  	  	 
+  	mismaDelegacionGrupo:Long() from accumulate((and 	ObjValue(IDO==idoEmpDoc,PROPNAME=="delegacion_central",idoDelDoc:IDOVALUE!=null)
+  														ObjValue(IDO==idoProducto,PROPNAME=="empresa",idoEmpProducto:IDOVALUE!=null) 
+  														ObjValue(IDO==idoEmpProducto,PROPNAME=="delegacion_central",IDOVALUE==idoDelDoc)),count(idoDelDoc))
+then
+	dma.printRule("============ LINEA: MI EMPRESA DE PRODUCTO "+cls+" hay grupos:"+existenGruposEmpresa.size());
+	//si no existe delegacion central, se entiende que no hay replicas y no hay distintas redes de ventas, entonces no distingo empresas de linea que provocarian varias bases imponibles
+	// la empresa del producto y la del documento son del mismo grupo, considero la del documento mas especifica, por ejemplo puede ser exenta
+	if(listaEmpresaProducto.size()==0 || existenGruposEmpresa.size()==0 || mismaDelegacionGrupo.intValue()>0){	
+		dma.setValue(idoLinea,idtoLinea,"mi_empresa",ovEmpresaDoc);
+		if(evolucionandoTarget.intValue()>0){
+			dma.printRule("ACTUALIZAR EMPRESA DE LINEA EN EVOLUCION "+idoEmpDoc);
+			//Se consume evento para respetar condiciones en cambio de empresa
+			dma.consumirEventoCambio(idoLinea,"mi_empresa");
+		}
+	}else{
+		ObjValue ovPro=(ObjValue)listaEmpresaProducto.get(0);
+		dma.setValue(idoLinea,idtoLinea,"mi_empresa",ovPro.getOBJECTVALUE());
+	}
+end
+
+
+rule "LINEA: FECHA DE UNICO DOCUMENTO"
+agenda-group "rules" when   	 	  	
+  	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="DOCUMENTO_COMERCIAL")
+  	Lock(IDTO==idtoDoc,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+  	DatValue(IDO==idoDoc,PROPNAME=="fecha",fechaDoc:DATAVALUE)
+  	ObjValue(IDO==idoDoc,PROPNAME=="línea",idoLinea:IDOVALUE!=null,idtoLinea:VALUECLS)  	
+  	not(ObjValue(IDO==idoLinea,PROPNAME=="documento",IDOVALUE!=idoDoc))  
+  	not	DatValue(IDO==idoLinea,PROPNAME=="fecha",DATAVALUE==fechaDoc)
+  	//exigimos que la linea este cargada, de lo contrario el set cargara la linea y eso provocara que se pregargen completamente documentos previos, 
+  	// que no son necesarios en la accion cobrar vencimientos					
+  	Individual(IDO==idoLinea,STATE==Constants.INDIVIDUAL_STATE_READY)									  														
+then
+	dma.printRule("============LINEA: FECHA DE UNICO DOCUMENTO");
+	dma.setValue(new Domain(idoLinea,idtoLinea),"fecha",fechaDoc);
+end
+
+
+rule "DOCUMENTO COMERCIAL: MI EMPRESA DE CLIENTE"
+//La diferencia con la mi empresa de producto, es que al cliente no se le pone la empresa de aplicacion por defecto. Si la empresa por defecto de aplicacion ha ido cambiando del mismo grupo
+//y productos tienen distinta empresa pero mismo grupo, sigue mandando la empresa de aplicacion que se copia al doc, y la del doc manda por ser mismo grupo. Pero en cliente manda lo que diga el cliente
+//quizas seria mas coherente que en producto solo se ponga por defecto si la mi empresa tiene delegacion central, lo cual habria que configurarlo en franquicias
+agenda-group "rules" when   	 	
+  	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="DOCUMENTO_COMERCIAL")
+  	Lock(IDTO==idtoDoc,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+  	
+  	ObjValue(IDO==idoDoc,PROPNAME=="cliente"||=="proveedor",idoCliente:IDOVALUE!=null,hasCHANGED==true)
+  	
+  	miEmpCliente:ObjectValue() from accumulate((and 	FactHierarchy(idtoMiempresa:IDTO,CLASSSUP=="MI_EMPRESA")
+  														ObjValue(IDO==idoCliente,PROPNAME=="empresa",idoEmp_cliente:IDOVALUE!=null,VALUECLS==idtoMiempresa,ovEmpresaCli:OBJECTVALUE)),
+  												init(ObjectValue res=new ObjectValue(0,0);),
+  												action(res=ovEmpresaCli;),
+  												result(res))
+  														
+  	//si ha evolucionado debe respetar lo que diga fases anteriores	
+  	not((and FactHierarchy(supAction:CLASSSUP=="Facturar_Documentos_Venta"||=="Facturar_Documentos_Compra"||=="Pasar_a_Pedido_Compra"||=="Pasar_a_Pedido_Venta",clsAccion:CLASS)
+   			ObjValue(CLASSNAME==clsAccion, idoUTask:IDO,idtoUtask:IDTO,claseAccion:CLASSNAME!=null,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+ 			DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+ 			ObjValue(IDO==idoUTask,PROPNAME=="targetClass",IDOVALUE==idoDoc)))
+ 	  	
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="mi_empresa",ovEmpApp:OBJECTVALUE!=null)
+then
+	dma.printRule("============ DOCUMENTO COMERCIAL: MI EMPRESA DE CLIENTE ");
+	ObjectValue empresa=miEmpCliente.getValue().intValue()==0?ovEmpApp:miEmpCliente;
+		
+	dma.setValue(idoDoc,idtoDoc,"mi_empresa",empresa);		
+end
+
+rule "MIEMPRESA POR DEFECTO" 
+ salience -200
+ agenda-group "rules" when 
+  	 
+	Model(idtoTarget:IDTO,nameclass:CLASSNAME!="APLICACIÓN"&&!="ÍNDICE"&&!="CONFIGURACIÓN_CONTABLE"&&!="CUENTA_CONTABLE"&&!="VALOR_POR_DEFECTO"&&!="CRÉDITO_TARJETA", idprop:PROP, p:PROPNAME=="mi_empresa", OP==Constants.OP_INTERSECTION) 
+	Lock(CLASSNAME==nameclass, id:ID, idoTarget:IDO,idto:IDTO, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	
+	not((and 	not(Model(IDTO==idtoTarget,OP=="CAR",QMIN>0,PROPNAME==p,OP==Constants.OP_CARDINALITY))
+				eval(idoTarget>0)))
+					
+	not(FactHierarchy(CLASS==nameclass,CLASSSUP=="PARAMS"))//NO SE PROPONEN VALORES POR DEFECTO DE  MI EMPRESA EN LOS PARAMETROS DE LAS ACCIONES
+	
+	Individual(claseConfiguracion:CLASSNAME=="APLICACIÓN", idoConfiguracion:IDO!=null,idtoConfig:IDTO)
+	ObjValue(IDO==idoConfiguracion, PROPNAME=="mi_empresa", idMiEmp:VALOR!=null,miEmpresa:OBJECTVALUE)
+	DatValue(ID==idMiEmp,PROPNAME=="rdn",nombreMiEmpresa:VALOR!=null)
+then	
+	dma.printRule("\n\n=====================MIEMPRESA POR DEFECTO: id:"+id+" claseDondeAplica="+nameclass+" nombreMiEmpresa:"+nombreMiEmpresa);
+	
+	Value val = null;
+	if( dma.getValue(idoTarget, idtoTarget,p)==null){
+		dma.setValue(idoTarget, idtoTarget, p, miEmpresa);
+	}
+	//dma.showMessage("Se ha asignado empresa por defecto: miEmpresa:"+nombreMiEmpresa+" id:"+id+" claseDondeAplica="+nameclass);
+end
+
+rule "EMPRESA DE ALMACEN DISTRIBUIDOR" 
+ salience -200
+ agenda-group "rules" when 
+  	 
+	FactHierarchy(idtoSujeto:IDTO,CLASSSUP=="CLIENTE"||=="DISTRIBUIDOR") 
+	Lock(idoSujeto:IDO, IDTO==idtoSujeto, STATE==Constants.INDIVIDUAL_STATE_LOCK, LEVEL==Constants.LEVEL_PROTOTYPE)		
+	
+	ObjValue(IDO==idoSujeto, PROPNAME=="almacén", idoAlmacen:IDOVALUE!=null,idtoAlmacen:VALUECLS)
+	not(ObjValue(IDO==idoAlmacen, PROPNAME=="empresa"))
+	
+	defecto:ArrayList() from collect(DatValue(IDO==idoSujeto,PROPNAME=="rdn"||=="código_postal"||=="nombre"||=="dirección"||=="localidad",VALOR!=null))
+then	
+	dma.printRule("=====================EMPRESA DE ALMACEN DISTRIBUIDOR");
+	dma.setValue(idoAlmacen, idtoAlmacen, "empresa", new ObjectValue(idoSujeto,idtoSujeto));	
+	for(int i=0;i<defecto.size();i++){
+		DatValue valor=(DatValue)defecto.get(i);
+		dma.setValue(idoAlmacen, idtoAlmacen,valor.getPROPNAME(),valor.getDATAVALUE());
+	}
+end
+
+rule "ALMACÉN POR DEFECTO" //zamora 1 octubre
+salience 0 //mas prioridad que ALMACENES DE DELEGACION Y EMPRESA
+ agenda-group "rules" when 
+  	  
+	Lock(nameclass:CLASSNAME!="LIQUIDACIÓN_PROVEEDOR_CAMBIO_PRECIO"&&!="TRASPASO_ALMACENES"&&!="PEDIDO_TRASPASO_ALMACENES"&&!="PARÁMETROS_PEDIDO_TRASPASO", idoDoc:IDO!=null, idtoDoc:IDTO, STATE==Constants.INDIVIDUAL_STATE_LOCK) 
+	f:Model(IDTO==idtoDoc, idpropAlmacen:PROP, propDoc:PROPNAME=="almacén"||=="origen"||=="destino", tipoOrigen:RANGENAME!=null, OP!=null)
+	not(DatValue(ID==idoDoc, PROPNAME=="emitido", VALOR=="true"))
+	not(ObjValue(IDO==idoDoc, PROP==idpropAlmacen, OP==null))
+	
+	not((and 	not(Model(IDTO==idtoDoc,OP=="CAR",QMIN>0,PROPNAME==propDoc,OP==Constants.OP_CARDINALITY))
+				eval(idoDoc>0)))
+			
+	forall( FactHierarchy(IDTO==idtoDoc,CLASSSUP=="ALBARÁN_DISTRIBUIDOR"||=="ALBARÁN_CLIENTE")
+			Model(IDTO==idtoDoc, PROP==idpropAlmacen,PROPNAME!="destino") )
+				
+	not( FactHierarchy(IDTO==idtoDoc,CLASSSUP=="CLIENTE") )
+					
+	ObjValue(CLASSNAME=="MI_EMPRESA"||=="APLICACIÓN", propDefecto:PROPNAME=="almacén_por_defecto"||=="almacén_entradas_por_defecto"||=="almacén_salidas_por_defecto", VALOR!=null,tipoAlmacenMiEmpresa:RANGENAME!=null, mialmacen:OBJECTVALUE!=null)
+	eval( 	(propDoc.equals("almacén") && propDefecto.equals("almacén_por_defecto")) ||
+			(propDoc.equals("origen") && propDefecto.equals("almacén_salidas_por_defecto")) ||
+			(propDoc.equals("destino") && propDefecto.equals("almacén_entradas_por_defecto")))
+then	
+	dma.printRule("\n\n=====================  ALMACÉN POR DEFECTO EN LA PROPIEDAD="+f.getPROPNAME()+"  de la clase="+nameclass);
+	if(tipoOrigen.equals(tipoAlmacenMiEmpresa)||dma.isSpecialized(tipoAlmacenMiEmpresa, tipoOrigen)){
+			dma.setValue(idoDoc, idtoDoc, f.getPROPNAME(), mialmacen);
+	}
+	else{
+		System.err.println("...info: no se pondra origne por defecto pq no es  compatibles el tipo de almacen de miEmpresa="+tipoAlmacenMiEmpresa+" para ponerselo "+tipoOrigen);
+	}
+end
+
+rule "EMPRESA POR DEFECTO EN ARTICULOS" 
+ salience -200
+ agenda-group "rules" when 
+  	FactHierarchy(nameclass:CLASS,CLASSSUP=="ARTÍCULO") 
+	Lock(CLASSNAME==nameclass, id:ID, idto:IDTO, STATE==Constants.INDIVIDUAL_STATE_LOCK, LEVEL==Constants.LEVEL_PROTOTYPE)
+	not(ObjValue(ID==id, PROPNAME=="empresa"))
+	
+	Individual(claseConfiguracion:CLASSNAME=="APLICACIÓN", idoConfiguracion:IDO!=null,idtoConfig:IDTO)
+	ObjValue(IDO==idoConfiguracion, PROPNAME=="mi_empresa", idMiEmp:VALOR!=null,miEmpresa:OBJECTVALUE)
+	DatValue(ID==idMiEmp,PROPNAME=="rdn",nombreMiEmpresa:VALOR!=null)
+then	
+	dma.printRule("\n\n=====================EMPRESA POR DEFECTO EN ARTICULOS: id:"+id+" claseDondeAplica="+nameclass+" nombreMiEmpresa:"+nombreMiEmpresa);
+	dma.setValue(id, idto, "empresa", miEmpresa);
+	//dma.showMessage("Se ha asignado empresa por defecto: miEmpresa:"+nombreMiEmpresa+" id:"+id+" claseDondeAplica="+nameclass);
+end
+
+rule "CAJA POR DEFECTO MODELO V1.2 " 
+ agenda-group "rules" when 
+  	  
+	Lock(nameclass:CLASSNAME, ido:IDO, idto:IDTO, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	f:Model(CLASSNAME==nameclass, idprop:PROP, PROPNAME=="caja", OP==Constants.OP_INTERSECTION) 
+	not( IndividualValue(IDO==ido, PROPNAME=="caja") )
+	ObjValue(CLASSNAME=="MI_EMPRESA"||=="CONFIG_TICKET", PROPNAME=="caja", caja:OBJECTVALUE!=null)
+then	
+ 	dma.printRule("\n\n=================>>CAJA POR DEFECTO EN LA PROPIEDAD="+f.getPROPNAME()+"  de la clase="+nameclass+"  version modelo 1.2");
+	dma.setValue(ido, idto, "caja", caja);
+end
+
+
+rule "CAJA POR DEFECTO" 
+ agenda-group "rules" when 
+  	  
+	f:Model(claseFlujo:CLASSNAME, idprop:PROP, propiedadCaja:PROPNAME=="caja_entrada"||=="caja_salida", OP==Constants.OP_INTERSECTION) 
+	Lock(CLASSNAME==claseFlujo, idoFlujo:IDO!=null, idtoFlujo:IDTO, STATE==Constants.INDIVIDUAL_STATE_LOCK)	
+
+	not(FactHierarchy(CLASS==claseFlujo,CLASSSUP=="TRASPASO_ENTRE_CAJAS"))
+
+	FactHierarchy(idtoCaja:IDTO,CLASSSUP=="CAJA")
+	DatValue(IDTO==idtoCaja,idoCaja:IDO,PROPNAME=="rdn",rdn:VALOR)
+	
+	//siguiente not sirve para que al editar un ticket de otra tienda siendo abonado no asigne mi caja
+	not((and 	ObjValue(idoDoc:IDO, PROPNAME=="cobro_anticipo", IDOVALUE==idoFlujo)
+				ObjValue(IDO==idoDoc, PROPNAME=="delegación", idoDel:IDOVALUE!=null)
+				ObjValue(IDO==idoCaja, PROPNAME=="delegación", IDOVALUE!=idoDel)))
+	
+	forall(	ObjValue(IDO==idoCaja, PROPNAME=="delegación", idoDel:IDOVALUE!=null)
+			ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="delegación", IDOVALUE==idoDel))
+
+	ObjValue(IDO==idoCaja, PROPNAME=="medio_de_pago", medio:IDOVALUE!=null)
+	DatValue(IDO==medio,PROPNAME=="rdn",rdnMedio:VALOR)
+	
+	forall( Model(CLASSNAME==claseFlujo,PROPNAME=="medio_de_pago", OP==Constants.OP_INTERSECTION) 
+			ObjValue(IDO==idoFlujo, PROPNAME=="medio_de_pago", IDOVALUE==medio))
+			
+	forall( ObjValue(IDO==idoFlujo, PROPNAME==propiedadCaja)
+			ObjValue(IDO==idoFlujo, PROPNAME=="medio_de_pago", hasCHANGED==true))
+			
+	//que no haya mas de una caja con el mismo medio
+	not((and 	FactHierarchy(idtoCaja2:IDTO,CLASSSUP=="CAJA")				
+				ObjValue(IDTO==idtoCaja2,ido2:IDO!=idoCaja, PROPNAME=="medio_de_pago", IDOVALUE==medio)
+				forall(	ObjValue(IDO==ido2, PROPNAME=="delegación", idoDel2:IDOVALUE!=null)
+						ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="delegación", IDOVALUE==idoDel2))
+				 ))			
+
+	forall( DatValue(IDO==idoFlujo, PROPNAME=="entregado_metálico", QMIN!=null&&!=0 )
+			DatValue(IDO==medio,PROPNAME=="rdn",VALOR=="Metálico"))
+	forall( DatValue(IDO==idoFlujo, PROPNAME=="entregado_tarjeta", QMIN!=null&&!=0 )
+			DatValue(IDO==medio,PROPNAME=="rdn",VALOR=="Tarjeta_crédito"))
+then	
+ 	dma.printRule("\n\n=================>>CAJA POR DEFECTO EN LA PROPIEDAD="+f.getPROPNAME()+"  de la clase="+claseFlujo);
+	dma.setValue(idoFlujo, idtoFlujo, propiedadCaja, new ObjectValue(idoCaja,idtoCaja));
+end
+
+rule "VALOR POR DEFECTO CAMPO pedir_todo_stock"
+ agenda-group "rules" when 
+  	  
+  	Individual(idto:IDTO, CLASSNAME=="PARÁMETROS_DEMANDA_STOCK", id:ID!=null)
+	Model(IDO==null, OP==Constants.OP_INTERSECTION, IDTO==idto, PROPNAME=="pedir_todo_stock")
+	not(DatValue(ID==id, PROPNAME=="pedir_todo_stock"))
+then	
+	dma.printRule("\n\n =========== VALOR POR DEFECTO CAMPO pedir_todo_stock");
+	dma.setValue(id, idto, "pedir_todo_stock", new BooleanValue(new Boolean(false)));
+end
+	
+//esta propiedad "valor_por_defecto_recibido_en_destino" se discontinua en la v1.3 por la nueva funcinalidad de poder declarar valores por defectos a a la carta
+rule "VALOR POR DEFECTO CAMPO recibido_en_destino en funcion valor configurado de ese campo en MiEmpresa"
+ agenda-group "rules" when 
+  	  
+  	Individual(idto:IDTO, CLASSNAME=="TRASPASO_ALMACENES", id:ID!=null)
+  	Model(IDTO==idto, PROPNAME=="recibido" ,OP==Constants.OP_INTERSECTION)
+  	
+	not( DatValue(ID==id, PROPNAME=="recibido", BOOLEANVALOR!=null) )
+	DatValue(CLASSNAME=="MI_EMPRESA"||=="APLICACIÓN", PROPNAME=="valor_por_defecto_recibido_en_destino", valorXDefecto:DATAVALUE!=null)
+then	
+	dma.printRule("\n\n ============== VALOR POR DEFECTO CAMPO recibido_en_destino en funcion valor configurado de ese campo en MiEmpresa");
+	dma.setValue(id, idto, "recibido", valorXDefecto);
+end
+	
+//compatible con version modelo 1.2 y anteriores, en versiones posteriores se discontinua esta propiedad por poder conseguirse lo mismo definiendo un valor por defecto
+rule "VALOR POR DEFECTO CAMPO numero_dias_estimacion_demanda en funcion valor configurado de ese campo en MiEmpresa"
+ agenda-group "rules" when 
+  	  
+  	FactHierarchy(CLASSSUP=="PARÁMETROS_ROTACIÓN_STOCK", nameclass:CLASS)
+  	Individual(idto:IDTO, CLASSNAME==nameclass, id:ID!=null)
+  	Model(IDTO==idto, PROPNAME=="numero_dias_estimacion_demanda", OP==Constants.OP_INTERSECTION)
+	not( DatValue(ID==id, PROPNAME=="numero_dias_estimacion_demanda", VALOR!=null ) )
+	DatValue(CLASSNAME=="MI_EMPRESA"||=="APLICACIÓN", PROPNAME=="numero_dias_estimacion_demanda", valorXDefecto:DATAVALUE!=null)
+then	
+	dma.printRule("\n\n ==============VALOR POR DEFECTO CAMPO numero_dias_estimacion_demanda en funcion valor configurado de ese campo en MiEmpresa");
+	dma.setValue(id, idto, "numero_dias_estimacion_demanda", valorXDefecto);
+end
+		  
+rule "EL RESPONSABLE ES EL EMPLEADO LOGADO SI ES OBLIGATORIO FIJAR EL RESPONSABLE"
+salience -100
+no-loop true
+ agenda-group "rules" when 
+  	 DocDataModel(user:USER!=null)
+	 Model(nameClas:CLASSNAME,PROPNAME=="responsable",OP==Constants.OP_CARDINALITY, QMIN==1)
+	 Individual(CLASSNAME==nameClas, idoReg:IDO!=null, idto:IDTO) 
+	 DatValue(CLASSNAME=="USER", idUser:ID, PROPNAME==Constants.PROP_RDN,VALOR==user)
+	 FactHierarchy(CLASSSUP=="EMPLEADO", idtoEmpleado:IDTO)
+	 ObjValue(idoEmpleado:IDO!=null,IDTO==idtoEmpleado, PROPNAME=="usuario", VALOR==idUser) 
+	 not(ObjValue(IDO==idoReg, PROPNAME=="responsable", VALOR!=null))
+then
+ 	dma.printRule("\n\n============EL RESPONSABLE ES EL EMPLEADO LOGADO SI ES OBLIGATORIO FIJAR EL RESPONSABLE:  TIPO OBJETO="+nameClas);
+ 	dma.setValue(idoReg, idto, "responsable", new ObjectValue(idoEmpleado,idtoEmpleado));
+end
+
+rule "PROPIEDADES POR DEFECTO DEPENDIENTES DEL SUJETO"
+//Se podria pensar que es posible añadir una condicion para que esta regla no se dispara si el documento está en un target y estamos en estado informado, siendo así mas
+//eficiente pues despues la regla de evolución machacara el valor. El problema es que entonces la activación no se consume, pues al cambiar el estado volvería a dispararse, 
+// cuando realmetne justo despues de abandonar el estado informado debe prevalecer el valor de la regla de evolucion
+	salience 50 //mas prioridad que instalar evolucion, por si estamos evolucionando un doc incompleto, de tiempo a informarlo
+	agenda-group "rules" 
+	when
+		
+		FactHierarchy(nameDoc:CLASS, CLASSSUP=="DOCUMENTO")
+		//NO utilizar individual, pues pasa por bloqueso ini y end intermedios que hacen vuelva a evaluarse, y 
+		//esta regla se dispare de nuevo tras la regla de evolucion de propiedades dependientes
+		ObjValue(CLASSNAME==nameDoc, idoDoc:IDO, idDoc:ID,idtoDoc:IDTO, propsujeto:PROPNAME=="cliente" ||=="proveedor"||=="distribuidor"||=="mi_empresa", sujeto:VALOR!=null, idtoSujeto:VALUECLS,cambioSujeto:hasCHANGED) 
+		//si sujeto es editado por usuario, y desvinculo el objeto dependiente que esta incompleto, no me deja porque ya estaria vinculado desde otro sitio, el documento, por eso hay que esperar
+			
+		Model(IDTO==idtoSujeto,idProp:PROP,propDependiente:PROPNAME=="agente_comercial"||=="almacén"||=="portes_pagados"||=="delegación"||=="divisa"||=="mi_empresa"||=="dirección_envío"||=="forma_pago"||=="descuentos_globales"||=="transportista"||=="porcentaje_retención",OP=="AND"||=="OR")
+		exists(Model(IDTO==idtoDoc,PROPNAME==propDependiente))
+
+		sujetoLockdByUser:ArrayList() from collect(Lock(ID==sujeto,LOCKEDBYUSER==true))
+		dependSujetoLockdByUser:Boolean() from accumulate((and ObjValue(ID==sujeto,PROPNAME==propDependiente,idoRange:IDOVALUE!=null)
+        													   Lock(IDO==idoRange,LOCKEDBYUSER==true)),
+        													   init(Boolean res=new Boolean(false);),
+        													   action(res=new Boolean(true);),
+        													   result(res))
+        													   		
+		not(eval( propsujeto.equals("mi_empresa") && !propDependiente.equals("porcentaje_retención") || propsujeto.equals("cliente") && propDependiente.equals("porcentaje_retención")))
+		
+		//delegacion o almacen de distribuidor no significa un valor a facturar, si no donde se distribuye (distribuidor no existe en modelos antiguos)
+		eval(!(dma.getIdClass("DISTRIBUIDOR")!=null && dma.isSpecialized(idtoSujeto,dma.getIdClass("DISTRIBUIDOR")) && (propDependiente.equals("delegación")||propDependiente.equals("almacén"))))
+		//TODO: si agente tiene mi empresa y cliente tb habria que resolver prioridad para que se dispare solo con una
+		//not(exists((and 	ObjValue(ID==sujeto,PROPNAME==propDependiente,idoRangeAny:IDOVALUE!=null)
+		//					Lock(IDO==idoRangeAny,LOCKEDBYUSER==true))))		
+    	        	        
+		//Los siguientes or deben ser exclusivos, para evitar un doble disparo por ejemplo si en la misma sesión, desde un pedido, se modifica dos formas
+		// de pago (editando) del cliente, en una el data property porcentaje y otra la creo nueva, una de ellas correlaria a la vez por IndividualValue
+		// y otra el cambio del enlace. para que sea exclusivo, añado la condicion de estructural, ya que al ser estructural basta correlar por
+		// los cambios en propiedades segundo nivel, no correlando por la otra parte del or (el enlace)
+								
+												
+		//No puedo usar hasChanged por que puede ser consumido (igualado previo valor a nuevo valor
+        exists((or 	
+        			 exists((and 	eval(dma.getDDM().getCategory(idProp).isStructural())
+        							ObjValue(ID==sujeto,PROPNAME==propDependiente,idoRange:IDOVALUE!=null)
+        							IndividualValue(IDO==idoRange,hasCHANGED==true)        							
+        							))
+			         exists((and 	eval(!dma.getDDM().getCategory(idProp).isStructural())
+			        				IndividualValue(ID==sujeto,PROPNAME==propDependiente,VALOR!=null,hasCHANGED==true)))
+			         eval(cambioSujeto)
+			        ))
+	    
+	    not((and eval(propDependiente.equals("forma_pago"))
+	    		 exists((and ObjValue(IDO==idoDoc, PROPNAME=="vencimientos",idoV:IDOVALUE)	
+							 ObjValue(IDO==idoV, PROPNAME=="pago_asignado",idoFormaPago:IDOVALUE!=null)))))
+	    //Arriba detectamos un cambio para una de las properties dependientes, 
+	    //y si lo hay debo rehacer todos los valores respecto a la misma propertye aunque no hayan cambiado
+		conjuntoRango: ArrayList(size>0)	from collect(IndividualValue(ID==sujeto,PROPNAME==propDependiente,VALOR!=null))	
+		not(eval(propDependiente.equals("mi_empresa")&&(conjuntoRango.size()==0)))//no hay que hacer nada si la propiedad es mi_empresa y no hay valores que ponerle
+		not(ObjValue(IDO==idoDoc,PROPNAME=="mi_empresa"&&==propDependiente,VALOR!=null))
+		
+
+	then
+	    
+	    dma.printRule("\n================= >PROPIEDADES POR DEFECTO DEPENDIENTES DEL SUJETO: propsujeto "+propsujeto+" propDependiente:"+propDependiente+" conjuntoRango.:"+conjuntoRango+" chsuj:"+cambioSujeto);
+	    //pensar también la evolución de documentos pq cuando evolucionan la formapago/direcció viene de antes
+	    //Si acumula nulo pq el cliente no tiene o no tiene suficiente datos de contacto hay que hacer delete de l direccion
+	    if(dependSujetoLockdByUser.booleanValue()){
+	    	dma.printRule("reset dependientes");
+	    	dma.delValues(idoDoc, idtoDoc, propDependiente);//NO QUITAR, TIENE QUE ATENDER A CAMBIOS DE CLIENTE/PROVEEDOR EN LOS QUE HAY QUE RESETEAR LOS VALORES DEL DOCUMENTO
+	    }else{
+	    	dma.printRule("previo clonar dependientes");	    
+	    	LinkedList valExist=dma.getValues(idoDoc, idtoDoc, propDependiente);
+	    	if(valExist.size()==0&&sujetoLockdByUser.size()==0){
+	    		dma.printRule("clonando dependientes");
+	    		boolean propIsEstruct= dma.getDDM().getCategory(idProp).isStructural();
+	    		for(int i=0;i<conjuntoRango.size();i++){
+	    			IndividualValue iv=(IndividualValue)conjuntoRango.get(i);
+	    			if(propIsEstruct){
+		    			dma.printRule("\n propiedad "+propDependiente+" estructural");
+		    			ObjValue ov=(ObjValue)iv; 
+			    		Domain domainEstruct = dma.cloneIndividual(ov.getIDOVALUE(),ov.getVALUECLS(),ov.getVALUECLS(),null);
+						dma.addValue(idoDoc, idtoDoc, propDependiente, new ObjectValue(domainEstruct));
+        			}else{
+		    			dma.printRule("\n propiedad NO estructural"+propDependiente);
+		    			if(iv instanceof ObjValue){
+		    				ObjValue ov=(ObjValue)iv;
+		        			dma.addValue(idoDoc, idtoDoc, propDependiente, new ObjectValue(ov.getIDOVALUE(),ov.getVALUECLS()));
+		        		}else if(iv instanceof DatValue){
+		        			dma.setDataValue(idoDoc, idtoDoc, propDependiente, iv.getVALOR());
+		        		} else{
+		        			dma.printRule("\n\n ERRRO: CASO SIN IMPLEMENTAR EN REGLA VALORES POR DEFECTO, PROVOCAMOS EXCEPCION");
+		        			int a=1/0;
+		        		}          		      
+		    		}
+				}
+			}
+		 	//dma.printRule("..debug valores al final de regla valores por defecto en la propiedad:"+propDependiente+"\n"+dma.getValues(idoDoc, idtoDoc, propDependiente));
+		 }
+end
+
+
+rule "CLIENTE DIRECCIONES POSIBLE POR DEFECTO SON IGUALES A LA DIRECCION DE DATOS DE CONTACTO"
+	//regla hereditaria
+	salience 100 //(entre default propiedades dependientes de sujeto y evolucion
+	agenda-group "rules" 
+	when 
+	   	
+		FactHierarchy(idtoDoc:IDTO,CLASSSUP=="DOCUMENTO_VENTA")
+		DatValue(IDTO==idtoDoc, idDoc:ID,clsDoc:CLASSNAME,PROPNAME=="rdn", VALOR!=null)		 
+		Model(CLASSNAME==clsDoc,PROPNAME=="dirección_envío",OP==Constants.OP_INTERSECTION)
+		
+		ObjValue(IDTO==idtoDoc, ID==idDoc, PROPNAME=="cliente", sujeto:VALOR!=null,sujetoChanged:hasCHANGED)
+					
+		not(ObjValue(ID==sujeto, PROPNAME=="dirección_envío") )
+		
+		DatValue(ID==sujeto, idtoSujeto:IDTO, PROPNAME=="dirección", idDir:VALOR!=null,direccion_i:DATAVALUE!=null)
+		(or exists( IndividualValue(ID==idDir,hasCHANGED==true))
+			//si evoluciona el doc, la regla de evolucion consume el cambio de sujeto	
+			eval(sujetoChanged)
+		)
+					
+		
+		DatValue(ID==sujeto, PROPNAME=="código_postal", VALOR!=null,codigoPostal:DATAVALUE!=null)
+		DatValue(ID==sujeto, PROPNAME=="nombre", VALOR!=null,nombreCliente:DATAVALUE!=null)
+		ObjValue(ID==sujeto, PROPNAME=="localidad", VALOR!=null,localidad:OBJECTVALUE!=null)
+		ObjValue(ID==sujeto, idosujeto:IDO,PROPNAME=="provincia", VALOR!=null,provincia:OBJECTVALUE!=null)
+		
+	then
+		dma.printRule("\n\n================= >DOCUMENTO_VENTA DIRECCIONES POSIBLE POR DEFECTO SON IGUALES A LA DIRECCION DE DATOs DE CONTACTO");
+		
+		dma.delValues(new Integer(idDoc), idtoDoc, "dirección_envío");
+		
+		Domain dominioDireccion = dma.creaIndividualOfClass("DIRECCIÓN");
+		dma.setValue(dominioDireccion, "dirección", direccion_i);
+		dma.setValue(dominioDireccion, "código_postal", codigoPostal);
+		dma.setValue(dominioDireccion, "localidad", localidad);
+		dma.setValue(dominioDireccion, "provincia", provincia);
+		dma.setValue(dominioDireccion, "receptor", nombreCliente);
+	
+		//SI EL CLIENTE TIENE TELEFONO (NO OBLIGATORIO) SE COPIA A LA DIRECCIÓN DE ENVIO
+		Value telefono = dma.getValue(idosujeto, idtoSujeto, "teléfono");
+		if(telefono != null){
+			dma.setValue(dominioDireccion, "teléfono", telefono);
+		}
+		dma.setValue(idDoc, idtoDoc, "dirección_envío", new ObjectValue(dominioDireccion));
+ end
+
+/*Separada la regla anterior en dos reglas para evitar tener que usar un OR que provoca el error de shadowProxy*/
+ rule "ALMACEN ENTRADAS DIRECCIONES POSIBLE POR DEFECTO SON IGUALES A LA DIRECCION DE DATOS DE CONTACTO"
+	//regla hereditaria
+	salience -50
+	agenda-group "rules" 
+	when 
+	   	
+		FactHierarchy(idtoDoc:IDTO,CLASSSUP=="DOCUMENTO_COMPRA")
+		Lock(  IDTO==idtoDoc, idDoc:ID,clsDoc:CLASSNAME,STATE==Constants.INDIVIDUAL_STATE_LOCK, LEVEL==Constants.LEVEL_PROTOTYPE) 
+		Model(CLASSNAME==clsDoc,PROPNAME=="dirección_envío",OP==Constants.OP_INTERSECTION)
+		
+		ObjValue(claseConfig:CLASSNAME=="APLICACIÓN",idMiEmp:ID!=null,PROPNAME=="almacén_entradas_por_defecto", sujeto:VALOR!=null)
+
+		not(ObjValue(ID==sujeto, PROPNAME=="dirección_envío") )
+		DatValue(ID==sujeto, idtoSujeto:IDTO, PROPNAME=="dirección", VALOR!=null,direccion_i:DATAVALUE!=null)
+		DatValue(ID==sujeto, PROPNAME=="código_postal", VALOR!=null,codigoPostal:DATAVALUE!=null)
+		DatValue(ID==sujeto, PROPNAME=="nombre", VALOR!=null,nombreCliente:DATAVALUE!=null)
+		ObjValue(ID==sujeto, PROPNAME=="localidad", VALOR!=null,localidad:OBJECTVALUE!=null)
+		ObjValue(ID==sujeto, idosujeto:IDO,PROPNAME=="provincia", VALOR!=null,provincia:OBJECTVALUE!=null)
+		
+	then
+		dma.printRule("\n\n================= >DOCUMENTO_COMPRA DIRECCIONES POSIBLE POR DEFECTO SON IGUALES A LA DIRECCION DE DATOs DE CONTACTO");
+		Domain dominioDireccion = dma.creaIndividualOfClass("DIRECCIÓN");
+		dma.setValue(dominioDireccion, "dirección", direccion_i);
+		dma.setValue(dominioDireccion, "código_postal", codigoPostal);
+		dma.setValue(dominioDireccion, "localidad", localidad);
+		dma.setValue(dominioDireccion, "provincia", provincia);
+		
+		//SI EL CLIENTE TIENE TELEFONO (NO OBLIGATORIO) SE COPIA A LA DIRECCIÓN DE ENVIO
+		Value telefono = dma.getValue(idosujeto, idtoSujeto, "teléfono");
+		if(telefono != null){
+			dma.setValue(dominioDireccion, "teléfono", telefono);
+		}
+		dma.setValue(idDoc, idtoDoc, "dirección_envío", new ObjectValue(dominioDireccion));
+ end
+ 
+ rule "DESTINO POR DEFECTO EN DOCUMENTO DISTRIBUIDOR EL ALMACÉN DEL DISTRIBUIDOR"
+	agenda-group "rules" 
+	when
+		FactHierarchy(nameDoc:CLASS, CLASSSUP=="DOCUMENTO")
+		ObjValue(CLASSNAME==nameDoc, idoDoc:IDO, idDoc:ID,idtoDoc:IDTO, propsujeto:PROPNAME=="distribuidor"||=="cliente",idoSujeto:IDOVALUE!=null,cambioSujeto:hasCHANGED) 
+		ObjValue(IDO==idoSujeto, PROPNAME=="almacén",cambioAlmacen:hasCHANGED,VALOR!=null,objalmacen:OBJECTVALUE)	
+		exists(Model(IDTO==idtoDoc,PROPNAME=="destino"))
+		eval(cambioSujeto||cambioAlmacen)
+then
+		dma.printRule("\n\n======== DESTINO POR DEFECTO EL ALMACEN DEL DISTRIBUIDOR: nameDoc:"+nameDoc+"  idoDoc:"+idoDoc+" objalmacen:"+objalmacen);
+		dma.setValue(idoDoc,idtoDoc,"destino",objalmacen);
+end		
+
+ rule "DESCUENTO GLOBAL PORCENTAJE"
+	agenda-group "rules" 
+	when
+		FactHierarchy(idtoDoc:IDTO, CLASSSUP=="DOCUMENTO_COMERCIAL")
+		ObjValue(IDTO==idtoDoc,PROPNAME=="descuentos_globales",idoDescuento:IDOVALUE!=null,idtoDescuento:VALUECLS,obDescuentoChanged:hasCHANGED)
+		ObjValue(IDO==idoDescuento, PROPNAME=="tipo_descuento_global",idoTipo:IDOVALUE!=null,obTipoChanged:hasCHANGED)
+		DatValue(IDO==idoTipo, PROPNAME=="porcentaje",porciento:DOUBLEVALUE!=null) 
+		eval(obDescuentoChanged||obTipoChanged)
+		//not(DatValue(IDO==idoDescuento,PROPNAME=="porcentaje"))		
+then
+		dma.printRule("======== DESCUENTO GLOBAL PORCENTAJE");
+		dma.setValue(idoDescuento,idtoDescuento,"porcentaje",new DoubleValue(porciento));
+end		

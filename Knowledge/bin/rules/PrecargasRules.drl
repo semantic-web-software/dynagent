@@ -1,0 +1,426 @@
+package dynagent.ruleengine.src.ruler.ERPrules
+import dynagent.ruleengine.src.ruler.ERPrules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.properties.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import dynagent.common.basicobjects.*;
+
+global DataModelAdapter dma;
+
+rule "PRECARGA DOCUMENTOS PREVIOS"
+//Es necesario ahora que no se pregarga 2 niveles individuos solo por existir un object prop o un sourceclass
+salience 100
+agenda-group "rules" when 
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	Lock(CLASSNAME==nameDoc,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	not(DatValue(IDO==idoDoc,PROPNAME=="emitido",VALOR=="true"))
+	docs:HashSet(size>0) from accumulate((and  	ObjValue(IDO==idoDoc,PROPNAME=="línea",idoLinea:IDOVALUE) 
+											ObjValue(IDO==idoLinea,PROPNAME=="documento",idoDocAny:IDOVALUE!=null&&!=idoDoc,doc:OBJECTVALUE)
+											not(Individual(IDO==idoDocAny))),
+                             				init	( HashSet<ObjectValue> res = new HashSet<ObjectValue> ();),
+                              				action( res.add(doc);),                                            
+                              				result(res))
+then
+ 	dma.printRule("=================== PRECARGA DOCUMENTOS PREVIOS");
+ 	dma.ruleGetFromServer((HashSet<IDIndividual>)docs,2,false);
+end
+
+rule "PRECARGA ALMACEN/CENTRO"
+salience 0 //Si se carga antes el almacen por defecto, gana prioridad 
+agenda-group "rules" when 
+	  
+	ObjValue(PROPNAME=="almacén_origen"||=="almacén_destino"||=="almacén"||=="origen"||=="destino"||=="centro_trabajo",idEntidad:IDOVALUE!=null,idtoEntidad:VALUECLS,almacen:OBJECTVALUE)
+	//eval(dma.preload(Integer.parseInt(idEntidad),idtoEntidad))
+	not(Individual(IDO==idEntidad))
+then
+	dma.printRule("RULE PRECARGA ALMACEN/CENTRO "+idEntidad);
+ 	dma.ruleGetFromServer(idEntidad,idtoEntidad,1,false);
+end	
+
+rule "PRECARGA DELEGACIÓN"
+salience -100 
+agenda-group "rules" when 
+	lista:HashSet(size>0) from accumulate((and  	
+											ObjValue(PROPNAME=="delegación"||=="destino_delegacion"||=="origen_delegacion"||=="delegacion_central",idoDelegacion:IDOVALUE>0,del:OBJECTVALUE)
+											not(Individual(IDO==idoDelegacion))),
+                             				init	( HashSet<ObjectValue> res = new HashSet<ObjectValue> ();),
+                              				action( res.add(del);),                                            
+                              				result(res))
+then
+	dma.printRule("\n\n ================ PRECARGA DELEGACIÓN ");
+ 	dma.ruleGetFromServer((HashSet<IDIndividual>)lista,1,false);
+end	
+
+rule "PRECARGA CAJAS"
+ salience -100
+ //esta regla es necesaria porque muchos campos de los documentos dependen del sujeto: descuentos globales, tarifas, precios especiales,...
+ agenda-group "rules" when
+ 	//Ido >0 para no sea un filtro 
+ 	Model(idto:IDTO,PROPNAME=="caja"||=="caja_entrada"||=="caja_salida", OP==Constants.OP_INTERSECTION)
+ 	ObjValue(IDTO==idto,PROPNAME=="medio_de_pago", idoMedio:IDOVALUE!=null,LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL)
+	delegacionesMotor:ArrayList() from collect(ObjValue(PROPNAME=="delegación", idoDel:IDOVALUE!=null,LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL))
+
+	not((and 	FactHierarchy(idtoCaja:IDTO,CLASSSUP=="CAJA")
+				ObjValue(IDTO==idtoCaja,idoCaja:IDO>0, PROPNAME=="medio_de_pago", IDOVALUE==idoMedio)
+				forall(	ObjValue(IDO==idoCaja, PROPNAME=="delegación", idoDel:IDOVALUE!=null)
+						ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="delegación", IDOVALUE==idoDel))
+			))				
+then
+ 	dma.printRule("=========== PRECARGA CAJAS "+delegacionesMotor.size());
+ 	ArrayList<Value> valuesDel=new ArrayList<Value> ();
+ 	HashMap<String, ArrayList<Value>> filtro=new HashMap<String, ArrayList<Value>>();
+ 	if(delegacionesMotor.size()>0){
+ 		for(int i=0;i<delegacionesMotor.size();i++){
+ 			valuesDel.add(((ObjValue)delegacionesMotor.get(i)).getOBJECTVALUE());
+ 		}
+ 		filtro.put("delegación",valuesDel);
+ 	}else filtro=null;
+ 	
+	instance instancefilter=dma.buildInstanceWith ("CAJA",null,filtro,null,null);
+	HashSet<IDIndividual> idosCargados = 	dma.loadIndividualsWithSatisficedFilter(instancefilter,1);
+end
+
+rule "AL ELIMINAR UN DOCUMENTO COMERCIAL QUE NO ESTA EN MOTOR SI SUS LINEAS APUNTAN A OTRO/S DOCUMENTOS APARTE ESTE/OS SE CARGAN EN MOTOR"
+ salience -200
+ agenda-group "rules" when 
+  	
+  	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	Individual(IDTO==idtoDoc,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+	Model(IDTO==idtoDoc,IDO==null,OP=="AND"||=="OR",PROPNAME=="línea",idtoLinea:VALUECLS)
+	not(exists(ObjValue(IDO==idoDoc, PROPNAME=="línea",VALOR!=null)))
+then
+	dma.printRule("\n\n---------------  AL ELIMINAR UN DOCUMENTO COMERCIAL QUE NO ESTÁ EN MOTOR SI SUS LINEAS APUNTAN A OTRO/S DOCUMENTOS APARTE ESTE/OS SE CARGAN EN MOTOR: idoDoc:"+idoDoc+" idtoDoc:"+idtoDoc);
+	HashMap<String, Value> valuesFiltro = new HashMap<String, Value>();
+	valuesFiltro.put("documento",new ObjectValue(idoDoc,idtoDoc));
+	instance instanceFilter=dma.buildInstanceWith(idtoLinea,valuesFiltro,null,null,null);//buscamos lineas que tengan a este documento
+	ArrayList <ResultQuery> lineas=dma.serverGetValuesWhichSatisfaceFilter(instanceFilter,"documento");
+	HashSet<IDIndividual> documentosACargar=new HashSet<IDIndividual>();
+	for(int i=0;i<lineas.size();i++){
+		//se recorren todas las líneas para ver si están en otros docus
+		ResultQuery rqLinea=lineas.get(i);
+		dma.printRule("...linea encontrada, rqLinea:"+rqLinea);
+		LinkedList<Value> documentosLineaI=rqLinea.getValues("documento");
+		dma.printRule("...documentosLineaI:"+documentosLineaI);
+		for(int j=0;j<documentosLineaI.size();j++){
+			ObjectValue docJlineaI=(ObjectValue)documentosLineaI.get(j);
+			if (docJlineaI.getValue().intValue()!=idoDoc.intValue()){
+				documentosACargar.add(docJlineaI);
+			}
+		}
+	}
+	if(documentosACargar.size()>0){
+		 dma.printRule("...SE HAN ENCONTRADO "+documentosACargar.size()+" a cargar");
+		 HashSet<Integer> idosDocs=dma.ruleGetFromServer(documentosACargar, 3,true) ;//se cargan los documentos bloqueados pq si otra regla tiene que hacer algo sobr eellos
+	}
+end
+
+
+rule "CARGA INFORMACION ADICIONAL"//LA REGLA PRECARGA STOCK NECESITA QUE ESTÉN LOS RDNS DE LOTES,COLOR,TALLA,....
+//TODO: SI EN UN FUTURO EL SERVIDOR MANDARA A MOTOR EL VALUERDN QUE GUARDA, LA REGLA DE PRECARGA STOCKS PODRÍA RAZONAR EN FUNCION DE LOS OBJECTVALUE (ejemplo objetvalue(lote, valor=101, rdnvalor="lote3"), SIN
+//NECESIDAD DE CARGAR TODOS ESTOS OBJETOS EN MOTOR QUE ES LO QUE HACE ESTA REGLA 
+salience -100 
+ agenda-group "rules" when 
+	infoProductos: HashSet(size>0) 
+            	from accumulate(
+            				 (and 
+             					 ObjValue(CLASSNAME!="LINEA_ROTACION",PROPNAME=="lote"||=="talla"||=="color"||=="producto"||=="familia"||=="subfamilia"||=="marca",IDOVALUE>0,idInfo:VALOR!=null,infoProducto:OBJECTVALUE,LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL)
+								 not(Individual(ID==idInfo))								 
+             			
+             				  ),
+                              init	( HashSet<ObjectValue> infoProductos2 = new HashSet<ObjectValue> ();),
+                              action( infoProductos2.add(infoProducto);),       
+                              //reverse(;),                     
+                              result(infoProductos2))
+then
+ 	dma.printRule("================== CARGA INFORMACION ADICIONAL:  infoProductos="+infoProductos);
+ 	dma.ruleGetFromServer((HashSet<IDIndividual>)infoProductos,1,false);
+end
+
+rule "PRECARGA DEL SUJETO/AGENTE_COMERCIAL DE UN DOCUMENTO"
+ salience 100//mas prioridad que precio linea
+ //esta regla es necesaria porque muchos campos de los documentos dependen del sujeto: descuentos globales, tarifas, precios especiales,...
+ agenda-group "rules" when 
+  	
+	ObjValue(PROPNAME=="cliente"||PROPNAME=="proveedor"||=="agente_comercial",idSujeto:VALOR!=null,idtosujeto:VALUECLS,LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL)
+	not(Individual(ID==idSujeto))
+then
+ 	dma.printRule("\n\n$$$$$$$$$$$$$ PRECARGA_RULE: PRECARGA DEL SUJETO/AGENTE_COMERCIAL DE UN DOCUMENTO");
+ 	dma.ruleGetFromServer(new Integer(idSujeto),idtosujeto,2,false); 	
+end
+
+//precarga vencimientos al cobrar facturas, y lineas al evolucionar, o bien volver a hacer el get con 3 niveles cuando es una evolucion
+
+rule "PRECARGA STOCK/ENTRADA/SALIDA/REGULARIZACIÓN/REGULARIZACION_DEUDA/PRODUCCIÓN/FACTURA/PEDIDO EN ELIMINACIÓN"
+salience -100
+ agenda-group "rules" when 
+  	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="USER"||=="CONDICIÓN_ESPECIAL_VENTA"||=="STOCK"||=="REGULARIZACIÓN_DEUDA"||=="TAREA"||=="DOCUMENTO"||=="ARTÍCULO"||=="CRÉDITO_TARJETA")	
+	Individual(id:ID,ido:IDO,CLASSNAME==name,STATE==Constants.INDIVIDUAL_STATE_DELETED)	
+	not(IndividualValue(IDO==ido,VALOR!=null))//para no precargar si ya existe en motor	
+	then
+	dma.printRule("=========== RULE PRECARGA DE STOCK/ENTRADA/SALIDA/REGULARIZACIÓN/REGULARIZACION_DEUDA/PRODUCCIÓN/FLUJO_CAJA/FACTURA/PEDIDO EN ELIMINACIÓN:  "+name);
+ 	dma.ruleGetFromServer(ido,idto,3,false);
+end
+
+rule "PRECARGA FLUJO_CAJA EN ELIMINACIÓN"
+salience -100
+ agenda-group "rules" when 
+  	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="FLUJO_CAJA"||=="CIERRE_CAJA")
+	Individual(id:ID,ido:IDO,CLASSNAME==name,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+	not(IndividualValue(IDO==ido,VALOR!=null))
+then
+	dma.printRule("\n\n =========== PRECARGA FLUJO_CAJA EN ELIMINACIÓN:  "+name+" se cargaran 4 niveles");
+ 	dma.ruleGetFromServer(ido,idto,4,false);
+end
+
+
+rule "CARGA LÍNEAS DE ENTRADA/SALIDA MERCANCÍA EN ELIMINACIÓN" 
+salience -100
+ agenda-group "rules" when 
+  	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="FLUJO_ARTÍCULOS")
+	Individual(id:ID,ido:IDO,CLASSNAME==name,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+	lineas: HashSet(size>0) 
+            	from accumulate(
+            				 (and 
+             					  ObjValue(ID==id,PROPNAME=="línea", idlinea:VALOR!=null,IDOVALUE>0,linea:OBJECTVALUE)
+								  not(Individual(ID==idlinea))
+             				  ),
+                              init	( HashSet<IDIndividual> lineas2 = new HashSet<IDIndividual> ();),
+                              action( lineas2.add(linea);),        
+                              reverse(;),                    
+                              result(lineas2))
+then
+	dma.printRule("\n\n$$$$$$$$$$$$$ PRECARGA_RULE: CARGA LÍNEAS DE ENTRADA/SALIDA MERCANCÍA EN ELIMINACIÓN:  lineas="+lineas);
+ 	dma.ruleGetFromServer(lineas,3,false);
+end
+
+
+rule "CARGA FACTURA CUANDO SE ELIMINA LA QUE LA RECTIFICA"
+salience 100
+agenda-group "rules" when
+	
+	FactHierarchy(namefactura:CLASS,CLASSSUP=="RECTIFICACIÓN")
+	Individual(CLASSNAME==namefactura,idoFac:IDO,idtoFact:IDTO,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+	ObjValue(IDO==idoFac,PROPNAME=="rectifica_a",facturaRectificada:OBJECTVALUE,idFactRectificada:VALOR)
+	not(Individual(ID==idFactRectificada))
+then
+	dma.printRule("\n\n$$$$$$$$$$$$$ PRECARGA_RULE: CARGA FACTURA CUANDO SE ELIMINA LA QUE LA RECTIFICA");
+	dma.ruleGetFromServer(facturaRectificada.getValue(),facturaRectificada.getValueCls(),3,false);
+end
+
+rule "CARGA PRODUCTO Y PRECIOS EN FACTURAR LIQUIDACION"
+//REGLA AUXILIAR PARA LA REGLA FACTURAR LIQUIDACION
+salience 100
+agenda-group "rules"  when
+    
+    ObjValue(CLASSNAME=="Facturar_Liquidación_Proveedor"||CLASSNAME=="Facturar_Liquidación_Cliente", idUTask:ID,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+    ObjValue(ID==idUTask, PROPNAME=="sourceClass",idLiquid:VALOR!=null)
+	lineas: HashSet(size>0) 
+            	from accumulate(
+            				 (and 
+             					  ObjValue(ID==idLiquid,PROPNAME=="productos_y_precios", idLinea:VALOR!=null,linea:OBJECTVALUE)
+								  not(Individual(ID==idLinea))
+             				  ),
+                              init	( HashSet<IDIndividual> lineas2 = new HashSet<IDIndividual> ();),
+                              action( lineas2.add(linea);),  
+                              reverse(;),                          
+                              result(lineas2))
+then
+	dma.printRule("\n\n$$$$$$$$$$$$$ PRECARGA_RULE:  CARGA PRODUCTO Y PRECIOS EN FACTURAR LIQUIDACION");
+	dma.ruleGetFromServer(lineas,3,false);
+end
+
+ rule "CARGA DE VENCIMIENTOS"
+ salience 100
+ agenda-group "rules" when 
+  	
+  	vencimientos: HashSet(size>0) 
+            	from accumulate(
+            				 (and 
+             					 f:ObjValue(id:ID!=null,PROPNAME=="vencimientos",idApuntado:VALOR!=null,objetoApuntado:OBJECTVALUE,LEVEL==Constants.LEVEL_PROTOTYPE||==Constants.LEVEL_INDIVIDUAL)
+  								not(Individual(ID==idApuntado))
+             				  ),
+                              init	( HashSet<IDIndividual> lineas2 = new HashSet<IDIndividual> ();),
+                              action( lineas2.add(objetoApuntado);),                            
+                              result(lineas2))
+then
+ 	dma.printRule("\n\n$$$$$$$$$$$$$ PRECARGA_RULE: CARGA VENCIMIENTOS: vencimientos="+vencimientos);
+ 	dma.ruleGetFromServer(vencimientos,1,false);
+end
+
+rule "Precarga Recibos de Remesa en Accion Confirmar_Cobro_Remesa"  
+//@precarga para rule "Confirmar_Cobro_Remesa"  
+salience 100
+agenda-group "rules" when
+    
+    f:ObjValue(CLASSNAME=="Confirmar_Cobro_Remesa", idUTask:ID!=null ,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_PREVALIDANDO)
+    ObjValue(ID==idUTask, PROPNAME=="sourceClass",idremesa:VALOR!=null)
+  recibos: HashSet(size>0) 
+            	from accumulate(
+            				 (and 
+             					    ObjValue(ID==idremesa, PROPNAME=="recibos",idrecibo:VALOR!=null,recibo:OBJECTVALUE)
+    								not(Individual(ID==idrecibo))
+             				  ),
+                              init	( HashSet<IDIndividual> recibos2 = new HashSet<IDIndividual> ();),
+                              action( recibos2.add(recibo);),                            
+                              result(recibos2))
+then
+	dma.printRule("\n\n ============= RULE PRECARGA RECIBOS DE REMESA EN ACCIÓN Confirmar_Cobro_Remesa   idremesa="+idremesa);
+	dma.ruleGetFromServer(recibos,1,false);
+end
+
+
+rule "CARGA PAGOS ASIGNADOS A VENCIMIENTOS"
+salience 100
+ no-loop true
+ agenda-group "rules" 
+ when 
+ 	FactHierarchy(claseVenc:CLASS,CLASSSUP=="VENCIMIENTO")
+ 	DatValue(CLASSNAME==claseVenc,idven:ID!=null,PROPNAME=="importe",importe:DOUBLEVALUE!=null)
+	pagosAsignados: HashSet(size>0) 
+            	from accumulate(
+            				 (and 
+             					  ObjValue(ID==idven,PROPNAME=="pago_asignado",idoPagoasig:IDOVALUE>0,pagoasig:OBJECTVALUE)
+								  not(Individual(IDO==idoPagoasig))
+             				  ),
+                              init	( HashSet<IDIndividual> pagosAsignados2 = new HashSet<IDIndividual> ();),
+                              action( pagosAsignados2.add(pagoasig);),                            
+                              result(pagosAsignados2))
+then
+	dma.printRule("\n\n$$$$$$$$$$$$$ PRECARGA_RULE:  CARGA PAGOS ASIGNADOS A 2: pagosAsignados="+pagosAsignados);
+	dma.ruleGetFromServer(pagosAsignados,1,false);
+end
+
+rule "CARGA STOCK PARA RULE GENERAR TRASPASO ALMACENES A PARTIR SOLICITUD TRASPASO"
+//@esta regla de precarga es para la regla que esta en almacenamiento: "GENERAR TRASPASO ALMACENES A PARTIR SOLICITUD TRASPASO"
+salience 20
+agenda-group "rules" when 
+	
+	ObjValue(idtask:ID,CLASSNAME=="Generar_Traspaso_Almacenes",PROPNAME=="estadoRealizacion",idestado:VALOR!=null)
+	DatValue(ID==idestado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+	productosXalmacen: HashMap(size>0) 
+ 	from accumulate(
+             	(and 
+             		ObjValue(ID==idtask,PROPNAME=="sourceClass",idSolTras:VALOR!=null)
+					ObjValue(ID==idSolTras,PROPNAME=="origen",almacen:OBJECTVALUE!=null)
+             		ObjValue(ID==idSolTras,PROPNAME=="línea",idLinea:VALOR!=null)
+             		ObjValue(ID==idLinea,PROPNAME=="producto",producto:OBJECTVALUE!=null)
+
+             	),
+              init	( HashMap<Value,HashSet<Value>> productosXalmacen2 = new HashMap<Value,HashSet<Value>>();),
+              action(
+              				if(productosXalmacen2.get(almacen)==null)
+              					productosXalmacen2.put(almacen, new HashSet<Value>());
+	              				productosXalmacen2.get(almacen).add(producto);
+              ),
+              reverse(;),
+              result(productosXalmacen2))		
+then
+	 dma.printRule("\n\n$$$$$$$$$$$$$ PRECARGA_RULE: CARGA STOCK PARA RULE GENERAR TRASPASO ALMACENES A PARTIR SOLICITUD TRASPASO: productosXalmacen="+productosXalmacen);
+	 HashMap<String, ArrayList<Value>> properties=new HashMap<String, ArrayList<Value>>();
+	  Iterator it2=productosXalmacen.keySet().iterator();
+	  while(it2.hasNext()){
+		  Value almacen2=(Value)it2.next();
+		  ArrayList<Value> valoralmacen=new  ArrayList<Value>();
+		  valoralmacen.add(almacen2);
+		  properties.put("almacén_stock",valoralmacen);
+		  ArrayList<Value>valores=new ArrayList<Value>((HashSet)productosXalmacen.get(almacen2));
+		  properties.put("producto",valores);
+	  }
+	
+	instance instancefilter=dma.buildInstanceWith ("STOCK",null,properties,null,null);
+	HashSet<IDIndividual> idos_stocksCargados = 	dma.loadIndividualsWithSatisficedFilter(instancefilter);
+	dma.printRule("...... se han cargado: "+idos_stocksCargados+" idos_stocksCargados");
+end
+
+rule "PRECARGA ENTRADA/SALIDA/CAJA EN CAJA EN ELIMINACIÓN"
+salience 100
+ agenda-group "rules" when 
+  	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="ENTRADA_CAJA"||=="SALIDA_CAJA")
+	Individual(id:ID,ido:IDO,CLASSNAME==name,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+	not(Individual(ID==id))//para no precargar si ya existe en motor
+then
+	dma.printRule("\n\n =========== RULE PRECARGA ENTRADA/SALIDA/CAJA EN CAJA EN ELIMINACIÓN");
+ 	dma.ruleGetFromServer(ido,idto,1,false);
+end
+
+
+rule "PRECARGA PRECIOS ESPECIALES EN DOCUMENTO VENTA"
+salience 150 //antes de PRECIO LÍNEA EN VENTAS y LINEA: MI EMPRESA DE PRODUCTO
+agenda-group "rules" when 
+	
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_VENTA")
+	Lock(CLASSNAME==nameDoc,idDoc:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(ID==idDoc,PROPNAME=="cliente",sujeto:VALOR,idoCliente:IDOVALUE!=null)
+then
+	dma.printRule("\n\n =========== PRECARGA PRECIOS ESPECIALES EN DOCUMENTO VENTA");
+	instance instancefilter=dma.buildInstanceWith ("CONDICIÓN_ESPECIAL_VENTA",null,null,null,null);//precio especial sin fijar nada
+//TODO HACER QUERY DE PRECIOS ESPECIALES QUE TIENEN EL CLIENTE O EL GRUPO DEL CLIENTE DEL DOCUMENTO Y TAMBIÉN AQUELLOS QUE NO TIENEN V
+//VALOR EN CLIENTE NI EN GRUPO (esto utlimo aún no está soportado, por eso cargamos todos los precios especiales sin filtrar
+	HashSet<IDIndividual> idosCargados = 	dma.loadIndividualsWithSatisficedFilter(instancefilter,2);
+	dma.printRule(".....info: idosCargados: "+idosCargados);
+end
+
+rule "PRECARGA PRODUCTIVIDAD"
+agenda-group "rules" when 
+	
+	
+	FactHierarchy(idtoPrtividad:IDTO,CLASSSUP=="PRODUCTIVIDAD")//Existe modelo productividad
+	FactHierarchy(idtoProdccion:IDTO,CLASSSUP=="PRODUCCIÓN")		
+	(or exists(Lock(IDTO==idtoProdccion,STATE==Constants.INDIVIDUAL_STATE_LOCK))
+		exists(ObjValue(CLASSNAME=="Planificar_Pedidos", PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)))
+	not(Individual(IDTO==idtoPrtividad))
+then
+	dma.printRule("\n\n =========== PRECARGA PRODUCTIVIDAD");
+	instance instancefilter=dma.buildInstanceWith ("PRODUCTIVIDAD",null,null,null,null);//precio especial sin fijar nada
+	HashSet<IDIndividual> idosCargados = 	dma.loadIndividualsWithSatisficedFilter(instancefilter,2);
+	dma.printRule(".....info: idosCargados: "+idosCargados);
+end
+
+rule "PRECARGA COMISIONES EN LIQUIDACIÓN COMISIÓN"
+//TODO OPTIMIZAR
+agenda-group "rules" when 
+	
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="LIQUIDACIÓN_COMISIÓN")
+	Lock(CLASSNAME==nameDoc,idDoc:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	not((and
+		FactHierarchy(CLASSSUP=="COMISIÓN",clsComision:CLASS)
+		Individual(CLASSNAME==clsComision)
+	))
+then
+//TODO OPTIMIZAR:
+//OPTIMIZACION 1: Una optimización facil es tomar de la liquidacion el agente_comercial, entonces cargar comisiones que cumplene alguna de las siguientes
+//a) no tener fijado agente_comercial ni grupo_agente
+//b) tener fijado agente_comercial que uno de sus valores sea el comercial de esta liquidacion
+//c) tener fijado algun grupo y que uno de sus valores sea un grupo al que pertenece el comercial de esta liquidacion
+
+//OPTIMIZACION 2: 
+//- Acumular todos los productos vendidos que hay de ese comercial 
+//(los que estén en facturas del agente_comercial de esta liquidación: esta información
+//puede estar en motor de dos formas: 
+//desde factura--->linea--->producto; factura--->agente_comercial; y también con el objeto ArticuloVendidoComercial(comercial--->comercial1, articulo)
+//
+//- Una vez obtenidos esos productos (hay otra regla que los carga en motor) obtener todas los familias/marcas/subfamilias/articulos de estos articulos y hacer
+//una query de comisiones mejorada buscando solo comisiones que o bien apuntan con producto a alguno de los productos anteriores, o a alguna de sus familias/marca/....
+
+///FIN COMENTARIO COMO OPTIMIZAR
+
+	dma.printRule("\n\n =========== PRECARGA COMISIONES EN LIQUIDACIÓN COMISIÓN");
+	instance instancefilter=dma.buildInstanceWith ("COMISIÓN",null,null,null,null);//comisión  sin fijar nada
+	//TODO HACER QUERY BUSQUE POR AQUELLOS QUE TIENEN VALORES EN AGENTE_COMERCIAL, GRUPO COMERCIALES, O SIN FIJAR ESTOS QUE CORRESPONDAN CON EL/LOS COMERCIALES DE LAS LIQUIDACIONES
+	HashSet<IDIndividual> idosCargados = 	dma.loadIndividualsWithSatisficedFilter(instancefilter,2);
+	dma.printRule(".....info: idosCargados: "+idosCargados);
+end
+
+

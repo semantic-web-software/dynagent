@@ -1,0 +1,840 @@
+package dynagent.ruleengine.src.ruler.ERPrules
+
+import dynagent.ruleengine.src.ruler.ERPrules.datarules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.knowledge.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import dynagent.common.basicobjects.*;
+import java.text.*;
+
+
+/*NOTAS
+Accion Generar_produccion_automatica_basada_en_consumos
+
+Dos posibles ejecuciones: para producir aunque queden stock ficticios negativos, y en segundo lugar, tras informar de entradas de materia de proveedor,
+la ejecucion busca escandallos que consumen productos ahora en stock negativo (ver reglas de generar/runtime) para que la regla de partir es pecifica para stock ficticio 
+(PARTIR LINEAS POR STOCK FICTICIOS), debido a la excepcion de que ya hay existencia,
+parta y se reasigne el stock. Para ello hay una pregarca de escandallos para stock ficticios.
+
+En consumos normalmente solo se asignaria un lote desde la regla Asignar lote a linea, que exigue tenga stock
+
+Pero añadimos una excpecion a la regla de PRODUCIR lOTES (pensada para crear lotes de salida) para que tambien actue en consumos
+si se ajustan a una configuracion automatica que admite "stock_negativo_permitido" 
+
+Actualmente producir lote, gracias a que no depende de precarga, asignaría un stock provisional antes de que asignar lote actue, aunque se precargaria stock y se partiria
+*/
+global DataModelAdapter dma;
+
+
+function  ObjectValue getLoteFromDB(DataModelAdapter dma,String codeParcial, String rdn,ObjectValue ovproducto, ObjectValue ovproveedor,String claseLote) {
+		HashMap<String, Value> values=new HashMap<String, Value> ();				
+		
+		if(ovproveedor!=null){
+			dma.printRule("suministrador no nulo");
+			values.put("suministrador", ovproveedor);	
+		}else{
+			dma.printRule("suministrador nulo");
+		}
+		if(codeParcial!=null){
+			values.put("código_parcial_lote", new StringValue(codeParcial));
+		}else if(rdn!=null){
+			values.put("rdn", new StringValue(rdn));
+		}else return null;
+		
+		if(ovproducto!=null) 	values.put("producto", ovproducto);	
+			
+		instance instancefilter=dma.buildInstanceWith(claseLote, values, null, null,null);
+		HashSet<IDIndividual> idos=dma.loadIndividualsWithSatisficedFilter(instancefilter);
+		dma.printRule("\n NUMERO LOTES LOCALIZADOS= "+idos.size());
+		Iterator it=idos.iterator();
+		if(it.hasNext()){
+		 	IDIndividual idi= (IDIndividual)it.next();
+		 	return new ObjectValue(idi.getIDOIndividual(),idi.getIDTOIndividual());
+		 }
+		return null;
+}
+
+rule "ASIGNACION PRODUCTO_LOTE" //16-9-2008//actualizada 30 octubre para que tb funcione con filtros
+salience 100 //Maxima prioridad antes de que se instale un stock sin saberse el producto del lote
+ agenda-group "rules" when 
+  	
+	f:ObjValue(idoLinea:ID!=null,PROPNAME=="producto",producto:OBJECTVALUE!=null) 
+	ObjValue(ID==idoLinea,PROPNAME=="lote",idoLote:IDOVALUE!=null) 
+	Lock(IDO==idoLote,idtoLote:IDTO,clsLote:CLASSNAME,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	Model(CLASSNAME==clsLote, propProducto:PROPNAME=="producto",OP!=Constants.OP_CARDINALITY)		
+	not(exists(ObjValue(IDO==idoLote,PROPNAME==propProducto,VALOR!=null)))//CAMBIO ALFONSO
+then
+ 	System.err.println("\n\n  =================>>RULE ASIGNACION PRODUCTO_LOTE "+"lote="+idoLote+"  producto"+producto);
+ 	dma.setValue(idoLote,idtoLote,propProducto,producto);
+end
+
+
+rule "NO PERMITIR COMBINACIONES PRODUCTO-LOTE/N.SERIE-PRODUCTO CON PRODUCTOS DISTINTOS" 
+salience -200
+agenda-group "rules" when           
+       FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA")
+       Individual(IDTO==idtoLinea,idoLinea:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+       ObjValue(IDO==idoLinea,PROPNAME=="producto",productoLinea:IDOVALUE!=null)
+       ObjValue(IDO==idoLinea,PROPNAME=="lote",idoLote:IDOVALUE!=null,idtoLote:VALUECLS) 
+       Model(IDTO==idtoLote, propProducto:PROPNAME=="producto",OP!=Constants.OP_CARDINALITY)        
+       ObjValue(IDO==idoLote,PROPNAME==propProducto,producto2:IDOVALUE!=productoLinea)
+       DatValue(IDO==productoLinea,PROPNAME=="rdn",rdnProLin:VALOR)
+       DatValue(IDO==producto2,PROPNAME=="rdn",rdnProLot:VALOR)
+       DatValue(IDO==idoLote,PROPNAME=="rdn",rdnLote:VALOR)
+then
+        dma.printRule("=================  NO PERMITIR COMBINACIONES PRODUCTO-LOTE/N.SERIE-PRODUCTO CON PRODUCTOS DISTINTOS lote:"+rdnLote+" productoLinea="+rdnProLin+"  productoLote="+rdnProLot+" "+productoLinea+" "+producto2);
+        throw new OperationNotPermitedException("Operación cancelada: no se pueden asignar producto y lote incompatibles"); 
+end
+
+
+rule "ASIGNACION LOTE A LÍNEA"
+salience 5  //Mas prioridad que producir lote (producir lote puede crear lotes provisionales en consumo)
+//Menos prioritaria que la actualizacion stock
+//mas prioritaria que completar consumo, ya que si partir parte y crea nueva linea, debe asignarse lote antes
+agenda-group "rules" when 
+//En un alabaran produccion se asignaria tambien el lote a la salida
+//No se asignan nº de serie a salidas
+//No se asigna un lote de salida de fabricacion, el sitema lo crea de acuerdo a la configuracion, y si coincide con uno del dia ya existente, se suman
+//Notar que aunque esta regla tenga mas prioridad que producir lote, depende de precarga stock (producir lote no) que tiene menos que ambas, por lo que normalmente se dispara despues
+// que producir lote. Si producir lote crea stock ficticio, y despues se precarga stock, partir lo	
+	//CAMBIADO ALFONSO 5: No debo asignar lotes al planificar 
+	//not( Individual(CLASSNAME=="PRODUCCIÓN_CADENA"))
+    FactHierarchy(classRoot:CLASS,clsSup:CLASSSUP=="PRODUCCIÓN"||=="ALBARÁN_VENTA"||=="ALBARÁN_PROVEEDOR"||=="TRASPASO_ALMACENES")  //TODO ampliar para que tb en documentos tire de marcado para consumo y quitar este NOT   	
+	Individual(CLASSNAME==classRoot, idoRoot:IDO, level:LEVEL)
+
+	esDespiece:Double() from accumulate(DatValue(IDO==idoRoot, PROPNAME=="es_despiece", q:QMIN!=null),sum(q))
+
+	//forall(	Lock(ID==idRoot,LOCKEDBYUSER!=true)
+	//		ObjValue(CLASSNAME=="Generar_produccion_automatica_basada_en_consumos",PROPNAME=="iterator",IDOVALUE!=null))
+
+	forall(	FactHierarchy(CLASS==classRoot,CLASSSUP=="ALBARÁN_PROVEEDOR")
+			DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="asignar_stocks_entradas",BOOLEANVALOR==true))
+
+	forall(	FactHierarchy(CLASS==classRoot,CLASSSUP=="ALBARÁN_VENTA"||=="TRASPASO_ALMACENES")
+			DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="asignar_stocks_salidas",BOOLEANVALOR==true))
+			
+	forall( FactHierarchy(CLASS==classRoot,CLASSSUP=="PRODUCCIÓN")
+	 		ObjValue(IDO==idoRoot,PROPNAME=="estado",idoEstado:IDOVALUE!=null)
+	 		DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR=="Programado"||=="Realizado"))				
+	//ObjValue(ID==idRoot,propLinea:PROPNAME=="línea"||=="consumo",idLineaIN:VALOR)  
+	FactHierarchy(CLASSSUP=="ALMACÉN",idtoAlmacen:IDTO)	   	   
+	ObjValue(IDO==idoRoot,propLinea:PROPNAME=="línea"||=="consumo",idoLineaIN:IDOVALUE,classLineaIN:RANGENAME)     //TODO Hacer configurable que asigne o no lotes auto en documentos
+	Model(CLASSNAME==classLineaIN, propLote:PROPNAME=="lote",OP==Constants.OP_INTERSECTION)
+	asignaConsumo:Double() from accumulate(DatValue(CLASSNAME=="APLICACIÓN",ido:IDO,PROPNAME=="asignar_stocks_consumo",BOOLEANVALOR==true),sum(ido))
+	not( eval( clsSup.equals("PRODUCCIÓN") && asignaConsumo.intValue()==0) )
+	
+	not( eval( clsSup.equals("PRODUCCIÓN") &&  (esDespiece.intValue()>0 && !propLinea.equals("línea") || 
+												esDespiece.intValue()==0 && !propLinea.equals("consumo") )		) )					
+												
+	ObjValue(VALUECLS==idtoAlmacen,IDO==idoLineaIN||==idoRoot, propAlmacen:PROPNAME=="almacén_origen"||=="origen", idoAlmacen:IDOVALUE)
+	
+	DatValue(IDO==idoLineaIN,PROPNAME=="cantidad",cantidadLinea:QMAX>0)
+	forall( FactHierarchy(CLASS==classLineaIN,CLASSSUP=="LÍNEA_ARTÍCULOS")
+			DatValue(IDO==idoLineaIN,PROPNAME=="precio",precio:VALOR!=null))			
+		// Esta regla no cambia lotes, debe ser nulo antes. 
+	not(ObjValue(IDO==idoLineaIN, PROPNAME=="lote", VALOR!=null))
+	ObjValue(IDO==idoLineaIN,idtoLineaIN:IDTO,PROPNAME=="producto",idoProductoIN:IDOVALUE,claseProducto:RANGENAME!=null)
+	DatValue(IDO==idoLineaIN,PROPNAME=="clave_producto",keyLinea:VALOR!=null)	
+ 	DatValue(IDO==idoProductoIN,PROPNAME=="requiere_lote",BOOLEANVALOR==true)	 				 		
+	stocks:TreeMap(size>0) from accumulate((and FactHierarchy(idto:IDTO, CLASSSUP=="STOCK")
+												DatValue(IDTO==idto,idoStock:IDO,PROPNAME=="clave_producto",VALOR==keyLinea)												
+												DatValue(IDO==idoStock, PROPNAME=="cantidad",QMAX>0.01)									
+												ObjValue(IDO==idoStock,PROPNAME=="almacén_stock",IDOVALUE==idoAlmacen)									
+												ObjValue(IDO==idoStock, PROPNAME=="lote",idoLote:IDOVALUE,idtoLote:VALUECLS,lote:OBJECTVALUE)
+													
+											),
+												
+        									init(TreeMap res=new TreeMap();),
+        									action(	TimeValue dv=(TimeValue)dma.getValue(idoLote,idtoLote,"fecha_orden_consumo");
+        											String orden="-";
+        											if(dv!=null) orden=dv.getValue_s();        											
+        											res.put(orden,new Domain(idoStock,idto));
+        										),
+        									/*reverse( 	TimeValue dv=(TimeValue)dma.getValue(idoLote,idtoLote,"fecha_orden_consumo");
+        												String orden="-";
+        												if(dv!=null) orden=dv.getValue_s();
+        												res.remove(orden);),  */      													        													        													 
+        									result(res))
+
+	//not(	ObjValue(ID==idRoot,PROPNAME=="línea"||=="consumo",idLineaIN2:VALOR!=idLineaIN)  and
+	//not(	ObjValue(ID==idRoot,PROPNAME=="consumo",idLineaIN2:VALOR!=idLineaIN)  and//TODO Hacer configurable que asigne o no lotes auto en documentos
+	//		ObjValue(ID==idLineaIN2, PROPNAME=="lote", VALOR==idLote ))
+
+then
+	dma.printRule("ASIGNACION LOTE A LÍNEA ......idLinea:"+idoLineaIN+", cantidadLinea:"+cantidadLinea);
+	
+	String key=(String)stocks.firstKey();
+	Domain stock=(Domain)stocks.get(key);
+	ObjectValue lote=(ObjectValue)dma.getValue(stock,"lote");
+	String rdnLote=dma.getStringValue(new Domain(lote),"rdn");
+	double cantidad=dma.getDoubleValue(stock,"cantidad",true);
+	dma.printRule("LOTE "+rdnLote+" q:"+cantidad);
+	dma.setValue(idoLineaIN,idtoLineaIN,"lote",lote);
+	
+end
+
+rule "INICIALIZAR CODIGO PARCIAL LOTE"
+salience 10
+agenda-group "rules" when 
+	
+	FactHierarchy(classLote:CLASS, CLASSSUP=="LOTE")
+	Individual(idLote:ID,CLASSNAME==classLote)
+	not(DatValue(ID==idLote,PROPNAME=="código_parcial_lote",VALOR!=null))
+	DatValue(ID==idLote,idtoLote:IDTO,PROPNAME=="rdn",codigolote:VALOR!=null)
+then
+	dma.printRule("================ INICIALIZAR CODIGO PARCIAL LOTE");
+	dma.setDataValue(Integer.parseInt(idLote),idtoLote,"código_parcial_lote",codigolote);	
+end
+
+rule "PRODUCIR LOTE"
+salience -100
+agenda-group "rules" when 
+	//producir lote crea o asigna a lote del dia para engordarlo. Solo tiene sentido en fabricacion (no confundir producto de salida con albaran venta que es salida mercancia)
+	//en albaran venta solo aplica la capacidad de globalizar un lote creado por el usuario, pero no debe crear ni asignar auto
+	FactHierarchy(idtoRoot:IDTO,clsRoot:CLASSSUP=="PRODUCCIÓN_MATERIAL"||=="DOCUMENTO_VENTA"||=="DOCUMENTO_COMPRA")    			   	   
+	ObjValue(IDTO==idtoRoot,idoRoot:IDO,propLinea:PROPNAME=="línea"||=="consumo",idoLinea:IDOVALUE)
+	not(Individual(IDO==idoRoot,STATE==Constants.INDIVIDUAL_STATE_DELETED))
+	//forall(	Lock(IDO==idoRoot,LOCKEDBYUSER!=true)
+	//		ObjValue(CLASSNAME=="Generar_produccion_automatica_basada_en_consumos",PROPNAME=="iterator",IDOVALUE!=null))
+	generarProAuto:ArrayList() from collect(ObjValue(CLASSNAME=="Generar_produccion_automatica_basada_en_consumos",PROPNAME=="iterator",IDOVALUE!=null))			
+	
+	forall( FactHierarchy(CLASSSUP=="PRODUCCIÓN",CLASS==clsRoot)
+	 		ObjValue(IDO==idoRoot,PROPNAME=="estado",idoEstado:IDOVALUE!=null)
+	 		DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR=="Programado"||=="Realizado"))
+	 		
+	ObjValue(IDO==idoLinea,idtoLinea:IDTO,PROPNAME=="producto",idoProducto:IDOVALUE,ovProducto:OBJECTVALUE)
+	DatValue(IDO==idoProducto,PROPNAME=="rdn",rdnProducto:VALOR!=null)	 								
+	DatValue(IDO==idoProducto,PROPNAME=="requiere_lote",BOOLEANVALOR==true)	 		
+	esDespiece:Double() from accumulate(DatValue(IDO==idoRoot, PROPNAME=="es_despiece", q:QMIN!=null),sum(q))						  				
+		
+	esCompras:Long() from accumulate((and 	ObjValue(IDO==idoProducto, PROPNAME=="catálogo", idoCatalogo:IDOVALUE)
+											DatValue(IDO==idoCatalogo, PROPNAME=="rdn", VALOR=="Catálogo_Compras")),count(idoCatalogo))
+											
+	loteAutoEstaSalida:ObjectValue() from accumulate((and 	ObjValue(CLASSNAME=="Generar_produccion_automatica_basada_en_consumos",PROPNAME=="iterator",idoStock:IDOVALUE!=null)
+															ObjValue(IDO==idoStock,PROPNAME=="producto",IDOVALUE==idoProducto)
+															ObjValue(IDO==idoStock,PROPNAME=="lote",ovLote:OBJECTVALUE!=null)
+												),
+												init(ObjectValue lote2=new ObjectValue(0,0);),
+												action(lote2=ovLote;),
+												result(lote2))	
+	idoConfig:Integer() 
+	from accumulate((and	FactHierarchy(idtoConfig:IDTO,clsConfig:CLASSSUP=="CONFIGURACIÓN_LOTE_PROPIO"||=="CONFIGURACIÓN_LOTE_PROVEEDOR")
+							ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="config_lotes", idoCfgLote:IDOVALUE!=null,VALUECLS==idtoConfig)
+									
+							eval(clsConfig.equals("CONFIGURACIÓN_LOTE_PROVEEDOR") && (	clsRoot.equals("DOCUMENTO_COMPRA")||
+																						generarProAuto.size()>0&&clsRoot.equals("PRODUCCIÓN_MATERIAL") && esCompras.intValue()>0
+																						//si es auto, debe actuar tanto al producir como al consumir, asi que no hace falta restriccion tipo sentido
+																						//&&(	esDespiece.doubleValue()==0.0 && propLinea.equals("consumo")	||
+																						//	 	esDespiece.doubleValue()>0.0 && propLinea.equals("línea")
+																						//	 )
+																					  ) 																							|| 
+																					//condicion para producir (no consumir)
+								 clsConfig.equals("CONFIGURACIÓN_LOTE_PROPIO") 	  && (	generarProAuto.size()>0&&clsRoot.equals("PRODUCCIÓN_MATERIAL") && esCompras.intValue()==0 ||
+								 														clsRoot.equals("PRODUCCIÓN_MATERIAL")&& 
+								 															(	esDespiece.doubleValue()==0.0 && propLinea.equals("línea") || 
+								 																esDespiece.doubleValue()>0.0 && propLinea.equals("consumo") 
+								 															 )																		|| 
+								 														clsRoot.equals("DOCUMENTO_VENTA")))
+		  							
+							ObjValue(IDO==idoCfgLote,PROPNAME=="prioridad",idoPeso:IDOVALUE!=null)
+							DatValue(IDO==idoPeso,PROPNAME=="peso_prioridad",peso:INTVALUE!=null)
+																		
+							forall( ObjValue(IDO==idoCfgLote, propiedadambitoarticulo:PROPNAME=="producto"||=="marca"||=="familia"||=="subfamilia",VALOR!=null)
+									ObjValue(IDO==idoCfgLote, PROPNAME==propiedadambitoarticulo,idAmbitoarticulo:VALOR!=null,idoAmbitoarticulo:IDOVALUE!=null)
+									IndividualValue(IDO==idoProducto,PROPNAME=="rdn"||=="marca"||=="familia"||=="subfamilia",VALOR==idAmbitoarticulo||ID==idAmbitoarticulo))				
+							),
+												
+							init(TreeMap mapa=new TreeMap();),	action(mapa.put(peso,idoCfgLote);),	result(mapa.size()>0?(Integer)mapa.get(mapa.lastKey()):0))
+		
+	stockNegPermit:ArrayList() from collect(DatValue(IDO==idoConfig,PROPNAME=="stock_negativo_permitido",BOOLEANVALOR==true))
+			
+	//Condicion para crear stock provisionales de consumo en accion automatica de produccion: no puede ser que siendo un consumo, no se permita stock negativo
+	eval(!( ( propLinea.equals("consumo")&& esDespiece.doubleValue()==0.0 || propLinea.equals("línea") && esDespiece.doubleValue()>0.0 ) &&
+			  stockNegPermit.size()==0 
+			))
+										
+  	creaAuto:ArrayList() from collect(DatValue(IDO==idoConfig,PROPNAME=="crear_automático",BOOLEANVALOR==true))
+  	 										
+	ObjValue(classConfig:CLASSNAME,IDO==idoConfig,PROPNAME=="tipo_lote",idoTipoLote:IDOVALUE)
+	DatValue(IDO==idoTipoLote,PROPNAME=="rdn",rdnTipoLote:VALOR)													
+
+	formatoLote:String() from accumulate((and	ObjValue(IDO==idoConfig,PROPNAME=="formato_fecha",idFormato:VALOR!=null)
+												DatValue(ID==idFormato, PROPNAME=="rdn",formato:VALOR)),
+											init(String rdn="";),	action(rdn=formato;),	result(rdn))																																			
+												
+	DatValue(IDO==idoRoot,PROPNAME=="fecha"||=="fecha_inicio",fechaEjecucion:DATE!=null)	
+	
+	ObjValue(IDO==idoRoot,prop:PROPNAME=="proveedor"||=="mi_empresa",idoProveedor:IDOVALUE!=null,ovproveedor:OBJECTVALUE)
+	DatValue(IDO==idoProveedor,PROPNAME=="rdn",rdnProveedor:VALOR!=null)
+	
+	multiProveedor:ArrayList() from collect(DatValue(IDO==idoConfig,PROPNAME=="lote_multiproveedor",BOOLEANVALOR==true))
+		
+	forall(	FactHierarchy(IDTO==idtoRoot,CLASSSUP=="PRODUCCIÓN")
+			ObjValue(IDO==idoRoot,PROPNAME==prop&&=="mi_empresa"))
+				
+	not(eval(	clsRoot.equals("DOCUMENTO_COMPRA") && !(multiProveedor.size()==0 && prop.equals("proveedor") || multiProveedor.size()>0 && prop.equals("mi_empresa"))  ))							
+	
+	//Lote de hoy a engordar para producir en salidas
+	ovloteAcum:ObjectValue() from accumulate(
+				(and	
+					eval(formatoLote.length()>0)
+					FactHierarchy(classLote:CLASS, CLASSSUP=="LOTE") 				
+					ObjValue(CLASSNAME==classLote,idlote:ID!=null,PROPNAME=="producto",IDOVALUE==idoProducto)
+					DatValue(idoLote:IDO,ID==idlote,idtoLote:IDTO,PROPNAME=="código_parcial_lote",rdnLotetmp:VALOR!=null)
+					eval( rdnLotetmp.equals(getDateCode(fechaEjecucion,formatoLote)))
+					ObjValue(ID==idlote,PROPNAME=="suministrador",IDOVALUE==idoProveedor)					
+				),
+				init(ObjectValue lote2=new ObjectValue(0,0);),action(lote2=new ObjectValue(idoLote,idtoLote);),
+				result(lote2))	
+
+	DatValue(IDO==idoConfig,PROPNAME=="separador",separador:VALOR!=null)
+	DatValue(IDO==idoConfig,PROPNAME=="usar_producto_en_prefijo",usarProducto:BOOLEANVALOR!=null)
+	DatValue(IDO==idoConfig,PROPNAME=="usar_proveedor_en_prefijo",usarProveedor:BOOLEANVALOR!=null)  	
+					  													
+	ovLoteLinea:ObjectValue() from accumulate(ObjValue(IDO==idoLinea,PROPNAME=="lote",idoLoteAny:IDOVALUE!=null,ovLote:OBJECTVALUE!=null),
+											  init(ObjectValue lote2=new ObjectValue(0,0);),action(lote2=ovLote;),result(lote2))	
+	
+	//Exigo exista el rdn por un problema grafico cuando creo el lote desde la tabla
+	forall(	ObjValue(IDO==idoLinea,PROPNAME=="lote",idoLoteAny:IDOVALUE!=null)
+			DatValue(IDO==idoLoteAny,PROPNAME=="rdn",VALOR!=null))
+
+	loteLineaCompatible:Long() from accumulate((and 
+													ObjValue(IDO==idoLinea,PROPNAME=="lote",idoLoteAny:IDOVALUE!=null)													
+													ObjValue(IDO==idoLoteAny,PROPNAME=="producto",IDOVALUE==idoProducto))	,count(idoLoteAny))
+											  
+
+	//Si el usuario ha eliminado el lote (existe un fact a nulo) y actualmente no hay lote asignado no lo propongas de nuevo. 
+	//Dado que la version actual del motor en object properties,
+	// tras eliminar y asignarse un nuevo valor, se maniente el fact nulo, tengo que ademas comprobar no coexiste una object property distinta de nula con condicion
+	//  eval(ovLoteLinea.getValue()==0) en cuyo caso si debe dispararse para la funcion globalizar (normalmente por que usuario ha creado expresamente lote a mano)
+	// Si no fuera asi deberia comprobar el valor anterior nulo
+	not((and exists(ObjValue(IDO==idoLinea,PROPNAME=="lote",IDOVALUE==null))
+			 eval(ovLoteLinea.getValue()==0)))
+	
+	//para ver si el otro sentido (property!=propLinea) esta completo, comparando cuantas tiene lote con todas
+	lineasContrariaTodas:Long() from accumulate((and 	FactHierarchy(IDTO==idtoRoot,CLASSSUP=="PRODUCCIÓN")
+												ObjValue(IDO==idoRoot,PROPNAME!=propLinea,PROPNAME=="línea"||=="consumo",idoLineaAny:IDOVALUE)),count(idoLineaAny))
+														
+	lineasContrariaConLote:Long() from accumulate((and FactHierarchy(IDTO==idtoRoot,CLASSSUP=="PRODUCCIÓN")
+													ObjValue(IDO==idoRoot,PROPNAME!=propLinea,PROPNAME=="línea"||=="consumo",idoLineaAny:IDOVALUE)
+													ObjValue(IDO==idoLineaAny,PROPNAME=="lote",IDOVALUE!=null)),count(idoLineaAny))		
+	modeloPack:ArrayList() from collect(Model(CLASSNAME=="LOTE_PACK",PROPNAME=="rdn")) 																		
+then
+	dma.printRule("================ PRODUCIR LOTE V2 "+rdnTipoLote+" "+rdnProducto+" compatible:"+loteLineaCompatible.intValue()+" (config "+idoConfig+") "+propLinea+" "+lineasContrariaConLote+","+lineasContrariaTodas+" lotelinea:"+ovLoteLinea+"clsRoot:"+clsRoot);		
+		
+	ObjectValue ovLote=ovloteAcum.getValueCls()==0 ? null:ovloteAcum;
+	String codigoParcial=null;
+	
+	
+	//Asignacion de lote a producciones de salida (o entradas multiproveedor)
+	ObjectValue ovCurrLoteLinea= null;
+	if(ovLoteLinea.getValue()!=0)	ovCurrLoteLinea=ovLoteLinea;
+	
+	//condicion produccion
+	if(loteAutoEstaSalida.getValue()!=0 && (esDespiece.doubleValue()==0.0 && propLinea.equals("línea") || 
+											esDespiece.doubleValue()>0.0 && propLinea.equals("consumo"))){
+		dma.printRule("AUTOMATIZACION: TOMAR LOTE DE SALIDA DE ITERADOR"); 
+		ovLote=loteAutoEstaSalida;
+	}
+	
+	//Globalizar lote se produce demasiado tarde tras actuar finder, si fuera despues, el rdn a buscar seria diferente 
+	//Lote ambiguo es una suposicion, es cuando el lote de linea es de otro producto, posiblemente porque el rdn por el que ha sido buscado no esta globalizado con el producto
+	//Finder tiene un problema, y es que aun estando filtrado por el producto, y no encontrar el codigo parcial que desea el usuario, si existe otro lote con ese rdn no pregunta si desea crear
+	//y ademas selecciona dicho lote sin estar en la lista
+	boolean loteAmbiguo=ovCurrLoteLinea!=null && loteLineaCompatible==0 && ovLoteLinea.getValue()!=0 && !dma.isSpecialized(ovLoteLinea.getValueCls(),dma.getIdClass("LOTE_PACK"));//lote pack no esta asociado a un unico producto, asi que no puede decirse es incompatible su producto 
+	
+	if(loteAmbiguo){
+		dma.printRule("Lote Ambiguo");
+		ovLote=null;
+	}
+	//Creamos o asignamos
+	if(	loteAmbiguo || 
+		ovCurrLoteLinea==null && (
+									generarProAuto.size()>0 ||
+									!clsRoot.equals("DOCUMENTO_VENTA")&&lineasContrariaConLote.intValue()==lineasContrariaTodas.intValue())
+								 ){
+		//En producciones, si es salida, siempre debe crear automaticamente
+		dma.printRule("CREACION O ENGORDE LOTE SALIDA");
+		if(ovLote==null && (clsRoot.equals("PRODUCCIÓN")&&propLinea.equals((esDespiece.doubleValue()==0.0?"línea":"consumo")) || creaAuto.size()>0 )){
+			dma.printRule("es produccion");
+			String claseLote="LOTE_PERECEDERO";
+			Domain domLote=null;
+			
+			if(rdnTipoLote.equals("Serie")) claseLote="SERIE";
+			if(rdnTipoLote.equals("Pack")) claseLote="LOTE_PACK";
+
+			if(formatoLote.length()>0){				 
+				//Si no hay un formato de lote es que está indexado, o se escribe a mano
+				if(loteAmbiguo){
+					codigoParcial=dma.getStringValue(ovCurrLoteLinea,"código_parcial_lote");
+				}else{
+					codigoParcial=getDateCode(fechaEjecucion,formatoLote);
+				}
+				dma.printRule("buscando lote "+	codigoParcial);					
+				//Si el lote a producir coincide con uno ya existente, por ejemplo estoy engordando el lote del dia, lo asigno, no lo creo.
+				//En series no engordaria lotes, no por que ya exista, si no porque el formato debe ser autonumerico			
+				ovLote=getLoteFromDB(dma,codigoParcial,null, ovProducto, ovproveedor,claseLote);
+				if(ovLote!=null) domLote=new Domain(ovLote);
+			}					
+					
+			if( ovLote==null){
+				dma.printRule("\n .. ninguno de los encontrados tiene el formato deseado. Se creara uno"  );
+				if(loteAmbiguo&&ovCurrLoteLinea!=null){
+					domLote=dma.cloneIndividual(ovCurrLoteLinea.getValue(), ovCurrLoteLinea.getValueCls(),ovCurrLoteLinea.getValueCls(), "producto"); 					
+				}else{
+					domLote=dma.creaIndividualOfClass(claseLote);
+				}
+				ovLote= new ObjectValue(domLote);
+				dma.setValue(domLote,"producto",ovProducto);	
+			}
+									
+			boolean provisional=false;	
+			if(codigoParcial!=null){
+				if(propLinea.equals("consumo")&& esDespiece.doubleValue()==0.0  || propLinea.equals("línea") && esDespiece.doubleValue()>0.0 ){
+					dma.printRule(" marcando como provisional ");				
+					//Solo es consumo si se permite trabajar con stock negativo, en cuyo caso es provisional
+					dma.setValue(domLote,"provisional", new BooleanValue(true));
+					provisional=true;
+					//codigoParcial="PROVISIONAL#"+codigoParcial;
+				}
+				dma.printRule(" codigo parcial p1 "+codigoParcial);
+				dma.setDataValue(domLote,"código_parcial_lote", codigoParcial);
+			}	
+			//A provisional no le pongo suministrador por si se quiere asignarse despues a un albaran proveedor para convertirlo en real
+			if(!provisional) dma.setValue(domLote,"suministrador",ovproveedor);	
+		}
+		if(ovLote!=null){
+			//haya lote en motor o no asigno el lote
+			dma.printRule("asigno lote");
+			dma.setValue(idoLinea,idtoLinea,"lote",ovLote);
+			ovCurrLoteLinea=ovLote;
+		}		
+	}	
+
+	//Globalizar
+	if(ovCurrLoteLinea!=null && !(modeloPack.size()>0 && dma.isSpecialized(dma.getClassName(ovCurrLoteLinea.getValueCls()),"LOTE_PACK"))){
+		dma.printRule("globalizar");
+		Domain domLote=new Domain(ovCurrLoteLinea);
+		if(codigoParcial==null && ovCurrLoteLinea!=null){
+			//Si el lote no se ha creado arriba, esta variable continua a nula, respetamos lo que tuviera el lote
+			StringValue sv=(StringValue)dma.getValue(domLote,"código_parcial_lote");
+			dma.printRule("sv1 (idoLote "+domLote.getIdo()+") "+sv);
+			//Si no tiene codigo parcial, dicho condigo debe inicializarse con rdn desde regla INICIALIZAR CODIGO PARCIAL LOTE, pero no da tiempo a dispararse en algun caso			
+			if(sv==null) sv=(StringValue)dma.getValue(domLote,"rdn");
+			dma.printRule("sv2 "+sv);
+			if(sv!=null){				
+				codigoParcial=sv.getValue();
+				dma.setDataValue(domLote,"código_parcial_lote", codigoParcial);
+			}			
+		} 
+		dma.printRule("preprocesado parcial code "+codigoParcial);
+		if(codigoParcial!=null){
+			String codigoconprefix=codigoParcial;
+	
+			if(usarProducto)	codigoconprefix=rdnProducto+separador+codigoconprefix;
+			if(usarProveedor)	codigoconprefix=rdnProveedor+separador+codigoconprefix;
+
+			StringValue ovrdnLote=(StringValue)dma.getValue(domLote,"rdn");	
+			//NO puedo cambiar rdn un lote existente porque podria colisionar con otro de BD (por ejemplo creado manualmente)
+			if( codigoconprefix!=null && (ovrdnLote==null || domLote.getIdo()<0&&!ovrdnLote.getValue().equals(codigoconprefix))){
+				dma.printRule("Globalizar LOTE");
+				ObjectValue productoQuery=null;
+				if(dma.getDDM().hasProperty(ovCurrLoteLinea.getValueCls(), dma.getIdProperty("producto")))	productoQuery= ovProducto;
+
+				dma.printRule("PASO3 "+productoQuery);
+				//No busco por proveedor porque no se decide aqui
+				ObjectValue loteBD=	getLoteFromDB(dma,null,codigoconprefix, productoQuery, null, dma.getClassName(ovCurrLoteLinea.getValueCls()));	
+		
+				if(loteBD!=null){
+					dma.printRule("   ............. no se asigna el lote formateado porque ya existe ese codigo en bbdd. se cambia el valor al ido existente");
+					dma.setValue(idoLinea,idtoLinea,"lote",loteBD); //no sirve el prototipo de lote creado, tienen que usar el lote ya existente en bbdd
+				}
+		
+				dma.setValue(domLote,"rdn",new StringValue(codigoconprefix));			
+				dma.printRule("   .............. loteFormateado="+codigoconprefix);	
+			}
+		}
+	}
+	
+end
+
+
+rule "FECHA_CADUCIDAD_LOTE EN DOCUMENTO VENTAS,TRABAJO O ALBARAN DISTRIBUIDOR: APLICA FECHA FIJA FUTURO"
+salience -200
+ agenda-group "rules" when 
+  	
+	Lock(idtoDoc:IDTO,classRoot:CLASSNAME,idRoot:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+  	FactHierarchy(CLASS==classRoot,CLASSSUP=="DOCUMENTO_VENTA"||=="PRODUCCIÓN"||=="ALBARÁN_DISTRIBUIDOR")       
+	ObjValue(ID==idRoot,PROPNAME=="línea", idLinea:VALOR)
+	ObjValue(ID==idLinea,PROPNAME=="lote", idLote:VALOR!=null)
+	ObjValue(ID==idLote, claseLote:CLASSNAME,idtoLote:IDTO, PROPNAME=="producto", idProducto:VALOR!=null,idtoproducto:VALUECLS)
+	
+	eval(dma.preload(Integer.parseInt(idProducto),idtoproducto))
+	Individual(ID==idLote,LEVEL==Constants.LEVEL_PROTOTYPE)	
+	not(DatValue(ID==idLote,PROPNAME=="garantía_caducidad", VALOR!=null))
+	
+	////////////
+	ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="config_lotes", configurlote:VALOR!=null)
+	ObjValue(classConfig:CLASSNAME,ID==configurlote,PROPNAME=="prioridad",idoPrioridad:IDOVALUE!=null)
+	DatValue(IDO==idoPrioridad,PROPNAME=="peso_prioridad",peso:INTVALUE!=null)
+	
+	forall(	FactHierarchy(IDTO==idtoDoc,CLASSSUP=="PRODUCCIÓN")
+			FactHierarchy(CLASS==classConfig,CLASSSUP=="CONFIGURACIÓN_LOTE_PROPIO"))	
+		
+	forall( ObjValue(ID==configurlote, propiedadambitoarticulo:PROPNAME=="producto"||=="marca"||=="familia"||=="subfamilia",VALOR!=null)
+			ObjValue(ID==configurlote, PROPNAME==propiedadambitoarticulo,idAmbitoarticulo:VALOR!=null,idoAmbitoarticulo:IDOVALUE!=null)
+			IndividualValue(ID==idProducto,PROPNAME=="rdn"||=="marca"||=="familia"||=="subfamilia",VALOR==idAmbitoarticulo||ID==idAmbitoarticulo)
+	)				 	
+				
+	not((and 
+			ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="config_lotes", configurlote2:VALOR!=null)
+			ObjValue(classConfig2:CLASSNAME,ID==configurlote2,PROPNAME=="prioridad",idoPrioridad2:IDOVALUE!=null)
+			DatValue(IDO==idoPrioridad2,PROPNAME=="peso_prioridad",INTVALUE>peso)
+	
+			forall(	FactHierarchy(IDTO==idtoDoc,CLASSSUP=="PRODUCCIÓN")
+					FactHierarchy(CLASS==classConfig2,CLASSSUP=="CONFIGURACIÓN_LOTE_PROPIO")
+					)	
+		
+			forall( ObjValue(ID==configurlote2, propiedadambitoarticulo:PROPNAME=="producto"||=="marca"||=="familia"||=="subfamilia",VALOR!=null)
+					ObjValue(ID==configurlote2, PROPNAME==propiedadambitoarticulo,idAmbitoarticulo:VALOR!=null,idoAmbitoarticulo:IDOVALUE!=null)
+					IndividualValue(ID==idProducto,PROPNAME=="rdn"||=="marca"||=="familia"||=="subfamilia",VALOR==idAmbitoarticulo||ID==idAmbitoarticulo)
+			)		
+	))
+	///////////////
+	ObjValue(ID==configurlote,PROPNAME=="configuración_garantía_caducidad",configFecha:VALOR!=null,RANGENAME=="FECHA_FIJA_FUTURO")
+	DatValue(ID==configFecha,PROPNAME=="día",dia:INTVALUE!=null)
+	DatValue(ID==configFecha,PROPNAME=="mes",mes:INTVALUE!=null)
+	DatValue(ID==configFecha,PROPNAME=="año_relativo_actual",año:INTVALUE!=null)
+
+then
+	dma.printRule("\n\n =========== FECHA_CADUCIDAD_LOTE EN DOCUMENTO VENTAS,TRABAJO O ALBARAN DISTRIBUIDOR: APLICA FECHA FIJA FUTURO: mes="+mes+"  dia="+dia+" año="+año);
+	Calendar calendario = Calendar.getInstance();
+	calendario.set(calendario.get(Calendar.YEAR)+año,mes-1,dia);
+	TimeValue tValue = new TimeValue(calendario.getTimeInMillis()/Constants.TIMEMILLIS);
+	dma.setValue(idLote, idtoLote, "garantía_caducidad", tValue);
+end
+
+rule "FECHA_CADUCIDAD_LOTE EN DOCUMENTO VENTAS,TRABAJO O ALBARAN DISTRIBUIDOR: APLICA DURACIÓN_DESDE_CREACIÓN"
+salience -200
+ agenda-group "rules" when 
+  	
+	Lock(classRoot:CLASSNAME,idRoot:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(ID==idRoot,idtoDoc:IDTO,PROPNAME=="línea", idLinea:VALOR,claseLINEA:RANGENAME!=null)	
+	ObjValue(ID==idLinea,PROPNAME=="lote", idLote:VALOR!=null)
+	ObjValue(ID==idLote, claseLote:CLASSNAME,idtoLote:IDTO, PROPNAME=="producto", idProducto:VALOR!=null,idtoproducto:VALUECLS)
+	not(DatValue(ID==idLote,PROPNAME=="garantía_caducidad", VALOR!=null))
+	
+	eval(dma.preload(Integer.parseInt(idProducto),idtoproducto))
+	Individual(ID==idLote)
+	ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="config_lotes", configurlote:VALOR!=null)
+	ObjValue(classConfig:CLASSNAME,ID==configurlote,PROPNAME=="prioridad",idoPrioridad:IDOVALUE!=null)	
+	DatValue(IDO==idoPrioridad,PROPNAME=="peso_prioridad",peso:INTVALUE!=null)
+	forall(	FactHierarchy(IDTO==idtoDoc,CLASSSUP=="PRODUCCIÓN")
+			FactHierarchy(CLASS==classConfig,CLASSSUP=="CONFIGURACIÓN_LOTE_PROPIO")
+			)	
+		
+	forall( ObjValue(ID==configurlote, propiedadambitoarticulo:PROPNAME=="producto"||=="marca"||=="familia"||=="subfamilia",VALOR!=null)
+			ObjValue(ID==configurlote, PROPNAME==propiedadambitoarticulo,idAmbitoarticulo:VALOR!=null,idoAmbitoarticulo:IDOVALUE!=null)
+			IndividualValue(ID==idProducto,PROPNAME=="rdn"||=="marca"||=="familia"||=="subfamilia",VALOR==idAmbitoarticulo||ID==idAmbitoarticulo)
+	)				 	
+	not((and 
+			ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="config_lotes", configurlote2:VALOR!=null)
+			ObjValue(classConfig2:CLASSNAME,ID==configurlote2,PROPNAME=="prioridad",idoPrioridad2:IDOVALUE!=null)
+			DatValue(IDO==idoPrioridad2,PROPNAME=="peso_prioridad",INTVALUE>peso)
+	
+			forall(	FactHierarchy(IDTO==idtoDoc,CLASSSUP=="PRODUCCIÓN")
+					FactHierarchy(CLASS==classConfig2,CLASSSUP=="CONFIGURACIÓN_LOTE_PROPIO")
+					)	
+		
+			forall( ObjValue(ID==configurlote2, propiedadambitoarticulo:PROPNAME=="producto"||=="marca"||=="familia"||=="subfamilia",VALOR!=null)
+					ObjValue(ID==configurlote2, PROPNAME==propiedadambitoarticulo,idAmbitoarticulo:VALOR!=null,idoAmbitoarticulo:IDOVALUE!=null)
+					IndividualValue(ID==idProducto,PROPNAME=="rdn"||=="marca"||=="familia"||=="subfamilia",VALOR==idAmbitoarticulo||ID==idAmbitoarticulo)
+			)		
+	))
+	DatValue(ID==idLote,PROPNAME=="fecha_creación", fechaCreac:DATE!=null)
+	DatValue(ID==idRoot,PROPNAME=="fecha"||=="fecha_inicio", fechaDoc:DATE!=null)
+	ObjValue(ID==configurlote,PROPNAME=="configuración_garantía_caducidad",configFecha:VALOR!=null,RANGENAME=="FECHA_DESDE_CREACIÓN")
+	DatValue(ID==configFecha,PROPNAME=="número_días",dias:INTVALUE!=null)
+	DatValue(ID==configFecha,PROPNAME=="número_meses",meses:INTVALUE!=null)
+
+	
+then
+	dma.printRule("\n\n=============== FECHA_CADUCIDAD_LOTE EN DOCUMENTO VENTAS,TRABAJO O ALBARAN DISTRIBUIDOR: APLICA DURACIÓN_DESDE_CREACIÓN. fechaCreación="+fechaCreac+" meses="+meses+" dias="+dias);
+	Long msecondsDif = new Long((long)meses*30*24*3600*Constants.TIMEMILLIS+(long)dias*24*3600*Constants.TIMEMILLIS);
+	Date fechaInit = claseLote.equals("SERIE") ? fechaDoc:fechaCreac;
+	Date fechaCad = new Date(fechaInit.getTime()+msecondsDif);
+	TimeValue tValue = new TimeValue(fechaCad);
+	dma.setValue(idLote, idtoLote, "garantía_caducidad", tValue);
+end
+
+rule "ASIGNAR MI EMPRESA COMO SUMINISTRADOR A LOTE MULTIPROVEEDOR"
+salience 100
+agenda-group "rules" when 
+
+	FactHierarchy(docClass:CLASS, CLASSSUP=="ALBARÁN_PROVEEDOR")	
+	ObjValue(CLASSNAME==docClass,idDoc:ID!=null,prop:PROPNAME=="mi_empresa",proveedor:VALOR!=null,ovproveedor:OBJECTVALUE)
+	not(Individual(ID==idDoc,STATE==Constants.INDIVIDUAL_STATE_DELETED))
+		
+	ObjValue(ID==idDoc,PROPNAME=="línea",linea:VALOR!=null)		
+	ObjValue(ID==linea,PROPNAME=="producto",producto:VALOR!=null)
+	ObjValue(ID==linea,PROPNAME=="lote",lote:VALOR!=null,idtolote:VALUECLS)
+	not(ObjValue(ID==lote,PROPNAME=="suministrador",VALOR!=null))
+	
+	ObjValue(CLASSNAME=="APLICACIÓN",idMiEmp:ID!=null,PROPNAME=="config_lotes", configurlote:VALOR!=null)	
+	
+	forall( ObjValue(ID==configurlote, propiedadambitoarticulo:PROPNAME=="marca"||=="familia"||=="subfamilia",VALOR!=null)
+			ObjValue(ID==configurlote, PROPNAME==propiedadambitoarticulo,idAmbitoarticulo:VALOR!=null,idoAmbitoarticulo:IDOVALUE!=null)
+			IndividualValue(ID==producto,PROPNAME=="marca"||=="familia"||=="subfamilia",VALOR==idAmbitoarticulo)
+	)
+		 
+	forall(	ObjValue(ID==configurlote, PROPNAME=="producto",VALOR!=null)
+			ObjValue(ID==configurlote, PROPNAME=="producto",idAmbitoarticulo:VALOR!=null)
+			IndividualValue(ID==producto&&==idAmbitoarticulo,PROPNAME=="rdn")
+	)
+	
+	DatValue(ID==configurlote,PROPNAME=="lote_multiproveedor",BOOLEANVALOR==true)			
+then
+	
+	dma.printRule("============ASIGNAR MI EMPRESA COMO SUMINISTRADOR A LOTE PROVEEDOR");
+	dma.setValue(Integer.parseInt(lote),idtolote,"suministrador",ovproveedor);
+end
+
+
+rule "SUMINISTRADOR : LOTE : ASIGNACIÓN DE SUMINISTRADOR"
+salience 99 //Menos prioridad que la anterior, que si no ha aplicado en albaran proveedor es que toca asignar el proveedor. Pero mas que globalizar lote
+agenda-group "rules" when 
+
+	FactHierarchy(docClass:CLASS, CLASSSUP=="PRODUCCIÓN"||=="ALBARÁN_PROVEEDOR")	
+	ObjValue(CLASSNAME==docClass,idDoc:ID!=null,prop:PROPNAME=="proveedor"||=="mi_empresa",proveedor:VALOR!=null,ovproveedor:OBJECTVALUE)
+	
+	esDespiece:Double() from accumulate(DatValue(ID==idDoc, PROPNAME=="es_despiece", q:QMIN!=null),sum(q))
+			
+	forall( FactHierarchy(CLASS==docClass, CLASSSUP=="ALBARÁN_PROVEEDOR")	
+			ObjValue(ID==idDoc,PROPNAME==prop&&=="proveedor"))
+				
+	not(Individual(ID==idDoc,STATE==Constants.INDIVIDUAL_STATE_DELETED))
+	ObjValue(ID==idDoc,PROPNAME==(esDespiece.equals(0.0)?"línea":"consumo"),linea:VALOR!=null)
+	ObjValue(ID==linea,PROPNAME=="producto",producto:VALOR!=null)
+	ObjValue(ID==linea,PROPNAME=="lote",lote:VALOR!=null,idtolote:VALUECLS)
+	DatValue(ID==lote,PROPNAME=="rdn",rdnLote:VALOR!=null)
+	not((and 	DatValue(ID==lote,PROPNAME=="provisional",BOOLEANVALOR==true)
+				eval(prop.equals("mi_empresa"))))
+
+	ovSumin:ObjectValue() from accumulate(ObjValue(ID==lote,PROPNAME=="suministrador",ovSum:OBJECTVALUE!=null),
+											  init(ObjectValue ov=new ObjectValue(0,0);),action(ov=ovSum;),result(ov))												  											  
+then
+	
+	dma.printRule("============SUMINISTRADOR : LOTE : ASIGNACIÓN DE SUMINISTRADOR");
+	
+	if(	ovSumin.getValue()!=0 && 
+		!ovSumin.getValue().equals(ovproveedor.getValue()) &&
+		!(dma.isSpecialized(ovSumin.getValueCls(),183) && dma.isSpecialized(ovproveedor.getValueCls(),183))//si no son ambos mi empresa
+	  ) throw new OperationNotPermitedException("El lote "+rdnLote+" ya está asociado a otro suministrador");
+	dma.setValue(Integer.parseInt(lote),idtolote,"suministrador",ovproveedor);
+	dma.setValue(Integer.parseInt(lote),idtolote,"provisional",new BooleanValue(false));
+end
+
+function  String getDateCode(Date dat,String formatoFecha){
+	String fecha=null;
+	Calendar calendario = Calendar.getInstance();
+	calendario.setTime(dat);
+	String anyo=String.valueOf(calendario.get(calendario.YEAR)).substring(2);
+	int diaSemana=calendario.get(calendario.DAY_OF_WEEK);
+	int semananyo=calendario.get(calendario.WEEK_OF_YEAR);
+	
+	diaSemana= diaSemana==Calendar.SUNDAY ? 7:diaSemana-1;
+	int diames=calendario.get(calendario.DAY_OF_MONTH);
+	int mes=calendario.get(calendario.MONTH)+1;
+	String s_semanaAnyo=String.valueOf(semananyo);
+	if(s_semanaAnyo.length()==1){
+		s_semanaAnyo="0"+s_semanaAnyo;
+	}
+	String s_mes=String.valueOf(mes);
+	if(s_mes.length()==1){
+		s_mes="0"+s_mes;
+	}
+	if(formatoFecha.equals("AASSD")){
+	   fecha=anyo+s_semanaAnyo+String.valueOf(diaSemana);	
+	}else 	if(formatoFecha.equals("DDMMAA")){
+		   fecha=String.valueOf(diames)+s_mes+anyo;	
+	}else{fecha="noFormatDefined";}
+	System.err.println("\n  DEBUG funcion getDateCode (dat="+dat+"  formatoFecha="+formatoFecha+") return=" +fecha);
+	return fecha;
+}
+
+rule "PRECARGA LOTE"
+salience 100
+no-loop true
+agenda-group "rules" when 
+	//Para que sea mas eficiente lo suyo es cachear la query dentro de la misma sesion
+  	
+	lotes: HashSet(size>0) 
+            	from accumulate(
+            				 (and 
+            				 	ObjValue(claseStock:CLASSNAME, idstock:ID!=null,PROPNAME=="lote",idLote:VALOR!=null,lote:OBJECTVALUE,IDOVALUE>0) 
+            				 	//FactHierarchy(CLASSSUP=="STOCK",CLASS==claseStock) 
+           				 		FactHierarchy(classLote:CLASS, CLASSSUP=="LOTE")  								
+								not(Individual(CLASSNAME==classLote, ID==idLote))
+             				  ),
+                              init	( HashSet<IDIndividual> lineas2 = new HashSet<IDIndividual> ();),
+                              action( lineas2.add(lote);),                            
+                              result(lineas2))
+then
+ 	dma.printRule("\n  ================ PRECARGA LOTES");
+	
+	dma.ruleGetFromServer(lotes,1,false,false);
+end
+
+
+rule "SUMAR LOTES MISMO CODIGO" //NO DEBE SUMAR NUMEROS DE SERIE POR SER UNICOS
+salience 200
+agenda-group "rules" when 
+	
+	FactHierarchy(idtoLote:IDTO,CLASSSUP=="LOTE_PERECEDERO")
+	DatValue(IDTO==idtoLote,idoLote1:IDO,PROPNAME=="rdn",loteCode1:VALOR)
+	DatValue(IDTO==idtoLote,idoLote2:IDO!=idoLote1,PROPNAME=="rdn",VALOR==loteCode1)
+		
+	ObjValue(IDO==idoLote1,PROPNAME=="producto", idoProducto:IDOVALUE!=null)
+	ObjValue(IDO==idoLote2,PROPNAME=="producto",IDOVALUE==idoProducto)
+	
+	Individual(IDO==idoLote1,LEVEL==Constants.LEVEL_PROTOTYPE,STATE==Constants.INDIVIDUAL_STATE_READY)
+	Individual(IDO==idoLote2,level2:LEVEL,STATE==Constants.INDIVIDUAL_STATE_READY)//En algunos casos es individuo, y la toma como individuo final de la fusion preferentemente
+	
+	//Si no exigimos haya referencias, se dispara antes de que GUI enganche nuevo lote a linea
+	referencias: ArrayList(size>0) from collect(ObjValue(PROPNAME=="lote", IDOVALUE==idoLote1))           					
+then
+	System.err.println("\\================ RULE: SUMAR LOTES MISMO CODIGO "+idoLote1+","+idoLote2+","+referencias.size());
+	
+	for( int i=0;i<referencias.size();i++){
+		ObjValue dom=(ObjValue)referencias.get(i);
+		int idoDom=dom.getIDO();
+		int idtoDom=dom.getIDTO();
+		dma.delValue(idoDom,idtoDom,"lote", new ObjectValue(idoLote1,idtoLote));		
+		dma.addValue(idoDom,idtoDom,"lote", new ObjectValue(idoLote2,idtoLote));
+	}
+	dma.deleteObject(idoLote1,idtoLote);
+	
+end
+
+/* Puede haber numeros de serie a granel
+rule "NO SE PERMITEN STOCKS > 1 PARA PRODUCTOS CON Nº DE SERIE"
+	salience -200 //importante para que se dispare esta regla antes que la que calculo stocks
+ 	agenda-group "bddrules"
+	when   	
+		
+		FactHierarchy(CLASSSUP=="STOCK",idtoStock:IDTO)
+		DatValue(IDTO==idtoStock, PROPNAME=="cantidad",stock:DOUBLEVALUE>1,idoStock:IDO!=null)
+		FactHierarchy(CLASSSUP=="SERIE",idtoNSerie:IDTO)		
+		ObjValue(IDO==idoStock,PROPNAME=="lote",idoNSerie:IDOVALUE!=null,VALUECLS==idtoNSerie)
+		ObjValue(IDO==idoStock,PROPNAME=="producto",idoProd:IDOVALUE!=null,idtoProd:VALUECLS)
+		ObjValue(IDO==idoStock,PROPNAME=="almacén_stock",idoAlm:IDOVALUE!=null,idtoAlm:VALUECLS)	
+	then
+		throw new OperationNotPermitedException("No se permite stock mayores que 1 en productos que tienen numero de serie.\n El producto: "+dma.getValue(idoProd,idtoProd,"rdn").getValue_s()+" con nº de serie: "+ dma.getValue(idoNSerie, idtoNSerie, "rdn").getValue_s() +" quedaría con stock: "+stock+"  en el almacén: "+dma.getValue(idoAlm,idtoAlm,"rdn").getValue_s());	
+end*/
+
+
+rule "FECHA POR DEFECTO CONSUMO ES ORDEN ENTRADA"
+salience -100
+agenda-group "rules" when
+ 		FactHierarchy(idto:IDTO, CLASSSUP=="LOTE") 		
+ 		Lock(IDTO==idto,ido:IDO, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+
+		not(DatValue(IDO==ido, PROPNAME=="fecha_orden_consumo",QMIN!=null))		
+	then
+		dma.printRule("\n\n================  FECHA POR DEFECTO CONSUMO ES ORDEN ENTRADA");
+		long sgActual=dma.getServerDate();
+		TimeValue tValue = new TimeValue(sgActual);
+		dma.setValue(ido, idto, "fecha_orden_consumo", tValue);
+end
+
+rule "LOTE FECHAS DE USO"
+salience 10
+agenda-group "rules" when 
+	
+	FactHierarchy(idtoRoot:IDTO, CLASSSUP=="PRODUCCIÓN")					
+	Lock(IDTO==idtoRoot,idoRoot:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(IDO==idoRoot,PROPNAME=="consumo",idoLinea:IDOVALUE!=null)
+	Lock(IDO==idoLinea,STATE==Constants.INDIVIDUAL_STATE_LOCK)	
+	DatValue(IDO==idoRoot,PROPNAME=="fecha_inicio",fIniRoot:QMIN!=null)
+	ObjValue(IDO==idoLinea,PROPNAME=="lote",idoLote:IDOVALUE!=null,idtoLote:VALUECLS)
+	fecha_ini:ArrayList() from collect(DatValue(IDO==idoLote,PROPNAME=="fecha_inicio",f:QMIN!=null))
+	fecha_fin:ArrayList() from collect(DatValue(IDO==idoLote,PROPNAME=="fecha_fin",f:QMIN!=null))
+	
+then
+	dma.printRule("================ LOTE FECHAS DE USO");
+	
+	long inicio=fIniRoot.longValue(),fin=fIniRoot.longValue();
+	if(fecha_ini.size()>0){
+		inicio=Math.min(inicio,((DatValue)fecha_ini.get(0)).getQMIN().longValue());				
+	}
+	if(fecha_fin.size()>0){
+		fin=Math.max(fin,((DatValue)fecha_fin.get(0)).getQMIN().longValue());
+	}
+	dma.setValue(idoLote,idtoLote,"fecha_inicio",new TimeValue(inicio));
+	dma.setValue(idoLote,idtoLote,"fecha_fin",new TimeValue(fin));		
+end
+
+/*
+	Modificado DARÍO 17-05-11:
+		Actualizado para que solo actúe en producciones, si no, entraría
+		en conflicto continuamente con la regla de agregar líneas iguales.
+*/
+/*
+Si se quiere producir varios series habria que crear varias producciones
+
+rule "PARTIR NUMEROS DE SERIE" //NO DEBE SUMAR NUMEROS DE SERIE POR SER UNICOS
+agenda-group "rules" when 
+	
+	FactHierarchy(idtoDoc:IDTO, CLASSSUP=="PRODUCCIÓN")
+	Lock(idoDoc:IDO, IDTO==idtoDoc, LOCKEDBYUSER==true)	
+	ObjValue(IDO==idoDoc, PROPNAME=="línea", idoLinea:IDOVALUE, idtoLinea:VALUECLS)
+	ObjValue(IDO==idoLinea, PROPNAME=="n._serie", idoSerie:IDOVALUE, idtoSerie:VALUECLS)
+	Lock(IDO==idoLinea, LOCKEDBYUSER==false)
+	DatValue(IDO==idoSerie, PROPNAME=="rdn", rdnSerie:VALUE!=null)
+	DatValue(IDO==idoLinea, PROPNAME=="cantidad", cantidad:DOUBLEVALUE>1)
+
+then
+	System.err.println("\\================ RULE: PARTIR NUMEROS DE SERIE");
+	Domain domDoc=new Domain(idoDoc,idtoDoc);
+    dma.setValue(new Domain(idoLinea,idtoLinea),"cantidad",new DoubleValue(1.0));	
+	for( int i=1;i<cantidad;i++){
+        String excluproperties="cantidad#importe#n._serie";
+        Domain newLinea=dma.cloneIndividual(idoLinea,idtoLinea, idtoLinea, excluproperties);                                               
+        Domain newSerie=dma.cloneIndividual(idoSerie,idtoSerie, idtoSerie, null);    
+        
+        dma.setValue(newLinea,"cantidad",new DoubleValue(1.0));
+        //dma.setValue(newLinea,"n._serie",new ObjectValue(newSerie));		
+        //dma.setValue(newSerie,"rdn",new StringValue(rdnSerie+"-"+i));        
+	}	
+end*/
+
+/*rule "NO SE PERMITEN DOS STOCKS CON MISMO Nº DE SERIE PARA EL MISMO PRODUCTO"
+	salience -210 //importante para que se dispare esta regla antes que la que calculo stocks
+ 	agenda-group "bddrules"
+	when   	
+		
+		FactHierarchy(CLASSSUP=="STOCK",idtoStock:IDTO)
+		DatValue(IDTO==idtoStock, PROPNAME=="cantidad",DOUBLEVALUE>0,idoStock:IDO!=null)	
+		FactHierarchy(CLASSSUP=="SERIE",idtoNSerie:IDTO)				
+		ObjValue(IDO==idoStock,PROPNAME=="lote",idoNSerie:IDOVALUE!=null, VALUECLS==idtoNSerie)
+		ObjValue(IDO==idoStock,PROPNAME=="producto",idoProd:IDOVALUE!=null,idtoProd:VALUECLS)
+		ObjValue(IDO==idoStock,PROPNAME=="almacén_stock",idoAlm:IDOVALUE!=null,idtoAlm:VALUECLS)	
+		
+		exists(
+			(and
+				DatValue(IDTO==idtoStock, PROPNAME=="cantidad", DOUBLEVALUE>0, idoStock2:IDO!=idoStock)
+				ObjValue(IDO==idoStock2, PROPNAME=="lote", IDOVALUE==idoNSerie)
+				ObjValue(IDO==idoStock2, PROPNAME=="producto", IDOVALUE==idoProd)
+				ObjValue(IDO==idoStock2, PROPNAME=="almacén_stock", IDOVALUE==idoAlm)			
+			)
+		)
+	then
+		throw new OperationNotPermitedException("No puede haber 2 Stock del producto: "+dma.getValue(idoProd,idtoProd,"rdn").getValue_s()+" con el mismo nº de serie: "+ dma.getValue(idoNSerie, idtoNSerie, "rdn").getValue_s());	
+end*/

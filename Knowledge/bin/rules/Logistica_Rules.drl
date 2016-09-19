@@ -1,0 +1,1230 @@
+package dynagent.ruleengine.src.ruler.ERPrules;
+
+//CLASES ESPECIFICAS PARA EXPRESAR RESULTADO QUERYS:
+
+
+
+import dynagent.ruleengine.src.ruler.ERPrules.datarules.*;
+
+import dynagent.ruleengine.src.ruler.ERPrules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import java.text.SimpleDateFormat;
+import java.text.ParsePosition;
+
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+
+import dynagent.common.knowledge.selectData;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import dynagent.common.utils.QueryConstants;
+import dynagent.common.basicobjects.IndividualValue;
+
+
+global DataModelAdapter dma;
+/*
+ * ventas de esos productos en todos los almacenes
+ */
+ 
+ 	///////////////////////////////////////////////////////////////ACCIÓN SALIDA A SIGUIENTE DESTINO/////////////////////////////
+	/////Prerequisitos de los sources de la acción
+	////1. que no se haya dado ya salida al siguiente destino
+	////2. que tenga un destino posterior.
+
+//PRERERQUISITO 1 YA SE COMPRUEBA EN LA ACCIÓN AL ACUMULAR, PQ PODRÍA INTERESAR DESGLOSAR EL ENVIO EN VARIOS ENVIOS..
+///HARÁ FALTA UNA REGLA QUE SI NO SE PUEDE GENERAR EL TARGET LANZE UNA EXCEPCIÓN
+
+//prerequisito 2
+rule "NO SE PUEDE EJECUTAR LA ACCIÓN ENVIAR A SIGUIENTE DESTINO SI LA ENTRADA NO TIENE DESTINO_POSTERIOR"
+agenda-group "rules" when
+
+    
+     ObjValue(CLASSNAME=="SALIDA_A_SIGUIENTE_DESTINO", idUTask:ID,PROPNAME=="sourceClass",idEntrada:VALOR!=null)
+     ObjValue(ID==idUTask,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+	 DatValue(ID==idEstado,PROPNAME=="rdn",STRINGVALUE==Constants.INDIVIDUAL_PREVALIDANDO)
+     Individual(ID==idEntrada)
+     not(ObjValue(ID==idEntrada,PROPNAME=="destino_posterior",VALOR!=null))
+then
+	 dma.printRule("\n\n  ==================> RULE NO SE PUEDE EJECUTAR LA ACCIÓN ENVIAR A SIGUIENTE DESTINO SI LA ENTRADA NO TIENE DESTINO_POSTERIOR");
+	 throw new OperationNotPermitedException("No se puede enviar a siguiente destino porque no tiene destino_posterior");
+end 
+
+//prerequisito 3
+rule "NO SE PUEDE EJECUTAR LA ACCIÓN ENVIAR A SIGUIENTE DESTINO SI LA ENTRADA YA HA SIDO REENVIADA"
+agenda-group "rules" when
+    
+     ObjValue(CLASSNAME=="SALIDA_A_SIGUIENTE_DESTINO", idUTask:ID,PROPNAME=="sourceClass",idEntrada:VALOR!=null)
+     ObjValue(ID==idUTask,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+	 DatValue(ID==idEstado,PROPNAME=="rdn",STRINGVALUE==Constants.INDIVIDUAL_PREVALIDANDO)
+     Individual(ID==idEntrada)
+     DatValue(ID==idEntrada,PROPNAME=="reenviado",INITIALVALOR=="true")
+then
+	 dma.printRule("==//========//=====  RULE NO SE PUEDE EJECUTAR LA ACCIÓN ENVIAR A SIGUIENTE DESTINO SI LA ENTRADA YA HA SIDO REENVIADA");
+	 throw new OperationNotPermitedException("NO SE PUEDE EJECUTAR LA ACCIÓN ENVIAR A SIGUIENTE DESTINO SI LA ENTRADA YA HA SIDO REENVIADA");
+end 
+ 
+rule "FRANQUICIAS: COMPLETAR DETALLE STOCK RED MENOR JERARQUIA"
+agenda-group "rules" when
+    ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE!=null)    
+    
+    FactHierarchy(idtoArt:IDTO, CLASSSUP=="GÉNERO")
+    Lock(IDTO==idtoArt,idoArticulo:IDO>0,lockUser:LOCKEDBYUSER,state:STATE)
+    
+    ObjValue(IDO==idoArticulo,PROPNAME=="empresa",IDOVALUE!=idoMiEmpresa,RANGENAME=="MI_EMPRESA")  	
+	Model(CLASSNAME=="GÉNERO",p:PROPNAME=="requiere_talla"||=="requiere_color",pid:PROP,OP==Constants.OP_INTERSECTION)
+	not(ObjValue(IDO==idoArticulo,PROPNAME==p,IDOVALUE!=null))  			
+																											
+then
+	dma.printRule("========= FRANQUICIAS: COMPLETAR DETALLE STOCK RED MENOR JERARQUIA");
+	dma.setBooleanValue(idoArticulo,idtoArt,pid,false,false);
+	dma.consumirEventoCambio(idoArticulo,p);//para que no actue regla proteccion celop
+end
+
+
+rule "ENVIO A UN PROXIMO DESTINO"
+agenda-group "rules" when
+    
+    f:ObjValue(CLASSNAME=="SALIDA_A_SIGUIENTE_DESTINO", idoUTask:IDO,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+	siguienteDestinoXlineasnoenviadas: HashMap() 
+   	from accumulate(
+             	(and 
+             		ObjValue(IDO==idoUTask, PROPNAME=="sourceClass", identrada:VALOR!=null)
+             		ObjValue(typeEntrada:CLASSNAME,ID==identrada,PROPNAME=="destino_posterior", destinoPosterior:VALOR!=null,idtodestinoPosterior:VALUECLS)
+             		ObjValue(ID==identrada,PROPNAME=="destino", destino:VALOR!=null,idtodestino:VALUECLS)
+             		ObjValue(ID==identrada,PROPNAME=="línea", idLinea:VALOR!=null,linea:OBJECTVALUE)             		             		
+					not(
+						(and
+							FactHierarchy(namesalida:CLASS,CLASSSUP=="SALIDA_ARTÍCULOS")
+							ObjValue(ID==idLinea,PROPNAME=="documento", RANGENAME==namesalida,iddoc:VALOR!=null)
+							ObjValue(ID==iddoc,PROPNAME=="origen",VALOR==destino)
+						)
+					)
+			    ),
+              init( 
+              		//en la clave del mapa codificamos destino;destino_posterior#tipoEntrada
+				 	HashMap <String,HashSet<ObjectValue>>siguienteDestinoXlineasnoenviadas2=new HashMap<String,HashSet<ObjectValue>>();
+			  ),
+              action(
+	              String clave=destino+"@"+idtodestinoPosterior+"#"+destinoPosterior+"@"+idtodestinoPosterior;
+               if(siguienteDestinoXlineasnoenviadas2.get(clave)==null){
+				 	HashSet<ObjectValue> hslineas=new HashSet<ObjectValue>();
+				 	hslineas.add(linea);
+					siguienteDestinoXlineasnoenviadas2.put(clave,hslineas);
+				 }
+				 else{
+				 	siguienteDestinoXlineasnoenviadas2.get(clave).add(linea);
+				 }
+              ),
+              result(siguienteDestinoXlineasnoenviadas2)
+	 )	
+then	
+	dma.printRule("\n\n=============== ENVIO A UN PROXIMO DESTINO: siguienteDestinoXlineasnoenviadas="+siguienteDestinoXlineasnoenviadas);
+	if(siguienteDestinoXlineasnoenviadas.size()==0){
+		throw new OperationNotPermitedException("No se puede enviar a siguiente destino porque ya se envió");
+	}
+	else{
+		String typesalida=null;
+		String typeLinea=null;
+
+		Iterator it=siguienteDestinoXlineasnoenviadas.keySet().iterator();
+
+		while(it.hasNext()){
+			String clave=(String)it.next();
+		    String  [] sclave=clave.split("#");
+			String destino=sclave[0];
+			dma.printRule(".. debug destino="+destino);
+			String  [] ido_idto_destino=destino.split("@");
+			int idoDestino=Integer.parseInt(ido_idto_destino[0]);
+			int idtoDestino=Integer.parseInt(ido_idto_destino[1]);
+			
+			String destinoPosterior=sclave[1];
+			String  [] ido_idto_destinoPosterior=destinoPosterior.split("@");
+			int idoDestinoPost=Integer.parseInt(ido_idto_destinoPosterior[0]);
+			int idtoDestinoPost=Integer.parseInt(ido_idto_destinoPosterior[1]);
+			
+			
+			HashSet<ObjectValue> lineas=(HashSet<ObjectValue>)siguienteDestinoXlineasnoenviadas.get(clave);
+			//			destinoPosterior  CLIENTE se crea un ALBARÁN_CLIENTE
+			//			destinoPosterior  PROVEEDOR se crea un ALBARÁN_PROVEEDOR
+			//			destinoPosterior  ALMACÉN se crea un TRASPASO_ALMACENES
+
+			//IMPTE: preguntamos por rdn, para que lo carge en motor si no está.
+			String rdnDestinoPosterior=dma.getValue(idoDestinoPost,idtoDestinoPost,Constants.PROP_RDN).getValue_s();
+			String claseDestinoPosterior=dma.getClassName(idtoDestinoPost);
+			if(claseDestinoPosterior.equals("CLIENTE")||dma.isSpecialized(claseDestinoPosterior,"CLIENTE")){
+				typesalida="ALBARÁN_CLIENTE";
+				typeLinea="LÍNEA_ARTÍCULOS_MATERIA";
+			}
+			else if(claseDestinoPosterior.equals("PROVEEDOR")||dma.isSpecialized(claseDestinoPosterior,"PROVEEDOR")){
+				typesalida="ALBARÁN_PROVEEDOR";
+				typeLinea="LÍNEA_ARTÍCULOS_MATERIA";
+			}
+			else if(claseDestinoPosterior.equals("ALMACÉN")||dma.isSpecialized(claseDestinoPosterior,"ALMACÉN")){
+				typesalida="TRASPASO_ALMACENES";
+				typeLinea="LÍNEA_MATERIA";
+			}
+			else{
+				dma.printRule("\n ===WARNING === WARNING === CASO NO CONTEMPLADO EN RULE <ENVIO A UN PROXIMO DESTINO>");
+				break;
+			}
+			int idtosalida=dma.getIdClass(typesalida);
+			Domain domSalida=dma.creaIndividualOfClass(idtosalida);
+			ObjectValue ovDestinoPost=new ObjectValue(idoDestinoPost,idtoDestinoPost);
+			ObjectValue ovDestino=new ObjectValue(idoDestino,idtoDestino);
+		
+			if(typesalida.equals("ALBARÁN_PROVEEDOR")){
+				
+				dma.setValue(domSalida,"proveedor",ovDestinoPost);
+				dma.setValue(domSalida,"destino_posterior",ovDestinoPost);//en destinoPOsterior va el destino real (el proveedor), en destino hay que poner 
+				dma.setValue(domSalida,"reenviado",new BooleanValue(true)); //Truco para que no cante en rojo pendiente de reenvío.
+				//el almacen desde el que se devuelve la mercancia para que de de baja stocks
+				dma.setValue(domSalida,"destino",ovDestino);
+				dma.setValue(domSalida,"observaciones_internas",new StringValue("ABONO A PROVEEDOR"));
+			
+			}
+			else  if(typesalida.equals("ALBARÁN_CLIENTE")){
+			dma.printRule(".. debug se crea un albarán cliente y se le asigna origen="+destino);
+				dma.setValue(domSalida,"cliente",ovDestinoPost);
+				dma.setValue(domSalida,"origen",ovDestino);
+			}else{
+				dma.printRule(".. debug se crea UN TRASPASO, Y SU ORIGEN");
+				dma.setValue(domSalida,"origen",ovDestino);
+				dma.setValue(domSalida,"destino",ovDestinoPost);
+			}
+			
+			//aquí en función del tipo de entrada y si se crean por ejemplo albaranes cliente entonces en lugar de añadir un destino se añadiría el cliente, 
+			//de momento es genérico: Entrada Mercancia con destino posterior pasa a Traspaso_Almacenes.
+
+			Iterator<ObjectValue>itlineas=lineas.iterator();
+			while(itlineas.hasNext()){
+				ObjectValue linea=itlineas.next();
+				LinkedList<String> nocopiar=new LinkedList<String>();
+				Double cantidad=((DataValue)dma.getValue(linea.getValue(),linea.getValueCls(),"cantidad")).getNumericValue();
+				int idtolinea=dma.getIdClass(typeLinea);
+				Domain domCopiaDelinea=dma.creaIndividualOfClass(idtolinea);
+				if(typesalida.equals("ALBARÁN_PROVEEDOR")){
+					//los alabranes proveedor tienen como propiedad destino el almacén de nuestro sistema al que llego la mercancia, en una devolución
+					//a proveedor es el almacen desde el que se realiza la devolución , impt para gestion stocks.
+					cantidad=cantidad*-1.0;
+				}
+				dma.setValue(domCopiaDelinea, "cantidad", new DoubleValue(cantidad));
+				dma.setValue(domCopiaDelinea, "producto", dma.getValue(linea.getValue(),linea.getValueCls(),"producto"));
+				dma.addValue(domSalida, "línea", new ObjectValue(domCopiaDelinea));
+			}
+		//POR ULTIMO ENLAZAMOS EL ALBARÁN_INTERNO CREADO CON LA ACCIÓN
+		dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(domSalida));
+		}
+	}
+end
+		
+rule "CUANDO SE HA REENVIADO LA ENTRADA DE MERCANCIA SE MARCA COMO REENVIADA"
+agenda-group "rules" when
+    
+    f:ObjValue(CLASSNAME=="SALIDA_A_SIGUIENTE_DESTINO", idUTask:ID,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	ObjValue(ID==idUTask, PROPNAME=="sourceClass", identrada:VALOR!=null,idtoEntrada:VALUECLS)		
+then
+	dma.printRule("\n\n===================== CUANDO SE HA REENVIADO LA ENTRADA DE MERCANCIA SE MARCA COMO REENVIADA: identrada="+identrada);
+	dma.setValue(Integer.parseInt(identrada),idtoEntrada,"reenviado",new BooleanValue(true));
+end
+/*
+
+rule "GENERAR TRASPASOS ALMACENES A PARTIR SOLICITUD TRASPASO"  
+agenda-group "rules" when
+    
+   	ObjValue(typetask:CLASSNAME=="Generar_traspaso_almacenes_a_partir_pedido", idoUTask:IDO,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    lineasXorigen_salida: HashMap(size>0) 
+   	from accumulate(
+             	(and 
+             		 ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idSolTr:VALOR!=null)
+              		 ObjValue(ID==idSolTr,PROPNAME=="línea", linea:OBJECTVALUE)
+					 ObjValue(ID==idSolTr,PROPNAME=="origen", origen:VALOR!=null)
+					 ObjValue(ID==idSolTr,idoSolTr:IDO,idtoSolTr:IDTO,PROPNAME=="destino", destino:VALOR!=null)
+					 //destino_posterior lo cogemos en el action pq no es obligatorio
+			    ),
+              init( 
+				 HashMap <String,ArrayList<ObjectValue>> lineasXorigen_salida2=new HashMap <String,ArrayList<ObjectValue>>();
+			  ),
+              action(
+              
+             	  StringValue destinoPosterior=(StringValue)dma.getValue(idoSolTr,idtoSolTr,"destino_posterior");
+	              String origen_salida=origen+"#"+destino;
+             	  if(destinoPosterior!=null)
+		              origen_salida+="#"+destinoPosterior.getValue();
+            	 if(lineasXorigen_salida2.get(origen_salida)==null){
+				 	ArrayList<ObjectValue> lineas= new ArrayList<ObjectValue>();
+					lineas.add(linea);
+					lineasXorigen_salida2.put(origen_salida,lineas);
+				 }
+				 else{
+				 	lineasXorigen_salida2.get(origen_salida).add(linea);
+				 }
+              ),
+              result(lineasXorigen_salida2)
+	)		
+then
+	dma.printRule("\n\n  =========== GENERAR TRASPASOS ALMACENES A PARTIR SOLICITUD TRASPASO: lineasXorigen_salida="+lineasXorigen_salida); 
+   	
+   	Iterator<String> it=(Iterator<String>)lineasXorigen_salida.keySet().iterator();
+	while(it.hasNext()){
+		String clave=(String)it.next();
+		String  [] sclave=clave.split("#");
+	    String origen=sclave[0];
+		String destino=sclave[1];
+		String destinoPosterior=null;
+		if (sclave.length==3)
+			destinoPosterior=sclave[2];
+ 		ArrayList<ObjectValue> lineas=(ArrayList<ObjectValue>)lineasXorigen_salida.get(clave);
+ 		int idtoTraspaso=dma.getIdClass("TRASPASO_ALMACENES");
+ 		Domain domTraspaso=dma.creaIndividualOfClass(idtoTraspaso);   
+ 		int idoOrigen=Integer.parseInt(origen);
+ 		int idtoOrigen=dma.getClassOf(idoOrigen);
+ 		ObjectValue ovorigen=new ObjectValue(idoOrigen,idtoOrigen);
+ 		dma.setValue(domTraspaso,"origen",ovorigen);
+ 		
+		int idoDestino=Integer.parseInt(destino);
+ 		int idtoDestino=dma.getClassOf(idoDestino);
+ 		ObjectValue ovdestino=new ObjectValue(idoDestino,idtoDestino);
+		dma.setValue(domTraspaso,"destino",ovdestino);
+		if(destinoPosterior!=null){
+		 		int idoDestinoPosterior=Integer.parseInt(destinoPosterior);
+		 		int idtoDestinoPosterior=dma.getClassOf(idoDestinoPosterior);
+		 		ObjectValue ovdestinoPosterior=new ObjectValue(idoDestinoPosterior,idtoDestinoPosterior);
+				dma.setValue(domTraspaso,"destino_posterior",ovdestinoPosterior);
+		 }
+		for(int i=0;i<lineas.size();i++){
+ 			dma.addValue(domTraspaso,"línea",lineas.get(i));
+ 		}
+		//enlazamos traspaso creado a utask
+	 	dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(domTraspaso));
+	}
+end
+*/
+
+//NOta: user setVAlue con usuario logado pq es un campo que también edita el usuario y esta edición lo unico que hace es una edición a petición de usuario (importante por systemvalue 
+//hacerlo con user=usuario logado
+
+rule "CONFIRMAR RECEPCIÓN DE TRASPASO_ALMACENES"
+salience 100
+agenda-group "rules" when 
+	
+	ObjValue(CLASSNAME=="Confirmar_recepción",idtask:ID,PROPNAME=="sourceClass",idoTask:IDO,idtoTask:IDTO,typedoc:RANGENAME,doc:OBJECTVALUE!=null)
+	ObjValue(ID==idtask,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+then
+	dma.printRule("\n\n===============CONFIRMAR RECEPCIÓN  DE TRASPASO_ALMACENES");
+   dma.setValue(doc.getValue(),doc.getValueCls(),"recibido",new BooleanValue(true));
+   dma.addValue(idoTask,idtoTask,"targetClass",doc);
+end
+
+
+rule "NO SE PUEDE CONFIRMAR RECEPCIÓN TRASPASO  SI NUESTRO ALMACÉN NO ES EL DESTINO DEL ENVIO  Y NO ESTAMOS EN CENTRAL"
+agenda-group "rules" when
+    			
+	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="TRASPASO_ALMACENES")
+    Lock(IDTO==idtoDoc,idoTraspaso:IDO,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+    
+    ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="delegación",idoMiDelegacion:IDOVALUE!=null)    
+	ObjValue(IDO==idoTraspaso,PROPNAME=="destino",idoDestino:IDOVALUE)
+	ObjValue(IDO==idoDestino,PROPNAME=="delegación",IDOVALUE!=idoMiDelegacion)
+	
+	//si estoy creando no puedo marcar true si no soy origen
+	//si ya existia no puedo cambiar a ningun valor
+	
+	DatValue(IDO==idoTraspaso,PROPNAME=="recibido",recibido:VALOR!=null, ch:hasCHANGED)
+	
+	eval(idoTraspaso.intValue()<0&&recibido.equals("true") || idoTraspaso.intValue()>0&&ch )		
+then
+	 dma.printRule("\n\n  ==================>NO SE PUEDE CONFIRMAR RECEPCIÓN TRASPASO  SI NUESTRO ALMACÉN NO ES EL DESTINO DEL ENVIO  Y NO ESTAMOS EN CENTRAL");
+	 throw new OperationNotPermitedException("No se puede confirmar la recepción porque no es un traspaso para nuestro almacén");
+end 
+
+rule "REMITENTE DEL MENSAJE ES EL ALMACÉN CONFIGURADO EN MIEMPRESA"
+salience -100
+ agenda-group "rules" when 
+  	
+  	Lock(CLASSNAME=="MENSAJE",idoMensaje:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK, LEVEL==Constants.LEVEL_PROTOTYPE,idtoMensaje:IDTO)
+  	
+  	ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="delegación",idoMiDelegacion:IDOVALUE!=null,ovDel:OBJECTVALUE)
+  	not(ObjValue(IDO==idoMensaje ,PROPNAME=="origen_delegacion"))  	
+then
+	dma.printRule("\n\n ============== REMITENTE DEL MENSAJE ES EL ALMACÉN CONFIGURADO EN MIEMPRESA");
+	dma.setValue(idoMensaje,idtoMensaje,"origen_delegacion",ovDel);
+end
+
+rule "FILTRADO UTASK Task_mensaje_pendiente leido=false"
+ agenda-group "rules" when   	
+  	RangeFilter(CLASSNAME=="Task_MENSAJES_PENDIENTES", PROPNAME==Constants.PROP_TARGETCLASS,filtroSolicitud:VALUE!=null,idtoF:VALUECLS)
+	not(FilterValue(ID==filtroSolicitud, PROPNAME=="leido",VALOR=="false"))
+then	
+	dma.printRule("\n\n ============== FILTRADO UTASK Task_TRASPASO_ALMACENES(pendiente envio) enviado=false");
+	dma.setValue(new Integer(filtroSolicitud),idtoF,"leido",new BooleanValue(false));
+end
+
+
+rule "MENSAJES CAMBIO DE PRECIO EN CENTRAL"
+salience 10
+agenda-group "rules" when 
+	ObjValue(idoTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	not(Individual(CLASSNAME=="MENSAJE"))//la regla que elimina parametros hace que se reevalue
+    DatValue(CLASSNAME=="PARAMETRO_VERDADERO",idoParam:IDO,PROPNAME=="rdn",VALOR=="mensajes_por_cambio_de_precio")
+    DatValue(IDO==idoParam,PROPNAME=="activo",BOOLEANVALOR==true)
+    
+	ObjValue(CLASSNAME=="APLICACIÓN", idoApli:IDO!=null,PROPNAME=="delegación", idoMiDelegacion:IDOVALUE!=null, ovDelegacion:OBJECTVALUE!=null)
+	ObjValue(IDO==idoApli, PROPNAME=="mi_empresa",idoMiEmpresa:IDOVALUE!=null )
+	ObjValue(IDO==idoMiEmpresa ,PROPNAME=="delegacion_central",IDOVALUE==idoMiDelegacion)
+
+	precioParam:Double() from accumulate((and 	ObjValue(IDO==idoTask, PROPNAME=="params",idoParams:IDOVALUE!=null)
+												ObjValue(IDO==idoParams, PROPNAME=="tarifas_venta",idoTVparam:IDOVALUE!=null)
+												not(ObjValue(IDO==idoParams, PROPNAME=="tarifas_venta",IDOVALUE!=idoTVparam)) 	 	
+												DatValue(IDO==idoTVparam, idtoTVparam:IDTO,propPrecio:PROPNAME=="precio_iva_incluido",p:QMIN!=null)),sum(p))
+														            				 	
+	
+	//identificamos que es la central
+  	contenido1: String() 
+            	from accumulate(
+            				 (and 
+            				 	ObjValue(IDO==idoTask,CLASSNAME!="Asignar_precio_a_tarifa")
+            				 	FactHierarchy(idtoArt:IDTO,CLASSSUP=="ARTÍCULO")
+            				 	Lock(IDTO==idtoArt,idoArt:IDO,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+            				 	//si hay rebajas de PVP no debo enviar mensajes por cambiar PVP original
+            				 	not((and 	ObjValue(IDO==idoArt,PROPNAME=="tarifas_venta",idoPrecio:IDOVALUE)	
+            				 				ObjValue(IDO==idoPrecio,PROPNAME=="tarifa_precio",idoTarifaPVP:IDOVALUE)
+											DatValue(IDO==idoTarifaPVP,PROPNAME=="rdn",VALOR=="PVP")))
+            				 	DatValue(IDO==idoArt,PROPNAME=="pvp_iva_incluido",pvpPrecio:VALOR!=null,pvpInitalBd:INITIALVALOR!=null&&!=pvpPrecio)            				 	
+            				 	DatValue(IDO==idoArt,PROPNAME=="rdn",rdnArt:VALOR!=null)
+            				 	DatValue(IDO==idoArt,PROPNAME=="descripción",descripcionArt:VALOR!=null)            				 	
+             				  ),
+                              init	( String mensaje = "";),
+                              action(
+                              	if(mensaje.length()==0) mensaje+="PRODUCTO      NUEVO     ANTIGUO.\n";
+                              	mensaje+=descripcionArt+"\n";
+                               mensaje+=rdnArt+"     "+pvpPrecio+"     "+  pvpInitalBd+"\n";),                            
+                              result(mensaje))
+  	contenido2: String() 
+            	from accumulate(
+            				 (and             			
+            				    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)	 	
+            				 	ObjValue(CLASSNAME=="Asignar_precio_a_tarifa",IDO==idoTask, PROPNAME=="params",idoParams:IDOVALUE!=null)
+            				 	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+            				 	ObjValue(IDO==idoParams, PROPNAME=="producto",idoArt:IDOVALUE)            				 	         				 	
+            				 	DatValue(IDO==idoArt,PROPNAME=="rdn",rdnArt:VALOR!=null)
+            				 	DatValue(IDO==idoArt,PROPNAME=="descripción",descripcionArt:VALOR!=null)            				 	
+             				  ),
+                              init	( String mensaje = "";								
+                              ),
+                              action(
+                              			if(mensaje.length()==0) mensaje+="NUEVO PRECIO "+precioParam+"\n";	
+                              			mensaje+=rdnArt+" "+descripcionArt+"\n";
+                              ),                               			                            
+                              result(mensaje))    
+                                             
+    then
+		dma.printRule("\n\n ============== MENSAJES CAMBIO DE PRECIO EN CENTRAL "+contenido1+" "+contenido2);   
+	
+		String contenidoMensaje= contenido1.length()>0?contenido1:contenido2;
+		if(contenidoMensaje.length()>0){
+			Domain domMensaje=dma.creaIndividualOfClass("MENSAJE");
+			dma.setValue(domMensaje,"contenido",new StringValue(contenidoMensaje));
+			dma.setValue(domMensaje,"asunto",new StringValue("CAMBIO PRECIOS"));		
+			dma.setValue(domMensaje,"origen_delegacion",ovDelegacion);		
+			dma.setDataValue(domMensaje,"leido","false");				
+			TimeValue tValue = new TimeValue(Auxiliar.getFechaActual());		
+			dma.setValue(domMensaje,"fecha",tValue);
+		}
+end
+
+rule "PRECARGA ALMACEN CENTRAL"
+salience -100 
+agenda-group "rules" when 	  		
+	Lock(CLASSNAME=="PEDIDO_TRASPASO_ALMACENES"||=="TRASPASO_ALMACENES",idoMensaje:IDO!=null,idtoMensaje:IDTO,STATE==Constants.INDIVIDUAL_STATE_LOCK, LEVEL==Constants.LEVEL_PROTOTYPE)		
+	//ObjValue(idoMiEmpresa :IDO,PROPNAME=="delegacion_central",idoDel:IDOVALUE>0,ovDelegacion:OBJECTVALUE)
+		
+	//precargo todos los almacenes por que en franquicia no se sabe cual es la central de la matriz y hace falta
+	not(ObjValue(IDO==idoMensaje,PROPNAME=="origen"||=="destino"))
+then
+	dma.printRule("================  PRECARGA ALMACEN CENTRAL");
+	HashMap<String,Value> whereAlmacen=new HashMap<String,Value>();
+	//whereAlmacen.put("delegación",ovDelegacion);
+	instance  filerAlmacen=dma.buildInstanceWith("ALMACÉN",null,null,null,null);
+	HashSet<IDIndividual> idos=dma.loadIndividualsWithSatisficedFilter(filerAlmacen);
+	dma.printRule("NUMERO ENCONTRADO "+idos.size());
+end	
+
+rule "DESTINATARIO PEDIDOS TIENDA ES ALMACEN CENTRAL"
+salience -100
+ agenda-group "rules" when   	
+  	Lock(cls:CLASSNAME=="PEDIDO_TRASPASO_ALMACENES"||=="TRASPASO_ALMACENES",idoMensaje:IDO!=null,idtoMensaje:IDTO,STATE==Constants.INDIVIDUAL_STATE_LOCK, LEVEL==Constants.LEVEL_PROTOTYPE)
+  	
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="delegación",idoMiDel:IDOVALUE!=null)			
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="mi_empresa",idoMiEmp:IDOVALUE!=null)				
+
+	ObjValue(IDO==idoMiEmp,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE!=null, ovCentral:OBJECTVALUE)
+	
+	FactHierarchy(idtoAlm:IDTO, CLASSSUP=="ALMACÉN")
+	ObjValue(IDTO==idtoAlm,idoAlmacenCentral:IDO,PROPNAME=="delegación",IDOVALUE==idoDelCentral)  	  	  		  
+
+  	ObjValue(CLASSNAME=="APLICACIÓN", propDefecto:PROPNAME=="almacén_por_defecto", VALOR!=null,mialmacen:OBJECTVALUE!=null)
+then
+	dma.printRule("============== DESTINATARIO PEDIDOS TIENDA ES ALMACEN CENTRAL");
+	ObjectValue origen= null;
+	ObjectValue destino= null;
+	boolean soyTienda=!idoMiDel.equals(idoDelCentral);
+	
+	if(cls.equals("TRASPASO_ALMACENES") && soyTienda || cls.equals("PEDIDO_TRASPASO_ALMACENES")&&!soyTienda){//yo traspaso para enviar, pero pido para recibir
+		destino=new ObjectValue(idoAlmacenCentral,idtoAlm);
+		if(soyTienda) origen=mialmacen;
+	}
+	
+	if(cls.equals("PEDIDO_TRASPASO_ALMACENES") && soyTienda){
+		origen=new ObjectValue(idoAlmacenCentral,idtoAlm);
+		destino=mialmacen;
+	}
+	if(origen!=null) 	dma.setValue(idoMensaje,idtoMensaje,"origen",origen);
+	if(destino!=null) 	dma.setValue(idoMensaje,idtoMensaje,"destino",destino);
+	
+end
+
+/*rule "CELOP: DESTINATARIO DEL MENSAJE EN UNA TIENDA ES EL ALMACÉN CENTRAL"
+salience -100
+ agenda-group "rules" when   	
+  	Lock(CLASSNAME=="MENSAJE",idoMensaje:IDO!=null,idtoMensaje:IDTO,STATE==Constants.INDIVIDUAL_STATE_LOCK, LEVEL==Constants.LEVEL_PROTOTYPE)
+	FactHierarchy(idtoDel:IDTO, CLASSSUP=="DELEGACIÓN")
+	DatValue(IDTO==idtoDel,idoDelCentral:IDO,PROPNAME=="rdn",VALOR=="001")
+	
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="delegación",idoMiDel:IDOVALUE!=idoDelCentral)							
+	
+  	not(ObjValue(IDO==idoMensaje ,PROPNAME=="destino_delegacion"))  	  		  	
+then
+	dma.printRule("\n\n ============== CELOP: DESTINATARIO DEL MENSAJE EN UNA TIENDA ES EL ALMACÉN CENTRAL");
+	dma.addValue(idoMensaje,idtoMensaje,"destino_delegacion",new ObjectValue(idoDelCentral,idtoDel));
+end*/
+
+
+rule "DESTINATARIO DEL MENSAJE EN UNA TIENDA ES EL ALMACÉN CENTRAL"
+salience -100
+ agenda-group "rules" when   	
+  	Lock(CLASSNAME=="MENSAJE",idoMensaje:IDO!=null,idtoMensaje:IDTO,STATE==Constants.INDIVIDUAL_STATE_LOCK, LEVEL==Constants.LEVEL_PROTOTYPE)
+
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="delegación",idoMiDel:IDOVALUE)			
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="mi_empresa",idoMiEmp:IDOVALUE!=null)				
+	ObjValue(IDO==idoMiEmp,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE!=idoMiDel, ovCentral:OBJECTVALUE)
+	
+  	not(ObjValue(IDO==idoMensaje ,PROPNAME=="destino_delegacion"))  	  		  	
+then
+	dma.printRule("\n\n ============== DESTINATARIO DEL MENSAJE EN UNA TIENDA ES EL ALMACÉN CENTRAL");
+	dma.addValue(idoMensaje,idtoMensaje,"destino_delegacion",ovCentral);
+end
+ 
+rule "CALCULO TOTAL PERDIDA ECONOMICA EN REGULARIZACIÓN"
+salience -100
+ agenda-group "rules" when 
+  	
+	Lock(idoReg:IDO,CLASSNAME=="REGULARIZACIÓN",STATE==Constants.INDIVIDUAL_STATE_LOCK,idtoReg:IDTO)
+	cantidadTotal:Double() 
+		     from accumulate(
+             				 (and 
+             					ObjValue(IDO==idoReg, PROPNAME=="línea", idoLinea:IDOVALUE!=null)             					
+								DatValue(IDO==idoLinea,PROPNAME=="cantidad",cantidad:DOUBLEVALUE!=null)
+								DatValue(IDO==idoLinea,PROPNAME=="cantidad_antes_regularizar",cantidadAntes:DOUBLEVALUE!=null)	
+             				  ),
+                              sum(cantidad-cantidadAntes))
+then
+	dma.printRule("\n================== CALCULO TOTAL PERDIDA ECONOMICA EN REGULARIZACIÓN");
+	dma.setValue(idoReg,idtoReg,"perdida_unidades",new DoubleValue(cantidadTotal));	
+end
+
+ 
+rule "CALCULO TOTAL PERDIDA EN REGULARIZACIÓN"
+salience -100
+ agenda-group "rules" when 
+  	
+	Lock(idoReg:IDO,idtoReg:IDTO,CLASSNAME=="REGULARIZACIÓN",STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	cantidadTotal:Double() 
+		     from accumulate(
+             				 (and 
+             					ObjValue(IDO==idoReg, PROPNAME=="línea", idoLinea:IDOVALUE!=null)
+             					ObjValue(IDO==idoLinea, PROPNAME=="producto", idoProducto:IDOVALUE!=null)
+             					DatValue(IDO==idoProducto,PROPNAME=="pvp",coste:DOUBLEVALUE!=null)                    					
+								DatValue(IDO==idoLinea,PROPNAME=="cantidad",cantidad:DOUBLEVALUE!=null)
+								DatValue(IDO==idoLinea,PROPNAME=="cantidad_antes_regularizar",cantidadAntes:DOUBLEVALUE!=null)	
+             				  ),
+                              sum((cantidad-cantidadAntes)*coste))
+then
+	dma.printRule("\n================== CALCULO TOTAL PERDIDA EN REGULARIZACIÓN");
+	dma.setValue(idoReg,idtoReg,"perdida_economica",new DoubleValue(cantidadTotal));	
+end
+
+//NUEVO
+/*
+rule "POSTPROCESADO SOLICITUDES TRASPASO UNA VEZ QUE SE HAN GENERADO LOS TRASPASOS EN ACCION Generar_traspaso_almacenes_a_partir_pedido"  
+salience -10 //menos prioridad que partir
+agenda-group "rules" when
+    ObjValue(typetask:CLASSNAME=="Generar_traspaso_almacenes_a_partir_pedido", idUTask:ID ,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+    ObjValue(ID==idUTask, PROPNAME=="sourceClass",idoSolTr:IDOVALUE!=null,idtoSolTr:VALUECLS)
+    ObjValue(IDO==idoSolTr, PROPNAME=="origen",origen:VALOR!=null)
+	ObjValue(IDO==idoSolTr, PROPNAME=="destino",destino:VALOR!=null)
+    ObjValue(ID==idUTask, PROPNAME=="targetClass",idTr:VALOR!=null)
+    ObjValue(ID==idTr, PROPNAME=="origen",VALOR==origen)
+	ObjValue(ID==idTr, PROPNAME=="destino",VALOR==destino)
+	lineas:ArrayList() from collect(ObjValue(IDO==idoSolTr, PROPNAME=="línea",VALOR!=null))
+	compatibleAcept:ArrayList() from collect(Fact(OP==Constants.OP_INTERSECTION,ID==null,CLASSNAME=="PEDIDO_TRASPASO_ALMACENES",PROPNAME=="aceptado"))
+then
+	dma.printRule("=========== POSTPROCESADO SOLICITUDES TRASPASO UNA VEZ QUE SE HAN GENERADO LOS TRASPASOS EN ACCION Generar_traspaso_almacenes_a_partir_pedido");
+
+	//if(lineas.size()==0)	dma.deleteObject(idoSolTr,idtoSolTr);
+	//else
+	{
+		dma.setValue(idoSolTr,idtoSolTr,"modificado",new TimeValue(System.currentTimeMillis()/Constants.TIMEMILLIS));
+		if(compatibleAcept.size()>0) dma.setValue(idoSolTr,idtoSolTr,"aceptado",new BooleanValue(true));
+	}
+end
+
+rule "Generar_traspaso_almacenes_a_partir_pedido: partir lineas"  
+agenda-group "rules" when
+   	ObjValue(typetask:CLASSNAME=="Generar_traspaso_almacenes_a_partir_pedido", idUTask:ID ,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+    ObjValue(ID==idUTask, PROPNAME=="sourceClass",idoSolTr:IDOVALUE!=null,idtoSolTr:VALUECLS)
+    ObjValue(ID==idUTask, PROPNAME=="targetClass",idTr:VALOR!=null)
+    ObjValue(ID==idTr, PROPNAME=="línea",idoLinea:IDOVALUE!=null,ovLinea:OBJECTVALUE)
+    DatValue(IDO==idoLinea,idtoLinea:IDTO,PROPNAME=="cantidad",changed:hasCHANGED, q:QMIN!=null,sQInit:INITIALVALOR!=null)
+then
+	dma.printRule(" =========== Generar_traspaso_almacenes_a_partir_pedido: partir lineas");
+	
+	dma.delValue(idoSolTr,idtoSolTr,"línea",ovLinea);
+	
+	if(changed){			
+		Domain linPedido=dma.cloneIndividual(idoLinea,idtoLinea,idtoLinea,"documento#cantidad");
+		double qInit=new Double(sQInit);
+		dma.setValue(linPedido,"cantidad",new DoubleValue(qInit-q));
+		dma.addValue(idoSolTr,idtoSolTr,"línea",new ObjectValue(linPedido));
+	}
+end
+*/
+
+rule "MENSAJES: RESPONDER"
+agenda-group "rules" when 
+    ObjValue(CLASSNAME=="Responder", idoUTask:IDO ,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+        
+  	ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoMsj:IDOVALUE!=null,idtoMsj:VALUECLS)
+  	  	  
+  	ObjValue(IDO==idoMsj,PROPNAME=="origen_delegacion",ovOrigen:OBJECTVALUE!=null)  	 
+  	ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="delegación",ovDel:OBJECTVALUE)
+then
+	dma.printRule("============== MENSAJES: RESPONDER ");
+	Domain respuesta= dma.cloneIndividual(idoMsj,idtoMsj,idtoMsj,"rdn#fecha#origen_delegacion#destino_delegacion#leido");
+	dma.setValue(respuesta,"destino_delegacion",ovOrigen);			
+	dma.setValue(respuesta,"origen_delegacion",ovDel);
+	dma.setValue(idoMsj,idtoMsj,"leido",new BooleanValue(true));
+	dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(respuesta));
+end
+
+
+rule "MENSAJES: SOLO MARCAR COMO LEIDO SU DESTINO"
+agenda-group "rules" when 
+  	
+  	Lock(CLASSNAME=="MENSAJE",idoMensaje:IDO>0,STATE==Constants.INDIVIDUAL_STATE_LOCK,idtoMensaje:IDTO)
+  	
+  	ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="delegación",idoMiDelegacion:IDOVALUE!=null,ovDel:OBJECTVALUE)
+  	//excepcion existe destinatarios pero no estoy entre ellos. Si el destino es multiple me deja marcar porque igualmente si soy tienda no se replicará por post (segun reglas de replicas)
+  	exists(ObjValue(IDO==idoMensaje ,PROPNAME=="destino_delegacion",IDOVALUE!=null))//si no hay destinos es global y cualquiera puede marcarlo (que no replica hacia arriba)
+  	not(ObjValue(IDO==idoMensaje ,PROPNAME=="destino_delegacion",IDOVALUE==idoMiDelegacion))//no soy uno de los destinos
+	DatValue(IDO==idoMensaje,PROPNAME=="leido",hasCHANGED==true)
+then
+	dma.printRule("============== MENSAJES: SOLO MARCAR COMO LEIDO SU DESTINO");
+	throw new OperationNotPermitedException("Unicamente el destinatario puede confirmar la recepcion");
+end
+
+//SI SOY EL DESTINO, deberia poder reducir cantidad
+
+/*
+restriccion orgen de traspaso lo hacemos ya con permisosy proponiendo automaticamente el origen
+
+rule "NO SE PUEDE CREAR UNA SALIDA SI NO SOMOS EL ORIGEN DEL TRASPASO"
+salience -100
+ agenda-group "rules" when 
+  	ObjValue(CLASSNAME=="APLICACIÓN" ,PROPNAME=="delegación",idoMiDelegacion:IDOVALUE!=null)
+  	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="TRASPASO_ALMACENES")//el pedido debe ser controlado con permisos, pues se modifica quitando lo servido
+  	Individual(IDTO==idtoDoc,idoDoc:IDO<0)
+  	ObjValue(IDO==idoDoc,PROPNAME=="origen",idoAlmOrigen:IDOVALUE)
+  	ObjValue(IDO==idoAlmOrigen,PROPNAME=="delegación",idoDelegOrigen:IDOVALUE!=idoMiDelegacion)
+  	ObjValue(IDO==idoDoc,PROPNAME=="mi_empresa",idoEmpresa:IDOVALUE)
+  	ObjValue(IDO==idoEmpresa ,PROPNAME=="delegacion_central",IDOVALUE!=idoMiDelegacion)	  	  	  	    	
+ then
+	dma.printRule("======================  NO SE PUEDE CREAR UNA SALIDA SI NO SOMOS EL ORIGEN DEL TRASPASO");
+ 	throw new OperationNotPermitedException("No puede crear un traspaso del que no es origen");
+ end*/
+ 
+
+rule "TRASPASO EN ALMACÉN: MODIFICACION DENEGADA"
+salience -100
+ agenda-group "rules" when 
+ 	DocDataModel(userRol:USERROL)
+  	ObjValue(CLASSNAME=="APLICACIÓN" ,PROPNAME=="delegación",idoMiDelegacion:IDOVALUE!=null, idMiD:VALOR)
+  	FactHierarchy(idtoDoc:IDTO,clsSup:CLASSSUP=="PEDIDO_TRASPASO_ALMACENES"||=="TRASPASO_ALMACENES")//el pedido debe ser controlado con permisos, pues se modifica quitando lo servido
+  	
+  	Lock(IDTO==idtoDoc,idoDoc:IDO,STATE!=Constants.INDIVIDUAL_STATE_READY,lockuser:LOCKEDBYUSER)  
+  	Individual(IDO==idoDoc,stDoc:STATE)		
+  	
+  	ObjValue(IDO==idoDoc,PROPNAME=="origen",idoAlmOrigen:IDOVALUE!=null)
+  	ObjValue(IDO==idoDoc,PROPNAME=="destino",idoAlmDestino:IDOVALUE!=null)
+  	
+  	DatValue(IDO==idoDoc,PROPNAME=="fecha",fecha:DATE!=null)
+	
+	deleg_doc_es_externa:ArrayList() from collect(ObjValue(IDO==idoDoc,PROPNAME=="delegación",INITIALVALOR!=null&&!=idMiD))
+	
+	//cantidad_total_cambiada:ArrayList() from collect(DatValue(IDO==idoDoc,PROPNAME=="cantidad_total",initialValuesChanged==true))
+	
+	(or   exists((and 	eval(clsSup.equals("TRASPASO_ALMACENES"))
+						ObjValue(IDO==idoAlmOrigen,PROPNAME=="delegación",idoDelegOrigen:IDOVALUE==idoMiDelegacion)
+						DatValue(IDO==idoDoc,PROPNAME=="recibido"||=="servido",INITIALVALOR=="true")))
+  			
+  			//si soy destino, solo deniego la eliminacion. Se podria modificar cantidades y el pedido indica lo que falta
+  			exists((and eval(clsSup.equals("TRASPASO_ALMACENES"))
+  						ObjValue(IDO==idoAlmDestino,PROPNAME=="delegación",IDOVALUE==idoMiDelegacion)
+  						Individual(IDO==idoDoc,STATE==Constants.INDIVIDUAL_STATE_DELETED)))
+  						
+  			eval(	deleg_doc_es_externa.size()>0&& //un traspaso de otra delegacin si se puede modificar cantidad y recepcion, pero no eliminar
+  					clsSup.equals("PEDIDO_TRASPASO_ALMACENES") && lockuser) //tengo que tirar de lock by user y no de hasGcnaged de propiedades
+  						//porque cantidad de linea puede cambiar al partir, y no se consume. Tampoco funciona qlock by user de la linea pues es la misma que del traspaso  			 
+  			 			  			
+			eval(	deleg_doc_es_externa.size()==0 && idoDoc.intValue() >0 && clsSup.equals("TRASPASO_ALMACENES") && Auxiliar.separadosAlMenosNhoras(fecha,null,4) &&
+					lockuser && (userRol.equals("franquicia")||userRol.equals("venta_publico")) )
+  			)
+  						
+	//Excepcion, soy la delegacion central de mi empresa y se traspasan productos de mi empresa
+	not((and 
+	ObjValue(CLASSNAME=="APLICACIÓN",idoAp:IDO,PROPNAME=="mi_empresa",idoMiEmp:IDOVALUE)
+	ObjValue(IDO==idoMiEmp,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE)
+	ObjValue(IDO==idoAp,PROPNAME=="delegación",IDOVALUE==idoDelCentral)	
+  	ObjValue(IDO==idoDoc,PROPNAME=="línea",idoLinea:IDOVALUE)
+  	ObjValue(IDO==idoLinea,PROPNAME=="producto",idoProducto:IDOVALUE)//tengo que llegar a nivel de producto porque linea materia no tiene empresa
+  	ObjValue(IDO==idoProducto,PROPNAME=="empresa",IDOVALUE==idoMiEmp)))
+
+ then
+    dma.printRule("\n\n====================== TRASPASO EN ALMACÉN: MODIFICACION PERMITIDA del externa"+(deleg_doc_es_externa.size()>0)+" "+clsSup+" lock:"+lockuser);
+ 	throw new OperationNotPermitedException("No se puede modificar el traspaso que ha sido recibido, es de otra delegación, o ha pasado demasiado tiempo");
+end
+
+rule "PRECARGA DELEGACION ROTACIONES"
+salience 100 
+agenda-group "rules" when 	  		
+	ObjValue(typetask:CLASSNAME=="Centralizar_demanda_stock"||=="Rotar_desde_todas_las_fuentes"||=="Rotar_pedidos", idoUTask:IDO ,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)		
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)	
+then
+	dma.printRule("================  PRECARGA ALMACEN CENTRAL");
+	
+	instance  filerAlmacen=dma.buildInstanceWith("DELEGACIÓN",null,null,null,null);
+	HashSet<IDIndividual> idos=dma.loadIndividualsWithSatisficedFilter(filerAlmacen);
+	dma.printRule("DELEGACIONES ENCONTRADO "+idos.size());
+end	
+
+ rule "ROTACION: GENERAR PROPUESTA"
+agenda-group "rules" when  
+   	ObjValue(typetask:CLASSNAME=="Rotar_desde_todas_las_fuentes"||=="Rotar_pedidos"||=="Generar_rotaciones"||=="Centralizar_demanda_stock"||=="Reposicion_delegacion_optima"||=="Depreciacion_stock"||=="Provision_demanda_futura", idoUTask:IDO ,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    
+    rdnAccion_puede_tener_parametroList:ArrayList() from collect(DatValue(IDO==idoUTask,PROPNAME=="rdn",VALOR!=null))
+    
+    diaFinal:String() from accumulate((and 	DatValue(CLASSNAME=="PARAMETRO_VERDADERO",idoParam:IDO,PROPNAME=="rdn",VALOR=="DIAFINAL")
+    										DatValue(IDO==idoParam,PROPNAME=="activo",BOOLEANVALOR==true)
+    			 							DatValue(IDO==idoParam,PROPNAME=="filtro",f:VALOR!=null)), 
+											init(String res="";),action(res=f;),result(res))
+    			 							 
+        
+	DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="coste_ordenar_aprovisionar",costeOrdenar:QMIN!=null)
+	DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="coste_almacenar_anual",costeAlm:QMIN!=null)
+	DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="nivel_servicio_stock",nivel:QMIN!=null)
+	DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="numero_dias_estimacion_demanda",dias:QMIN!=null)
+	
+	FactHierarchy(CLASSSUP=="ROTACION",idtoRotacion:IDTO==IDTOSUP)		
+											
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="mi_empresa",idoMiEmp:IDOVALUE)
+	
+	idoDelCentral:Integer() from accumulate(ObjValue(IDO==idoMiEmp,PROPNAME=="delegacion_central",idoDC:IDOVALUE),
+											init(Integer res=0;),
+											action(res=idoDC;),
+											result(res))
+	
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="delegación",idoMiDelegacion:IDOVALUE!=null)
+												 			
+	
+	delegaciones:String() from accumulate(ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoSource:IDOVALUE!=null,RANGENAME=="DELEGACIÓN")										 
+									init(String res="";),
+									action( if(res.length()>0) res+=",";
+									 		 res+=QueryConstants.getTableId(idoSource);
+										 ),
+										 result(res))
+
+	pedidosSrc:String() from accumulate(ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoSource:IDOVALUE!=null,RANGENAME=="PEDIDO_DE_CLIENTE")										 
+									init(String res="";),
+									action( if(res.length()>0) res+=",";
+									 		 res+=QueryConstants.getTableId(idoSource);
+										 ),
+										 result(res))										 
+										 
+	todosDestinos:String() from accumulate(Individual(CLASSNAME=="DELEGACIÓN",idoDel:IDO),																				 
+											init(String res="";),
+									action( if(res.length()>0) res+=",";
+									 		 res+=QueryConstants.getTableId(idoDel);
+										 ),
+										 result(res))
+	restoTodosDestinos:String() from accumulate((and Individual(CLASSNAME=="DELEGACIÓN",idoDel:IDO)
+													 not ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",IDOVALUE==idoDel))	,																				 
+											init(String res="";),
+									action( if(res.length()>0) res+=",";
+									 		 res+=QueryConstants.getTableId(idoDel);
+										 ),
+										 result(res))											 						 
+										 										 
+	centralContenidaEnSource:ArrayList() from collect(ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",IDOVALUE==idoDelCentral))	
+	
+	//este valor es excluyente con los especificos siguientes
+	diasReposicionDef:Double() from accumulate((and 	exists(ObjValue(CLASSNAME=="Generar_rotaciones"||=="Centralizar_demanda_stock"||=="Rotar_desde_todas_las_fuentes"||=="Rotar_pedidos",IDO==idoUTask,PROPNAME=="estadoRealizacion"))
+														DatValue(ido:IDO,PROPNAME=="rdn",VALOR=="STOCK_periodo_reposicion")
+												 		DatValue(IDO==ido,PROPNAME=="valor_numerico",q:QMIN!=null)),sum(q.doubleValue()))
+
+	diasRepoDepre:Double() from accumulate((and 		ObjValue(CLASSNAME=="Depreciacion_stock",IDO==idoUTask,PROPNAME=="estadoRealizacion")
+														DatValue(ido:IDO,PROPNAME=="rdn",VALOR=="Depreciacion_stock.STOCK_periodo_reposicion")
+												 		DatValue(IDO==ido,PROPNAME=="valor_numerico",q:QMIN!=null)),sum(q.doubleValue()))	
+												 	
+	diasRepoProv:Double() from accumulate((and 			ObjValue(CLASSNAME=="Provision_demanda_futura",IDO==idoUTask,PROPNAME=="estadoRealizacion")
+														DatValue(ido:IDO,PROPNAME=="rdn",VALOR=="Provision_demanda_futura.STOCK_periodo_reposicion")
+												 		DatValue(IDO==ido,PROPNAME=="valor_numerico",q:QMIN!=null)),sum(q.doubleValue()))
+												 		
+	diasRepoReposicion:Double() from accumulate((and 	ObjValue(CLASSNAME=="Reposicion_delegacion_optima",IDO==idoUTask,PROPNAME=="estadoRealizacion")
+														DatValue(ido:IDO,PROPNAME=="rdn",VALOR=="Reposicion_delegacion_optima.STOCK_periodo_reposicion")
+												 		DatValue(IDO==ido,PROPNAME=="valor_numerico",q:QMIN!=null)),sum(q.doubleValue()))												 		
+												 		
+	diasEstimacionDepre:Double() from accumulate((and 	ObjValue(CLASSNAME=="Depreciacion_stock",IDO==idoUTask,PROPNAME=="estadoRealizacion")
+														DatValue(ido:IDO,PROPNAME=="rdn",VALOR=="Depreciacion_stock.numero_dias_estimacion_demanda")														
+												 		DatValue(IDO==ido,PROPNAME=="valor_numerico",q:QMIN!=null)),sum(q.doubleValue()))
+												 		
+	diasEstimacionProv:Double() from accumulate((and 	ObjValue(CLASSNAME=="Provision_demanda_futura",IDO==idoUTask,PROPNAME=="estadoRealizacion")
+														DatValue(ido:IDO,PROPNAME=="rdn",VALOR=="Provision_demanda_futura.numero_dias_estimacion_demanda")
+												 		DatValue(IDO==ido,PROPNAME=="valor_numerico",q:QMIN!=null)),sum(q.doubleValue()))
+												 		
+	diasEstimacionReposicion:Double() from accumulate((and 	ObjValue(CLASSNAME=="Reposicion_delegacion_optima",IDO==idoUTask,PROPNAME=="estadoRealizacion")
+														DatValue(ido:IDO,PROPNAME=="rdn",VALOR=="Reposicion_delegacion_optima.numero_dias_estimacion_demanda")
+												 		DatValue(IDO==ido,PROPNAME=="valor_numerico",q:QMIN!=null)),sum(q.doubleValue()))												 		
+												 														 			
+then
+    dma.printRule(" ========= ROTACION: GENERAR PROPUESTA "+diasReposicionDef+", depre:"+diasEstimacionDepre+","+diasRepoDepre+",prov:"+diasEstimacionProv+","+diasRepoProv+" dia final "+diaFinal);
+    
+    String rdnAccion_puede_tener_parametro="";
+    if(rdnAccion_puede_tener_parametroList.size()>0){
+    	rdnAccion_puede_tener_parametro=((DatValue)rdnAccion_puede_tener_parametroList.get(0)).getVALOR();
+    }
+    boolean init_produccion= rdnAccion_puede_tener_parametro.contains("PRODUCCION") ;
+    boolean init_historical= rdnAccion_puede_tener_parametro.contains("HISTORICAL") ;
+    
+    String segmento=Auxiliar.extract_parametro_rdn_accion_procesado(rdnAccion_puede_tener_parametro,"SEGMENTO");
+    
+	if(segmento==null) segmento="NULL";
+	else segmento="'"+segmento+"'";
+       
+    long diasReposicion=diasReposicionDef.longValue()+diasRepoDepre.longValue()+diasRepoProv.longValue()+diasRepoReposicion.longValue();
+    long diasEstimacion=diasEstimacionDepre.longValue()+diasEstimacionProv.longValue()+diasEstimacionReposicion.longValue();
+    if(diasEstimacion==0) diasEstimacion=dias.longValue();
+        
+    
+ 	Calendar c= Calendar.getInstance();
+ 	
+ 	//String debugCurrDay=Auxiliar.extract_parametro_rdn_accion_procesado(rdnAccion_puede_tener_parametro,"DIAFINAL");
+ 	if(diaFinal!=null&&diaFinal.length()>0){
+ 		SimpleDateFormat sdf= new SimpleDateFormat("dd/MM/yyyy");
+ 		Date curr=sdf.parse(diaFinal,new ParsePosition(0));
+ 		c.setTime(curr);
+ 	} 		 	
+ 	c.set(Calendar.HOUR_OF_DAY,23);
+	c.set(Calendar.MINUTE,59);
+	c.set(Calendar.SECOND,59); 	
+	long fechaMax= c.getTimeInMillis()/Constants.TIMEMILLIS;
+ 	
+ 	c.setTimeInMillis((fechaMax-diasEstimacion*86400)*Constants.TIMEMILLIS);
+ 	c.set(Calendar.HOUR_OF_DAY,0);
+	c.set(Calendar.MINUTE,0);
+	c.set(Calendar.SECOND,0);	
+	//me quedo con el principio del dia para que sql pueda calcular numero de dias con criterio, desde fecha minima
+ 	long fechaMin= c.getTimeInMillis()/Constants.TIMEMILLIS;
+ 	
+ 	String origen="NULL",destino="NULL",central=""+QueryConstants.getTableId(idoDelCentral.intValue()==0 ? idoMiDelegacion:idoDelCentral);
+ 	
+ 	if(typetask.equals("Reposicion_delegacion_optima")||typetask.equals("Depreciacion_stock")||typetask.equals("Provision_demanda_futura")){ 		
+ 		if(typetask.equals("Provision_demanda_futura") && centralContenidaEnSource.size()==0){
+ 	    	//quiero tener en cuenta la central como origen, para no traerme stock que la central puede satisfacer
+ 		 	if(delegaciones.length()>0) delegaciones+=","; 		 
+ 		 	delegaciones+=central;
+ 		}
+ 		destino=delegaciones;
+ 		origen=central; 		
+ 	}
+
+ 	if(typetask.contains("Rotar_pedidos")){ 
+ 		origen=todosDestinos;
+ 		destino=central; 		
+ 	}
+ 	 	
+ 	if(typetask.equals("Centralizar_demanda_stock")){ 
+ 		//no puedo usar resto todos destinos, porque si selecciono varias fuentes, puede que una de ellas demande una prenda a otra, por tanto debe aparecer como destino
+ 		origen=delegaciones;
+ 		destino=todosDestinos; 		
+ 	}
+ 	
+ 	if(typetask.contains("Rotar_desde_todas_las_fuentes")){ 
+ 		origen=todosDestinos;
+ 		destino=delegaciones; 	
+ 	} 	 	 	
+
+ 	 	
+ 	//Si es centralizar, la diferencia es que no se agrupa por destino posterior
+ 	if(typetask.equals("Generar_rotaciones")){ 
+ 		//Aunque depreciar solo tiene en cuenta oferta sin demanda, y provisionar la demanda sin oferta, ambas necesitan se analice toda la red		
+ 		destino=delegaciones;//destino no debe incluir la central si no ha sido seleccionada expresamente
+ 		if(centralContenidaEnSource.size()==0){
+ 	    	//incluso en accion centralizar, quiero tener en cuenta la central como origen, para no traerme stock que la central puede satisfacer
+ 		 	if(delegaciones.length()>0) delegaciones+=","; 		 
+ 		 	delegaciones+=central;
+ 		}
+ 		origen=delegaciones; 		 		
+ 	}
+ 	 	
+ 	//Accion retirar mercancia optima, y si esta configurado que las rotaciones son centralizadas, incluyo en destinos todas las tiendas, y si no solo la central seria la que demanda.
+ 	//Bajo dicha accion, no se agrupa por destinos, si no que va todo en mismo saco
+ 	//Parametro generar pedidos automaticamente por defecto false, que se pueda poner valor por defecto, o indicarlo en parametros de configuracion NO
+ 	
+ 	if(!origen.equals("NULL")) origen="ARRAY["+origen+"]";
+ 	if(!destino.equals("NULL")) destino="ARRAY["+destino+"]"; 	 	
+ 	
+ 	if(pedidosSrc==null || pedidosSrc.length()==0) init_historical=true;
+ 	
+    String sql="select * from rotacion_procesado('rotacion', "+diasReposicion+","+costeOrdenar+","+costeAlm+","+nivel+","+fechaMin+","+fechaMax+","+origen+","+destino+",false,'"+typetask+"',"+segmento+","+init_produccion+","+init_historical;
+		
+	if(pedidosSrc!=null && pedidosSrc.length()>0){
+	 		sql+=",ARRAY["+pedidosSrc+"]";
+	}else sql+=",NULL";
+	
+	sql+=");";
+     
+	List<List<String>> res=Query.executeQuery(dma.getDDM(), sql,false);
+	if(res!=null){	
+		Iterator itr=res.iterator();
+		while(itr.hasNext()){					
+		
+			List<String> fila=(List<String>)itr.next();
+			dma.showMessage(fila.get(0));
+			//dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(idoRotacion,idtoRotacion));
+		}
+	}
+end		
+
+rule "ROTACION: GENERAR ORDENES :INICIALIZACION"
+agenda-group "rules" when 
+    ObjValue(clsAct:CLASSNAME=="Generar_ordenes",idoUTask:IDO, PROPNAME=="estadoRealizacion",idoEstado:IDOVALUE!=null)
+    DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    rdnAction:String() from accumulate(DatValue(IDO==idoUTask,PROPNAME=="rdn",rdn:VALOR!=null),init(String res="";),action(res=rdn;),result(res))
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoSource:IDOVALUE!=null)	
+    countSource:Long() from accumulate(ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",id:IDOVALUE!=null),count(id))
+    //Tambien interesa stock que son parte de un consumo de escandallo, por si son ficticios y hay que saldarlos con stock reales
+then
+	dma.printRule("====================  ROTACION: GENERAR ORDENES :INICIALIZACION");
+	
+	if(countSource.intValue()>1)  throw new OperationNotPermitedException("Sólo es posible seleccionar una rotación");
+	
+	String sql=	"	select min(\"tableId\") from linea_rotacion where \"rotacionId\" ="+QueryConstants.getTableId(idoSource)+"  group by origen,destino order by count(*) desc;";
+						
+	ArrayList<Domain> sourcesAc= new ArrayList<Domain>();	
+							
+	//cada elemento del array es una iteracion y contiene N elementos (un HashMap) que son todos los sources para esa iteracion. El hashmap mapea el idto						
+	ArrayList<HashMap<Integer,Integer>> sources=new ArrayList<HashMap<Integer,Integer>>();
+	List<List<String>> resultadosbbdd=Query.executeQuery(dma.getDDM(), sql,false);
+	dma.printRule(" query size "+resultadosbbdd.size());
+	for(int i=0;i<resultadosbbdd.size();i++){
+		List<String> columnasfilai=resultadosbbdd.get(i);
+		Object objetoRepresentaFila=null;
+		if(!columnasfilai.isEmpty()){			 	
+			dma.printRule(" nueva fila "+i+" col "+columnasfilai.get(0) ); 													 
+	   		int idoLinea= QueryConstants.getIdo(Integer.parseInt(columnasfilai.get(0)),dma.getIdClass("LINEA_ROTACION"));
+	   		if(rdnAction!=null&&rdnAction.contains("REPLANNING")){
+	   			sourcesAc.add(new Domain(idoLinea, dma.getIdClass("LINEA_ROTACION")));
+	   		}else{
+	   			HashMap<Integer,Integer> map=new HashMap<Integer, Integer>();
+				map.put(idoLinea, dma.getIdClass("LINEA_ROTACION"));
+				sources.add(map);
+			}
+	   		//dma.ruleGetFromServer(idoStock,dma.getIdClass("STOCK"),1,false);	   		
+	   	}
+	}	
+	if(rdnAction!=null&&rdnAction.contains("REPLANNING")&&sourcesAc.size()>0){
+		HashMap<String,Object> mapParamValue= new HashMap<String,Object>();			
+		dma.requestExecutionAction(clsAct,rdnAction, sourcesAc, mapParamValue);
+	}
+	else
+	if(sources.size()>0){
+		dma.printRule("ENCONTRADOS "+sources.size());
+	 	dma.setSourceBatch(sources);
+	}		
+end
+
+
+rule "ROTACION: GENERAR ORDENES :RUNTIME"
+salience -200 //menor prioridad que PRECARGA DE ESCANDALLOS POR TRABAJOS
+agenda-group "rules" when 
+	FactHierarchy(CLASSSUP=="LINEA_ROTACION",idtoLineaRot:IDTO)		
+    ObjValue(CLASSNAME=="Generar_ordenes",idoUTask:IDO,idtoTask:IDTO, PROPNAME=="iterator"||=="sourceClass",idoLineaRot:IDOVALUE!=null,VALUECLS==idtoLineaRot)
+    ObjValue(IDO==idoLineaRot,PROPNAME=="origen",idoOrigen:IDOVALUE,ovOrigen:OBJECTVALUE)
+    ObjValue(IDO==idoLineaRot, PROPNAME=="destino",idoDestino:IDOVALUE,idtoDestino:VALUECLS,ovDestino:OBJECTVALUE)     
+    eval( dma.preload(idoDestino, idtoDestino) )   //precargo almacen para tener su delegacion
+    DatValue(IDO==idoOrigen, PROPNAME=="rdn",rdnOrigen:VALUE!=null)    	
+    DatValue(IDO==idoDestino, PROPNAME=="rdn",rdnDestino:VALUE!=null)
+    
+    ObjValue(IDO==idoDestino,PROPNAME=="delegación",ovDelDestino:OBJECTVALUE!=null)	
+	 			
+	centralizado:ArrayList() from collect(DatValue(CLASSNAME=="APLICACIÓN", PROPNAME=="solo_permitir_rotaciones_centralizadas",BOOLEANVALOR==true))
+	
+	ObjValue(CLASSNAME=="APLICACIÓN", PROPNAME=="mi_empresa",idoMiEmpresa:IDOVALUE!=null )
+
+	ovCentral:ObjectValue() from accumulate((and 	ObjValue(IDO==idoMiEmpresa ,PROPNAME=="delegacion_central",idoDelCentral:IDOVALUE!=null)
+													FactHierarchy(CLASSSUP=="ALMACÉN",idtoAlm:IDTO)		 	
+												 	ObjValue(IDTO==idtoAlm,idoAlmacenCentral:IDO,PROPNAME=="delegación",IDOVALUE==idoDelCentral)),
+												 init(ObjectValue res=new 	ObjectValue(0,0);),
+												 action(res=new ObjectValue(idoAlmacenCentral,idtoAlm);),
+												 result(res))
+	 rdnAction:String() from accumulate(DatValue(IDO==idoUTask,PROPNAME=="rdn",rdn:VALOR!=null),init(String res="";),action(res=rdn;),result(res))	
+	 
+	 cantidad_total_max:Double() from accumulate((and 	DatValue(CLASSNAME=="PARAMETRO_NUMERICO",idoParamDispon:IDO,PROPNAME=="rdn",VALOR=="PEDIDOS_ROTACION.CANTIDAD_TOTAL_MAXIMA")
+        												DatValue(IDO==idoParamDispon,PROPNAME=="valor_numerico",q:QMIN!=null)),sum(q))											 	
+then
+	dma.printRule("====================  ROTACION: GENERAR ORDENES :RUNTIME origen:"+rdnOrigen+" destino:"+rdnDestino);
+	
+	int tableIdOrigen=0;
+	int tableIdDestino=0;
+	
+	String conceptoIterador=null;	
+	if(rdnAction.contains("REPLANNING")){
+		//no filtro por origen ni destino
+		conceptoIterador="REPLANNING";		
+	}else{
+		conceptoIterador=dma.getStringValue(idoLineaRot,idtoLineaRot,"concepto");		
+		tableIdDestino=QueryConstants.getTableId(idoDestino);		
+		tableIdOrigen=QueryConstants.getTableId(idoOrigen);			
+	}
+	
+	Domain target=null;
+										
+	Integer idtoProducto=dma.getIdClass("GÉNERO");
+	Integer idtoTalla=dma.getIdClass("TALLA");
+	Integer idtoColor=dma.getIdClass("COLOR");
+	Integer idtoProveedor=dma.getIdClass("PROVEEDOR");
+	Integer idtoAlm=dma.getIdClass("ALMACÉN");
+	HashMap<Integer,Domain> pedidos_proveedor=new HashMap<Integer,Domain>();
+	String lineas_eliminar="";
+			
+		//Si concepto de linea rotacion es de provision demanda futura  fabricar, debo o bien generar ordenes produccion o bien pedido a proveedor (no rotar con pedidos traspasos puesto que 
+		//provision futura descartar las necesidades rotables). Si es segmento fabricacion se crearan producciones, y si es materia prima pedidos a proveedor
+			
+	String sql="select origen,destino,\"productoGÉNERO\",talla,color,cantidad,concepto,campo_aux5 as segmento,proveedor,lr.\"tableId\" from \n"+
+	
+		"linea_rotacion as lr 															inner join \n"+			
+		"\"género\" as g on g.\"tableId\"=lr.\"productoGÉNERO\" 						left join \n"+
+		"(select * from (select \"géneroId\" as producto,precio,\"proveedorPROVEEDOR\" as proveedor,rank() OVER (PARTITION BY \"géneroId\" ORDER BY  \"fecha_última_compra\" DESC) as pos from precio_proveedor) as part \n"+
+     		"where pos=1 limit 1) as pp on pp.producto=lr.\"productoGÉNERO\" \n" +  
+		"where (viable is null or viable or not viable) ";		
+	
+	if(tableIdOrigen!=0){
+		sql+=" and origen="+tableIdOrigen+" and destino="+tableIdDestino ;
+	}
+	
+	sql+=	" and \"rotacionId\" in (select distinct \"rotacionId\" from linea_rotacion where \"tableId\"="+QueryConstants.getTableId(idoLineaRot)+") order by origen, destino";
+		
+	List<List<String>> resultadosbbdd=Query.executeQuery(dma.getDDM(), sql,false);
+	dma.printRule(" lineas rotac found "+resultadosbbdd.size());
+	int cant_total=0;
+	
+	for(int i=0;i<resultadosbbdd.size();i++){
+		List<String> columnasfilai=resultadosbbdd.get(i);
+		Object objetoRepresentaFila=null;
+		
+		if(!columnasfilai.isEmpty()){	
+				dma.printRule(" linea "+i);		 
+
+				Integer idoOrigenLinea=columnasfilai.get(0)==null?null:QueryConstants.getIdo(Integer.parseInt(columnasfilai.get(0)),idtoAlm);
+				Integer idoDestinoLinea=columnasfilai.get(1)==null?null:QueryConstants.getIdo(Integer.parseInt(columnasfilai.get(2)),idtoAlm);		
+				Integer idoProducto= QueryConstants.getIdo(Integer.parseInt(columnasfilai.get(2)),idtoProducto);
+				Integer idoTalla=columnasfilai.get(3)==null?null:QueryConstants.getIdo(Integer.parseInt(columnasfilai.get(3)),idtoTalla);
+				Integer idoColor=columnasfilai.get(4)==null?null:QueryConstants.getIdo(Integer.parseInt(columnasfilai.get(4)),idtoColor);
+				DoubleValue q= new DoubleValue(new Double(columnasfilai.get(5)));
+				String conceptoLinea= columnasfilai.get(6);
+				String segmento= columnasfilai.get(7);
+				Integer idoProveedor= columnasfilai.get(8)==null?null:QueryConstants.getIdo(Integer.parseInt(columnasfilai.get(8)),idtoProveedor);												
+				
+				boolean lineaArticulos=segmento!=null && segmento.equals("MATERIA_PRIMA");
+				
+				if(lineaArticulos){
+					if(idoProveedor!=null){
+						target=pedidos_proveedor.get(idoProveedor);			
+						if(lineas_eliminar.length()>0) lineas_eliminar+=",";
+						lineas_eliminar+=columnasfilai.get(9);		
+					}else{
+						//no puedo añadir la linea a un pedido, pero tampoco eliminare la linea al final quedando pendiente
+						continue;
+					}
+				}
+				boolean superadaCantidadMaxima=cantidad_total_max.intValue()!=0&&cant_total>=cantidad_total_max.intValue();
+				if(target==null||superadaCantidadMaxima){
+					cant_total=0;
+					dma.printRule("target nulo "+conceptoLinea);					
+					if(segmento!=null&&conceptoLinea!=null && conceptoLinea.equals("Provision_demanda_futura")){
+						dma.printRule("prevision futura");	
+						if(segmento!=null&&segmento.equals("FABRICADO")){
+							target=dma.creaIndividualOfClass("PRODUCCIÓN_CADENA");
+							//De momento no se soporta que rotaciones elija el almacen de origen en producciones, se supone es el por defecto y mismo que destino
+							if(idoOrigenLinea==null) dma.setValue(target,"origen",ovDestino);
+							dma.setValue(target,"destino",ovDestino);
+						}
+						if(segmento!=null && segmento.equals("MATERIA_PRIMA")){
+							dma.printRule("creando pedido proveedor");
+							target=dma.creaIndividualOfClass("PEDIDO_A_PROVEEDOR");
+							pedidos_proveedor.put(idoProveedor,target);
+							dma.setValue(target,"delegación",ovDelDestino);		
+							dma.setValue(target,"proveedor",new ObjectValue(idoProveedor,idtoProveedor));
+						}
+					}else{
+						if(idoOrigen.equals(ovCentral.getValue()) && idoDestino.equals(ovCentral.getValue()) ){
+							continue; //pedidos de central a central son ignorados, como se crea el target pasara por aqui en todas las lineas
+						}
+						dma.printRule("no es prevision futura");
+						target=dma.creaIndividualOfClass("PEDIDO_TRASPASO_ALMACENES");		
+						
+						if(centralizado.size()>0 && !idoOrigen.equals(ovCentral.getValue()) && idoOrigen.equals(idoDestino)){
+							dma.printRule("set origen=central"); 
+							dma.setValue(target,"origen",ovCentral);	
+							dma.setValue(target,"destino",ovDestino);
+						}else{
+							dma.setValue(target,"origen",ovOrigen);
+							if(centralizado.size()>0 && !idoOrigen.equals(ovCentral.getValue()) && !idoDestino.equals(ovCentral.getValue()) ){
+								dma.printRule("set destino=central");
+								dma.setValue(target,"destino",ovCentral);			
+								dma.setValue(target,"destino_posterior",ovDestino);
+								conceptoIterador+=" "+rdnDestino;
+							}else{
+								dma.printRule("set destino "+ovDestino);
+								dma.setValue(target,"destino",ovDestino);		
+							}
+						}												
+					}	
+					if(conceptoIterador!=null) dma.setStringValue(target,"observaciones_a_imprimir",conceptoIterador);
+				}
+				dma.printRule("linea por defecto "+lineaArticulos);
+				Domain lineaPed=dma.creaIndividualOfClass((lineaArticulos ? "LÍNEA_ARTÍCULOS_MATERIA":"LÍNEA_MATERIA"));
+				
+				dma.setValue(lineaPed,"producto",new ObjectValue(idoProducto,idtoProducto));
+				if(idoTalla!=null) dma.setValue(lineaPed,"talla",new ObjectValue(idoTalla,idtoTalla));
+				if(idoColor!=null) dma.setValue(lineaPed,"color",new ObjectValue(idoColor,idtoColor));
+				dma.setValue(lineaPed,"cantidad",q);
+				dma.addValue(target,"línea",new ObjectValue(lineaPed));
+				cant_total+=q.getValue().doubleValue();
+		}else
+			dma.printRule(" no hay lineas ");		
+	}	
+	if(lineas_eliminar.length()>0){
+		Query.executeQuery(dma.getDDM(),"delete from linea_rotacion where \"tableId\" in("+lineas_eliminar+");",true);
+	}
+end
+
+rule "UBICACION DE PRODUCTO EN LÍNEA"
+salience 100 //UBICACION mas prioridad que la direccion opuesta
+agenda-group "rules" when 
+	FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA")
+	Lock(IDTO==idtoLinea,idoLinea:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(IDO==idoLinea,PROPNAME=="producto",idoProducto:IDOVALUE,pCh:hasCHANGED)
+	DatValue(IDO==idoProducto,p:PROPNAME=="ubicacion1"||=="ubicacion2"||=="ubicacion3",dv:DATAVALUE)	
+	
+	(or eval(pCh)
+		not(DatValue(IDO==idoLinea,PROPNAME==p)))//no pongo != null por si el usuario quiere quitarlo no entre en bucle
+then
+	dma.printRule("==========  UBICACION DE PRODUCTO EN LÍNEA");
+	dma.setValue(idoLinea,idtoLinea,p,dv);
+end
+
+
+/*rule "ROTAR"
+agenda-group "rules" when
+
+    ObjValue(CLASSNAME=="Generar_ordenes", idoUTask:IDO,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoSource:IDOVALUE,source:OBJECTVALUE)
+    
+    DatValue(IDO==idoSource,PROPNAME=="rdn", rdnRotacion:VALOR!=null)
+    
+	ObjValue(IDO==idoSource,PROPNAME=="linea_rotacion", idoLinea:IDOVALUE!=null)
+	
+	ObjValue(IDO==idoLinea,idtoLinea:IDTO,PROPNAME=="origen", origen:OBJECTVALUE!=null,idoOrigen:IDOVALUE)	
+		
+	ObjValue(IDO==idoLinea,PROPNAME=="destino", destino:OBJECTVALUE!=null,idoDestino:IDOVALUE!=idoOrigen)	
+
+	ObjValue(IDO==idoLinea,PROPNAME=="producto", idoProducto:IDOVALUE!=null)
+	ObjValue(IDO==idoProducto, PROPNAME=="empresa",idoEmpresa:IDOVALUE!=null)
+	ObjValue(IDO==idoEmpresa, PROPNAME=="delegacion_central",idoCentral:IDOVALUE!=null,central:OBJECTVALUE)	
+
+	DatValue(IDO==idoLinea, PROPNAME=="cantidad",q:QMIN!=null)
+	DatValue(IDO==idoLinea,PROPNAME=="clave_producto", key:VALOR!=null)
+	centralizado:ArrayList() from collect(DatValue(CLASSNAME=="APLICACIÓN", PROPNAME=="solo_permitir_rotaciones_centralizadas",BOOLEANVALOR==true))
+	
+	solTraspaso:Domain() from accumulate( (and	ObjValue(IDO==idoUTask, PROPNAME=="targetClass",idoSolTrasp:IDOVALUE,ov:OBJECTVALUE)
+												ObjValue(IDO==idoSolTrasp, PROPNAME=="origen",IDOVALUE==idoOrigen)													
+												ObjValue(IDO==idoSolTrasp, PROPNAME==(centralizado.size()>0?"destino_posterior":"destino"),IDOVALUE==idoDestino)
+													
+													//si la rotacion es global para optimizar, segmento sources en base a orgenes y destinos
+													//si es de cliente ademas tiene que segmentar por ese source, no se mezclan
+													
+													//Atencion la sintaxis de concepto debe coincidir con el consecuente
+													forall(	DatValue(IDO==idoLinea, PROPNAME=="concepto",concepto:VALOR!=null)
+															DatValue(IDO==idoSolTrasp, PROPNAME=="observaciones",VALOR==concepto))													
+													), 
+													
+											init( Domain res= new Domain(0,0)),
+											action( res= new Domain(ov);),
+											result(res))		
+
+	DatValue(CLASSNAME=="ESTADO",idoEstado:IDO,idtoEstado:IDTO,PROPNAME=="rdn",VALOR=="Realizado")
+	
+	not((and ObjValue(IDO==(solTraspaso.getIdo()),PROPNAME=="línea", idoLineaAny:IDOVALUE!=null)
+			 DatValue(IDO==idoLineaAny,PROPNAME=="clave_producto", VALOR==key)))
+			 
+	
+																											
+then
+	dma.printRule("=========> ROTAR");
+	
+	Domain target=solTraspaso;
+	if(solTraspaso.getIdo()==0){
+		target=dma.creaIndividualOfClass("PEDIDO_TRASPASO_ALMACENES");			
+		dma.setValue(target,"origen",origen);
+		if(centralizado.size()>0){
+			dma.setValue(target,"destino",central);			
+			dma.setValue(target,"destino_posterior",destino);
+		}else{
+			dma.setValue(target,"destino",destino);		
+		}				
+		dma.setValue(source,"estado",new ObjectValue(idoEstado,idtoEstado));		
+		StringValue concepto=(StringValue)dma.getValue(idoLinea,idtoLinea,"concepto");
+				
+		if(concepto!=null) dma.setValue(target,"observaciones_a_imprimir",concepto);
+				
+		dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(target));
+	}
+
+	Domain lineaTrasp=dma.cloneIndividual(idoLinea,idtoLinea,dma.getIdClass("LÍNEA_MATERIA"),"origen#destino#prioridad#estado");
+	dma.addValue(target, "línea", new ObjectValue(lineaTrasp));	
+end*/
+
+		

@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+
+
+<!-- COMPATIBLE CON ONTOLOGIA: 
+V1.2 SUBIDA AL SVN DESDE ECLIPSE
+ -owlpath E:/DESARROLLO/Workspace/(ponAquiTuWorkspace)/Knowledge/src/owl/
+- nombre ontología: MODELO_V1.2.owl
+
+-->
+<CONFIG>
+
+<!-- <PROPERTIES IMPORT="EXCLU_TELEFONIA;EXCLU_NUMEROSERIE;EXCLU_MULTIEMPRESA;EXCLU_FORMACION;EXCLU_DELEGACION;EXCLU_LOGÍSTICA;EXCLU_TICKET;EXCLU_CONTABILIDAD">
+		<EXCLU_PROP PROP="cuenta_T.G.S.S"/>
+		<EXCLU_PROP PROP="emitido"/>
+		<EXCLU_PROP PROP="representante"/>
+		<EXCLU_PROP PROP="imagen"/>		
+		<EXCLU_PROP PROP="condiciones_cliente"/>	
+		<EXCLU_PROP PROP="condiciones_proveedor"/>	
+		<EXCLU_PROP PROP="margen_beneficio"/>	
+
+
+</PROPERTIES>
+	<CLASSES IMPORT="EXCLU_TELEFONIA;EXCLU_NUMEROSERIE;EXCLU_MULTIEMPRESA;EXCLU_FORMACION;EXCLU_DELEGACION;EXCLU_LOGÍSTICA;EXCLU_TICKET;EXCLU_CONTABILIDAD">
+		<EXCLU_CLASS NAME="ARTÍCULO_PACK"/>
+		<EXCLU_CLASS NAME="LIQUIDACIÓN_COMISIÓN_EXTERNA"/>
+		<EXCLU_CLASS NAME="ARTÍCULO_TEXTIL"/>
+		<EXCLU_CLASS NAME="ARTÍCULO_TELEFONÍA"/>
+		<EXCLU_CLASS NAME="ARTÍCULO_ELECTRÓNICO"/>
+		<EXCLU_CLASS NAME="ARTÍCULO_CONSUMIBLE"/>
+		<EXCLU_CLASS NAME="ARTÍCULO_DISTRIBUCIÓN"/>
+		<EXCLU_CLASS NAME="PACK_TEXTIL"/>
+		<EXCLU_CLASS NAME="SERVICIO"/>
+		
+		
+		<EXCLU_CLASS NAME="CONSULTORÍA_CONTABLE"/>
+		<EXCLU_CLASS NAME="CONSULTORÍA_INFORMÁTICA"/>
+		<EXCLU_CLASS NAME="SERVICIO_ABOGADO"/>
+		
+		
+	</CLASSES>
+-->
+	<UTASKS IMPORT="UTASKS_BASIC_ERP;UTASKS_COMERCIALES;UTASKS_CONFIGURACION;UTASKS_PRODUCCION;UTASKS_DISTRIBUCION;UTASKS_CALIDAD">
+		
+	</UTASKS>
+	
+	<GROUPS IMPORT="NEW_GROUPS_ERP">
+	</GROUPS>
+
+	<ALIAS IMPORT="ALIAS_ERP">
+		<AL CLASS="REPORT" ALIAS="INFORME"/>
+		<AL CLASS="REPORT_FORMAT" ALIAS="FORMATO INFORME"/>
+		<AL UTASK="Cliente" ALIAS="Cliente con alias"/>
+		<AL UTASK="ASCENDER_CLIENTE_POTENCIAL_A_CLIENTE" CLASS="CLIENTE_PARTICULAR" ALIAS="Cliente particular con alias"/>
+	</ALIAS>
+
+	
+	<COLUMNPROP IMPORT="NEW_COLUMNPROP_ERP">
+		<CPROP CLASS="LÍNEA" CLASSPARENT="PEDIDO_TRASPASO_ALMACENES">
+			<CP PROP="producto" ORDER="1"/>
+			<CP PROP="producto" ORDER="2"/>
+			<CP PROP="cantidad" ORDER="3"/>
+			<CP PROP="concepto" ORDER="4"/>
+		</CPROP>
+
+		<CPROP CLASS="LÍNEA_ARTÍCULOS">
+			<CP PROP="producto" ORDER="1"/>
+			<CP PROP="producto" ORDER="2"/>
+			<CP PROP="cantidad" ORDER="3"/>
+			<CP PROP="precio" ORDER="4"/>
+		</CPROP>
+		
+		<CPROP CLASS="ORDEN_CAMPO">
+			<CP PROP="orden" ORDER="1"/>
+			<CP PROP="propiedad" ORDER="2"/>
+		</CPROP>
+		
+		<CPROP CLASS="COLUMNAS_TABLA">
+			<CP PROP="dominio" ORDER="1"/>
+			<CP PROP="tabla" ORDER="2"/>
+		</CPROP>
+		
+		<CPROP CLASS="GRUPO_CAMPOS">
+			<CP PROP="rdn" ORDER="1"/>
+			<CP PROP="ámbito" ORDER="2"/>
+			<CP PROP="dominio" ORDER="3"/>
+		</CPROP>
+		
+		<CPROP CLASS="MÁSCARA_CAMPO">
+			<CP PROP="ámbito" ORDER="1"/>
+			<CP PROP="dominio" ORDER="2"/>
+			<CP PROP="propiedad" ORDER="3"/>
+		</CPROP>
+		
+		<CPROP CLASS="ORDEN_RELATIVO_CAMPOS">
+			<CP PROP="rdn" ORDER="1"/>
+			<CP PROP="dominio" ORDER="2"/>
+		</CPROP>
+		
+		<CPROP CLASS="PERMISO">
+			<CP PROP="rdn" ORDER="1"/>
+			<CP PROP="acción_permiso" ORDER="2"/>
+			<CP PROP="prioridad" ORDER="3"/>
+		</CPROP>
+		
+		<CPROP CLASS="TAMAÑO_TABLA">
+			<CP PROP="dominio" ORDER="1"/>
+			<CP PROP="tabla" ORDER="2"/>
+			<CP PROP="tamaño" ORDER="3"/>
+		</CPROP>
+		
+		<CPROP CLASS="ALIAS">
+			<!--
+			<CP PROP="ámbito" ORDER="1"/>
+			<CP PROP="dominio" ORDER="2"/>
+			<CP PROP="grupo_campos" ORDER="3"/>
+			<CP PROP="propiedad" ORDER="4"/>
+			<CP PROP="alias" ORDER="5"/>
+			 -->
+			<CP PROP="rdn" ORDER="1"/>
+			<CP PROP="alias" ORDER="2"/>
+		</CPROP>
+		
+		<CPROP CLASS="CAMPO_DESTACADO">
+			<CP PROP="ámbito" ORDER="1"/>
+			<CP PROP="dominio" ORDER="2"/>
+			<CP PROP="propiedad" ORDER="3"/>
+		</CPROP>
+		
+		<CPROP CLASS="CARDINALIDAD">
+			<CP PROP="dominio" ORDER="1"/>
+			<CP PROP="propiedad" ORDER="2"/>
+			<CP PROP="mínimo_número_valores" ORDER="3"/>
+			<CP PROP="máximo_número_valores" ORDER="4"/>
+		</CPROP>
+		
+		<CPROP CLASS="AVISO">
+			<CP PROP="color_aviso" ORDER="1"/>
+			<CP PROP="minutos_actualización" ORDER="2"/>
+		</CPROP>
+		
+		<CPROP CLASS="PARÁMETRO_DATO">
+			<CP PROP="rdn" ORDER="1"/>
+			<CP PROP="tipo_dato" ORDER="2"/>
+		</CPROP>
+		
+		<CPROP CLASS="PARÁMETRO_OBJETO">
+			<CP PROP="rdn" ORDER="1"/>
+			<CP PROP="tipo_objeto" ORDER="2"/>
+		</CPROP>
+		
+	</COLUMNPROP>
+	
+	<USUARIOS IMPORT="USUARIOS_ERP">
+	</USUARIOS>
+	<ROLES IMPORT="USUARIOS_ERP">
+	</ROLES>
+	<USUARIO_ROLES IMPORT="USUARIOS_ERP">
+	</USUARIO_ROLES>
+
+	<ACCESS IMPORT="ACCESS_ERP">
+	
+		<AC DENNIED="SI" ACCESSTYPE="SET"  PROP="rdn" CLASS="ALIAS" PRIORITY="1" />
+		<AC DENNIED="SI" ACCESSTYPE="SET"  PROP="rdn" CLASS="CAMPO_DESTACADO" PRIORITY="1" />
+		<AC DENNIED="SI" ACCESSTYPE="SET"  PROP="rdn" CLASS="COLUMNAS_TABLA" PRIORITY="1" />
+		<AC DENNIED="SI" ACCESSTYPE="SET"  PROP="rdn" CLASS="ORDEN_CAMPO" PRIORITY="1" />
+		<AC DENNIED="SI" ACCESSTYPE="SET"  PROP="rdn" CLASS="ORDEN_RELATIVO_CAMPOS" PRIORITY="1" />
+		<AC DENNIED="SI" ACCESSTYPE="SET"  PROP="rdn" CLASS="CARDINALIDAD" PRIORITY="1" />
+		<AC DENNIED="SI" ACCESSTYPE="SET"  PROP="rdn" CLASS="MÁSCARA_CAMPO" PRIORITY="1" />
+		<AC DENNIED="SI" ACCESSTYPE="SET"  PROP="rdn" CLASS="PERMISO" PRIORITY="1" />
+		<AC DENNIED="SI" ACCESSTYPE="SET"  PROP="rdn" CLASS="TAMAÑO_TABLA" PRIORITY="1" />	
+		
+		<AC DENNIED="NO" ACCESSTYPE="SET"  PROP="rdn" CLASS="PARÁMETRO" PRIORITY="6" />
+		
+	</ACCESS>
+
+	<ORDERPROPERTIES IMPORT="NEW_ORDERPROPERTIES_ERP">
+		<OPROP>
+			<OP PROP="descuentos_globales" ORDER="1" />
+			<OP PROP="desglose_iva" ORDER="2" />
+			<OP PROP="base" ORDER="3" />
+			<OP PROP="recargo" ORDER="4"/>
+			<OP PROP="total_iva" ORDER="5"/>
+			<OP PROP="importe" ORDER="6"/>
+		</OPROP>
+		
+		
+		<OPROP>
+			<OP PROP="ámbito" ORDER="1" />
+			<OP PROP="dominio" ORDER="2" />
+			<OP PROP="grupo_campos" ORDER="3" />
+			<OP PROP="tabla" ORDER="4" />
+			<OP PROP="propiedad" ORDER="5"/>
+			<OP PROP="valor" ORDER="6"/>
+			<OP PROP="alias" ORDER="6"/>
+			<OP PROP="prioridad" ORDER="6"/>
+			<OP PROP="tamaño" ORDER="6"/>
+			<OP PROP="mínimo_número_valores" ORDER="6"/>
+			<OP PROP="máximo_número_valores" ORDER="7"/>
+		</OPROP>
+		
+		<OPROP>
+			<OP PROP="orden" ORDER="1" />
+			<OP PROP="propiedad" ORDER="2" />
+			<OP PROP="campo_filtro" ORDER="3" />
+			<OP PROP="valor_filtro" ORDER="4" />
+		</OPROP>
+	</ORDERPROPERTIES>
+
+	<INDEX IMPORT="INDEX_ERP">
+	</INDEX>
+	
+	<ESSENTIALPROP>
+		<EP CLASS="DOCUMENTO_COMERCIAL" PROP="importe"/>
+		<!--EP CLASS="LIQUIDACIÓN_COMISIÓN" PROP="importe"/-->
+	</ESSENTIALPROP>
+	
+	<CARDMED IMPORT="CARDMED_ERP">
+	</CARDMED>
+	
+	<DEFVALUES IMPORT="DEFVALUES_ERP">
+	</DEFVALUES>
+	
+	
+	<RANGES>
+		<RANGE CLASS="DOCUMENTO_COMERCIAL" PROP="línea">
+			<VALUERG CLASS="LÍNEA_ARTÍCULOS_EMBALADO1"/>
+		</RANGE>
+		
+		<RANGE CLASS="FLUJO_MERCANCÍA" PROP="línea">
+			<VALUERG CLASS="LÍNEA_EMBALADO1"/>
+		</RANGE>
+		
+		<RANGE CLASS="PEDIDO_DISTRIBUIDOR" PROP="línea">
+			<VALUERG CLASS="LÍNEA_EMBALADO1"/>
+		</RANGE>
+		<RANGE CLASS="TRASPASO_ALMACENES" PROP="línea">
+			<VALUERG CLASS="LÍNEA_EMBALADO1"/>
+		</RANGE>
+
+		
+		<RANGE CLASS="MATERIA" PROP="tipo_embalado">
+			<VALUERG CLASS="EMBALADO_NIVEL2"/>
+		</RANGE>
+		<RANGE CLASS="PRODUCCIÓN" PROP="proporción_intermedia">
+			<VALUERG CLASS="CONTRIBUCIÓN_LINEAL"/>
+		</RANGE>
+		
+		
+		
+		<RANGE CLASS="PERMISO_FORMULARIO" PROP="dominio">
+			<VALUERG CLASS="CLASE"/>
+			<VALUERG CLASS="ACCIÓN"/>
+		</RANGE>
+		
+		
+	</RANGES>
+
+	<CARDINALITIES>
+	</CARDINALITIES>
+
+	<DEFVALUES>
+			<DV  CLASS="PARÁMETROS_PLANIFICAR"                PROP="crear_trabajos"   VALUE="false" VALUECLS="boolean"/>
+	
+	</DEFVALUES>
+	
+	<REPORTS PATH="E:/DESARROLLO/filesReport/Alimentacion/">
+		<RP NAME="rp@albaran_cliente" CLASS="CLIENTE" DIRECT_IMPRESION="TRUE" PREVIEW="FALSE" N_COPIES="2" DISPLAY_PRINT_DIALOG="TRUE" PREPRINT="12341" POSTPRINT="1241" PRINTER="Default" A_FUNC="VENTAS;TESORERÍA" PRINT_CONFIRMATION="FALSE" GENERATE_EXCEL="TRUE">
+			<COMMENTS>sdfsdfdsf</COMMENTS>
+			<SUBREPORT NAME="rp@albaran_cliente_linea_articulos" GENERATE_EXCEL="FALSE">
+				<COMMENTS>sdfsgdgdsg</COMMENTS>
+			</SUBREPORT>
+			<PARAM NAME="cliente" VALUECLS="CLIENTE" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="envios" VALUECLS="INT" CARMIN="1" CARMAX="1"/>
+		</RP>
+	</REPORTS>
+	
+</CONFIG>
+
+
+
+

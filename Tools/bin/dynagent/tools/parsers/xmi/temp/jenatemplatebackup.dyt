@@ -1,0 +1,14 @@
+package dynagent.ruleengine.src.parser.xmi.temp;
+
+
+/***
+ * JenaTemplate.java
+ * @author Ildefonso Montero Pérez - monteroperez@us.es
+ */
+public class JenaTemplate extends dynagent.ruleengine.src.parser.xmi.Template {
+
+	public void run(){
+		
+
+	}
+}

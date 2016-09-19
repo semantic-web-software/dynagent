@@ -1,0 +1,9 @@
+update columnproperties set class="ENTRADA_ARTÍCULOS" where  class like 'ENTRADA_MERCANCIA';
+update columnproperties set classparent="ENTRADA_ARTÍCULOS" where  classparent like 'ENTRADA_MERCANCIA';
+update instances set name="ENTRADA_ARTÍCULOS" where  name like 'ENTRADA_MERCANCIA';
+update clases set name="ENTRADA_ARTÍCULOS" where  name like 'ENTRADA_MERCANCIA';
+
+update instances set name="SALIDA_ARTÍCULOS" where  name like 'SALIDA_MERCANCIA';
+update clases set name="SALIDA_ARTÍCULOS" where  name like 'SALIDA_MERCANCIA';
+
+update instances set name='Task_ENTRADA_ARTÍCULOS' where name like 'Task_ENTRADA_MERCANCIA';

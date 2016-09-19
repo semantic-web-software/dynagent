@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="iso-8859-2"?>
+<TRANSFORMATION>
+	<ACTION_PROPERTY NIVELS_UP="1" PROP="provincia" ACTION="DUPLICATE_OPROP"/>
+	<!--duplica una OP, en este ejemplo cliente->localidad->provincia->pais y se quiere duplicar el enlace provincia: cliente->provincia-->
+</TRANSFORMATION>

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+
+<CONFIG>
+<ALIAS>
+	<!-- propiedades-->
+		<AL PROP="rdn" ALIAS="código"/>
+		<AL CLASS="ARTÍCULO"  PROP="rdn" ALIAS="referencia"/>
+		<AL CLASS="ARTÍCULO"  PROP="coste" ALIAS="coste_medio"/>
+		<AL CLASS="TICKET"  PROP="rectificativo" ALIAS="abono"/>
+		
+		<AL PROP="dominio" ALIAS="formulario"/>
+		<AL PROP="propiedad" ALIAS="propiedad"/>				
+		<AL PROP="su_referencia" ALIAS="su_ref."/>
+		
+		<AL PROP="total_cantidad_envase1" ALIAS="total_cajas"/>
+
+		<AL PROP="tipo_embalado" ALIAS="embalado"/>
+		<AL PROP="userRol"  ALIAS="perfil_usuario"/>
+		<AL  PROP="cantidadXenvase1" ALIAS="unidades_por_bulto"/>
+		<AL  PROP="envase1Xenvase2" ALIAS="bultos_por_palet"/>
+		<AL  PROP="envase1xhora" ALIAS="bultos_por_hora"/>
+		<AL  PROP="envase2xhora" ALIAS="palet_por_hora"/>
+		<AL  PROP="cantidad_envase_1" ALIAS="cajas"/>
+		<AL  PROP="dígitos_mínimos" ALIAS="dígitos_mínimos_para_contador"/>
+
+		
+			
+		<!-- clases-->
+		
+		<AL CLASS="FACTURA_RECTIFICATIVA_VENTAS" ALIAS="FACTURA_RECTIF._VENTAS"/>
+		<AL CLASS="FACTURA_RECTIFICATIVA_COMPRAS" ALIAS="FACT._RECTIF._COMPRAS"/>
+		<AL CLASS="FACTURA_PROVEEDOR" PROP="rdn" ALIAS="Numeracion_interna"/>
+		<AL CLASS="FACTURA_RECTIFICATIVA_COMPRAS" PROP="rdn" ALIAS="Numeracion_interna"/>
+		
+		<AL CLASS="LÍNEA_ARTÍCULOS_EMBALADO1" ALIAS="LÍNEA_ARTÍCULOS"/>
+		<AL CLASS="LÍNEA_ARTÍCULOS_EMBALADO2" ALIAS="LÍNEA_ARTÍCULOS"/>
+		<AL CLASS="USER"  ALIAS="USUARIO"/>
+		<AL CLASS="USERROL"  ALIAS="PERFIL_USUARIO"/>		
+		
+		<!-- propiedades en clases-->
+		<AL CLASS="LÍNEA_MATERIA" PROP="rdn" ALIAS="clave"/>		
+		<AL CLASS="LÍNEA_ARTÍCULOS" PROP="rdn" ALIAS="clave"/>				
+		
+		<AL CLASS="USER" PROP="rdn"  ALIAS="usuario"/>
+		<AL CLASS="EMPRESA" PROP="nombre"  ALIAS="razón_social"/>
+		
+		<AL CLASS="LIQUIDACIÓN_SUBVENCIÓN_PROYECTO" PROP="línea"  ALIAS="consumo"/>
+		
+
+		<AL CLASS="GRUPO_CAMPOS" PROP="rdn" ALIAS="nombre"/>
+		<AL CLASS="DISPONIBILIDAD" PROP="cantidad" ALIAS="horas_restantes"/>
+		<AL CLASS="IMAGEN" PROP="número" ALIAS="posición_ordenación"/>
+		<AL PROP="n._dígitos_en_importe_linea" ALIAS="Precisión o Nº de decimales de redondeo en importes de lineas, base e IVA" />
+		
+		<AL PROP="línea" CLASS="PRODUCCIÓN_CADENA"  ALIAS="demanda"/>
+		<AL PROP="línea" CLASS="PRODUCCIÓN"  ALIAS="agregacion"/>
+		<AL PROP="consumo" ALIAS="componente"/>
+					
+		<AL PROP="salida" CLASS="ESCANDALLO"  ALIAS="agregado"/>
+		<AL PROP="margen_beneficio" ALIAS="margen_porcentaje"/>
+		
+		<AL PROP="detalle" CLASS="CUENTA_CONTABLE"  ALIAS="subcuenta"/>
+		<AL PROP="codigo_cuenta" CLASS="CUENTA_CONTABLE"  ALIAS="cuenta"/>
+		<AL PROP="user_id" ALIAS="usuario"/>
+		<AL PROP="email_facturacion" ALIAS="mail_para_envio_de_facturas"/>	
+		
+		<AL CLASS="TAMAÑO_CAMPO" ALIAS="TAMAÑO_CAMPO_TEXTO"/>							
+	</ALIAS>
+</CONFIG>

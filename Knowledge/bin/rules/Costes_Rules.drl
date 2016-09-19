@@ -1,0 +1,344 @@
+package dynagent.ruleengine.src.ruler.ERPrules;
+import dynagent.ruleengine.src.ruler.ERPrules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.basicobjects.*;
+import dynagent.common.properties.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+global DataModelAdapter dma;
+
+
+function void setCoste(int idoArticulo, int idtoArticulo,double costeMedioInit,double totalQcurr,double totalImporteCurr, double stockTotal,DataModelAdapter dma){
+	
+	dma.printRule(" COSTES "+stockTotal+" "+totalImporteCurr+ " cm old "+totalQcurr);
+	double stockCostePrevio= stockTotal-totalQcurr;
+	
+	if((totalImporteCurr!=0.0 || totalQcurr!=0.0) && stockTotal>0.0){							
+		dma.printRule(" COSTE ARTICULO cm old "+costeMedioInit+" numerador "+(stockCostePrevio*costeMedioInit+totalImporteCurr)+" cuenta "+((stockCostePrevio*costeMedioInit+totalImporteCurr)/(stockTotal))+" redn " +Auxiliar.redondea((stockCostePrevio*costeMedioInit+totalImporteCurr)/(stockTotal),3));			
+
+		//La formula se obtiene separando 3 cantidades: Q1 (el stock inicial sin contar cant actual de la linea), Q2 (el stock de la linea actual), 
+		// Q1 es Stock inicial - Cant linea inicial 
+		DoubleValue nuevoCosteMedio=new DoubleValue(Auxiliar.redondea((stockCostePrevio*costeMedioInit+totalImporteCurr)/(stockTotal),3));	
+		dma.printRule(" NUEVO COSTE MEDIO "+nuevoCosteMedio.getValue());
+		dma.setValueNotLock(idoArticulo,idtoArticulo,"coste",nuevoCosteMedio);
+	}	
+	DoubleValue nuevoCosteActual=null;
+	if(totalQcurr!=0){
+		nuevoCosteActual=new DoubleValue(Auxiliar.redondea(totalImporteCurr/totalQcurr,3));
+		dma.printRule(" NUEVO COSTE ACTUAL "+nuevoCosteActual.getValue()+" "+totalImporteCurr+" "+totalQcurr);
+		dma.setValueNotLock(idoArticulo,idtoArticulo,"coste_actual",nuevoCosteActual);
+		if(stockTotal<=0.0){
+			dma.setValueNotLock(idoArticulo,idtoArticulo,"coste",nuevoCosteActual);
+		}			
+	}
+}
+
+rule "COSTE ARTICULO COMPRAS"
+ agenda-group "rules" when 	
+ 	//El calculo stock medio es encesario realizarlo en el albaran si queremos realizar ventas que reflejen coste y rentabilidad actualizada, de lo contrario, al facturar, tomaria para el calculo de coste del stock 
+	// antes de actualizar el coste medio, el coste medio por el stock actual, que contaría arbitrariamente n albaranaes que han entrado y no facturados
+	//Idealmente, si a la hora de facturar cambia un precio, podria corregir el coste medio
+ 	//OJO. Si facturo lineas que no han sido albaranadas, el coste aumenta, pues todo lo gastado en compras se reparte por el stock existente. Pero es correcto
+ 	// podria hacer que solo atienda a lineas albaranadas, pero perderia que por ejemplo alguien quiera meter que ha comprado 200 unidades a un precio, y estan albaranadas
+ 	// y posteriormente decir en la factura que dichas 200 unidades tienen un coste extra en una segunda linea, diferenciadas en el concepto, por ejemplo un tratamiento posterior como una limpieza (aunque eso deberia ser otro producto)
+ 	//Me baso en la factura, por si cambia el precio
+	FactHierarchy(idtoArticulo:IDTO,CLASSSUP=="ARTÍCULO")
+	DatValue(IDTO==idtoArticulo,idoArticulo:IDO,idArticulo:ID,PROPNAME=="rdn",rdnArt:VALOR)
+	
+	stockTotal:Double() from accumulate (DatValue(IDO==idoArticulo,PROPNAME=="stock_total",st:QMIN!=null)
+										sum(st))		
+
+	costeMedioInit:Double() from accumulate (DatValue(IDO==idoArticulo,PROPNAME=="coste",c:INITIALDOUBLE!=null)
+										sum(c))	
+							
+	//RENDIMIENTO, PERFORMANCE: si en vez de dos acumulate con array de resultado, pongo 4 como habia antes (separando fact cantidad de importe, drools se veuleve loco
+	// en un albaran de compra (facturado y pedido con 70 lineas mismo producto - diferente serie -) tarda 15 minutos				
+										
+	totalCurr:ArrayList(size>0) from accumulate((and	FactHierarchy(idtoF:IDTO,CLASSSUP=="FACTURA_PROVEEDOR")		
+												Individual(IDTO==idtoF,idoF:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)																							
+												ObjValue(IDO==idoF,PROPNAME=="línea",idoLineaAny:IDOVALUE)
+												ObjValue(IDO==idoLineaAny,PROPNAME=="producto",IDOVALUE==idoArticulo)												
+												//La siguiente condicion de existe permite calcular coste medio solo en base a lineas ya albaranadas.
+												//Asi se evita que si por lo que sea, tras un albaran llega una factura parcial, con menor cantidad, o mayor por error, pues no 
+												//haya que esperar a que llegue la factura que la completa para compensarse los costes, ya que si entre 10 unidades y facturo 5, el coste aparentiaria ser la mitad
+												FactHierarchy(idtoAlb:IDTO,CLASSSUP=="ALBARÁN_PROVEEDOR")															
+												ObjValue(IDO==idoLineaAny,PROPNAME=="documento",VALUECLS==idtoAlb)
+																																																											
+												DatValue(IDO==idoF,PROPNAME=="factor_descuento_global",descuentoGlobal:QMIN!=null)	
+												DatValue(IDO==idoLineaAny,PROPNAME=="importe", i:DOUBLEVALUE!=null)																									
+												DatValue(IDO==idoLineaAny,PROPNAME=="cantidad", q:QMIN!=null)),
+									init(ArrayList res=new ArrayList();res.add(new Double(0.0));res.add(new Double(0.0));)
+									action(		
+											res.set(0,(Double)res.get(0)+q);
+											res.set(1,(Double)res.get(1)+i*(1-descuentoGlobal));
+									),
+									reverse(
+											res.set(0,(Double)res.get(0)-q);
+											res.set(1,(Double)res.get(1)-i*(1-descuentoGlobal));
+									)
+									result(res))																
+then				
+	
+	dma.printRule("========== COSTE ARTICULO COMPRAS "+rdnArt);
+	double totalImporteCurr=(Double)totalCurr.get(1),totalQcurr=(Double)totalCurr.get(0);
+	setCoste(idoArticulo,idtoArticulo,costeMedioInit,totalQcurr,totalImporteCurr,stockTotal,dma);
+end
+
+
+rule "COSTE ARTICULO PRODUCCION"
+salience -150 //(ojo se recalcula al actualizarse stock total que solo se actualiza si hay lote). POnemos menos prioridad que stock total para reducir disparos
+ agenda-group "rules" when 	
+ 	FactHierarchy(idtoRoot:IDTO,clsSup:CLASSSUP=="PRODUCCIÓN")						
+ 	Individual(idoRoot:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)																	
+	ObjValue(IDO==idoRoot,PROPNAME=="estado",idoEstado:IDOVALUE!=null)
+	DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR=="Programado"||=="Realizado")		
+	DatValue(IDO==idoRoot,PROPNAME=="es_despiece",esDespiece:BOOLEANVALOR!=null)											
+
+	FactHierarchy(idtoArticulo:IDTO,CLASSSUP=="ARTÍCULO")
+	DatValue(IDTO==idtoArticulo,idoArticulo:IDO,idArticulo:ID,PROPNAME=="rdn",rdnArt:VALOR)		
+	//Utilizo model poruqe las condiciones de es despiece falla en acumulador
+	Model(IDTO==idtoRoot,propOut:PROPNAME==(esDespiece?"consumo":"línea"),OP==Constants.OP_INTERSECTION)
+	Model(IDTO==idtoRoot,propIn:PROPNAME==(esDespiece?"línea":"consumo"),OP==Constants.OP_INTERSECTION)							
+									
+	qOutCurr:Double(doubleValue!=0.0) from accumulate((and	ObjValue(IDO==idoRoot,PROPNAME==propOut,idoLineaOut:IDOVALUE)
+															ObjValue(IDO==idoLineaOut,PROPNAME=="producto",IDOVALUE==idoArticulo)
+															DatValue(IDO==idoLineaOut,PROPNAME=="cantidad", q:QMIN!=null)),sum(q))																																																			
+										
+	costeCurr:Double() from accumulate((and		ObjValue(IDO==idoRoot,PROPNAME==propIn||=="programación",idoLineaAny:IDOVALUE)																																																																																	
+												DatValue(IDO==idoLineaAny,PROPNAME=="coste_unitario", i:DOUBLEVALUE!=null)																									
+												DatValue(IDO==idoLineaAny,PROPNAME=="cantidad", q:QMIN!=null)),sum(q*i))
+
+	stockTotal:Double() from accumulate (DatValue(IDO==idoArticulo,PROPNAME=="stock_total",st:QMIN!=null),	sum(st))
+	costeMedioInit:Double() from accumulate (DatValue(IDO==idoArticulo,PROPNAME=="coste",c:INITIALDOUBLE!=null),	sum(c))		
+then	
+	dma.printRule("========== COSTE ARTICULO PRODUCCION "+rdnArt);
+	setCoste(idoArticulo,idtoArticulo,costeMedioInit,qOutCurr,costeCurr,stockTotal,dma);
+end
+
+
+rule "COSTE UNITARIO EN SUBTAREA A DEDICACION COMUN"
+ //No puede tener menos prioridad que agregar, porque depende de hasChanged
+ agenda-group "rules" when 	
+ 	FactHierarchy(idtoRoot:IDTO,CLASSSUP=="TAREA"||=="DOCUMENTO")
+ 	ObjValue(IDTO==idtoRoot,idoTask:IDO,PROPNAME=="línea"||=="subtarea"||=="consumo"||=="programación",idoSub:IDOVALUE,chSub:hasCHANGED) 
+	ObjValue(IDO==idoSub,idtoSub:IDTO,PROPNAME=="producto",idoProd:IDOVALUE!=null,idtoProd:VALUECLS,chPro:hasCHANGED)		
+	Individual(IDO==idoSub,STATE==Constants.INDIVIDUAL_STATE_READY)
+	
+	(or eval(chSub||chPro)
+		exists(DatValue(IDO==idoTask,PROPNAME=="fecha_inicio",hasCHANGED==true))
+		exists(ObjValue(IDO==idoSub,PROPNAME=="recurso", hasCHANGED==true))
+	 	exists((and ObjValue(IDO==idoTask,PROPNAME=="dedicación",idoAny:IDOVALUE)
+	 				IndividualValue(IDO==idoAny,hasCHANGED==true))))
+	 						
+	costeMedioArt:Double() from accumulate(DatValue(IDO==idoProd,PROPNAME=="coste",DOUBLEVALUE!=null,costeArt:QMIN!=null),sum(costeArt))
+	costeActualArt:Double() from accumulate(DatValue(IDO==idoProd,PROPNAME=="coste_actual",DOUBLEVALUE!=null,c:QMIN!=null),sum(c))		 				
+	
+	costeComunDedicado:Double() from accumulate((and 	ObjValue(IDO==idoSub,prop:PROPNAME=="recurso_resuelto"||=="recurso", idoRecurso:IDOVALUE)
+														forall(FactHierarchy(IDTO==idtoSub,CLASSSUP=="SUBTAREA")
+															   ObjValue(IDO==idoSub,PROPNAME==prop&&=="recurso_resuelto", IDOVALUE==idoRecurso))
+													   
+														ObjValue(IDO==idoTask,PROPNAME=="dedicación",idoDedicacion:IDOVALUE) 						
+														ObjValue(IDO==idoDedicacion,PROPNAME=="recurso", IDOVALUE==idoRecurso)
+														DatValue(IDO==idoDedicacion,PROPNAME=="porcentaje_dedicación", ded:DOUBLEVALUE!=null)		
+														ObjValue(IDO==idoRecurso, PROPNAME=="costes",idoCostes:IDOVALUE)								
+														DatValue(IDO==idoCostes, PROPNAME=="coste",coste:DOUBLEVALUE!=null)),
+												sum(coste*ded/100))
+										
+	costeComunNodedicado:Double() from accumulate((and 	ObjValue(IDO==idoSub,prop:PROPNAME=="recurso_resuelto"||=="recurso", idoRecurso:IDOVALUE)																											   
+														not((and ObjValue(IDO==idoTask,PROPNAME=="dedicación",idoDedicacion:IDOVALUE) 						
+																 ObjValue(IDO==idoDedicacion,PROPNAME=="recurso", IDOVALUE==idoRecurso)))		
+														ObjValue(IDO==idoRecurso, PROPNAME=="costes",idoCostes:IDOVALUE)								
+														DatValue(IDO==idoCostes, PROPNAME=="coste",coste:DOUBLEVALUE!=null)),
+												sum(coste))
+								
+								
+	dedicacionTotal:Double() from accumulate((and	ObjValue(IDO==idoTask,PROPNAME=="dedicación",idoDedicacion:IDOVALUE)
+													DatValue(IDO==idoDedicacion,PROPNAME=="porcentaje_dedicación", ded:DOUBLEVALUE!=null) 																			
+												),
+												sum(ded/100))
+	
+	costeEspecifico:Double() from accumulate((and	ObjValue(IDO==idoSub,PROPNAME=="recurso", idoRecurso:IDOVALUE)		
+													ObjValue(IDO==idoRecurso, PROPNAME=="costes",idoCostes:IDOVALUE)								
+													DatValue(IDO==idoCostes, PROPNAME=="coste",coste:DOUBLEVALUE!=null)),
+												sum(coste))
+												
+	costeUnitarioEnBaseCosteActual:Long() from accumulate((and 	FactHierarchy(IDTO==idtoRoot,CLASSSUP=="PRODUCCIÓN")
+																DatValue(CLASSNAME=="PARAMETRO_VERDADERO",idoParam:IDO,PROPNAME=="rdn",VALOR=="coste_unitario_produccion_basado_coste_actual")
+																DatValue(IDO==idoParam,PROPNAME=="activo",VALOR=="true")),count(idoParam))												
+then
+	dma.printRule("==========COSTE UNITARIO EN SUBTAREA A DEDICACION COMUN "+idoSub+" "+costeComunDedicado+" "+costeComunNodedicado+" basado actual:"+costeUnitarioEnBaseCosteActual.intValue());
+	if(costeActualArt.doubleValue()==0.0&&costeEspecifico.doubleValue()!=0.0){
+		dma.setValueNotLock(idoProd,idtoProd,"coste_actual",new DoubleValue(Auxiliar.redondea(costeEspecifico,4)));
+		dma.setValueNotLock(idoProd,idtoProd,"coste",new DoubleValue(Auxiliar.redondea(costeEspecifico,4)));
+		costeMedioArt=costeEspecifico;
+		costeActualArt=costeEspecifico;
+	} 
+	double costeMedio=costeEspecifico;
+	if(costeEspecifico.equals(0.0)){
+		if(costeComunDedicado>0){
+			costeMedio=costeComunDedicado/dedicacionTotal;
+		}else{
+			if(costeComunNodedicado>0){
+				costeMedio=costeComunNodedicado;
+			}else{
+				costeMedio=costeMedioArt.doubleValue()==0.0 ? costeActualArt:costeMedioArt;
+			}
+		}
+	}
+	
+	dma.printRule(" cm "+costeMedio);
+	if(costeMedio!=0.0){
+		dma.printRule(" nuevo coste "+costeMedio);
+		if(costeUnitarioEnBaseCosteActual.intValue()>0) costeMedio=costeActualArt;
+		
+		dma.setValueNotLock(idoSub,idtoSub,"coste_unitario",new DoubleValue(Auxiliar.redondea(costeMedio,4)));
+	}
+end
+
+
+rule "INFORMAR NO HAY DATOS PARA CALCULAR COSTE UNITARIO"
+salience -200//impte prioridad baja para que reglas precargas se puedan disparar antes
+ agenda-group "rules" when 
+	
+	FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA_SERVICIO"||=="SUBTAREA")
+	Lock(IDTO==idtoLinea,idolinea:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(IDOVALUE==idolinea,idtoDominio:IDTO)
+	FactHierarchy(IDTO==idtoDominio,CLASSSUP=="FACTURA_PROVEEDOR"||=="ALBARÁN_CLIENTE"||=="PRODUCCIÓN")
+	
+	ObjValue(IDO==idolinea, PROPNAME=="producto",idArt:VALOR!=null,idtoArt:VALUECLS)
+	eval(dma.preload(Integer.parseInt(idArt), idtoArt))	
+	ObjValue(IDO==idolinea, PROPNAME=="recurso",idRecurso:VALOR!=null,idtoRecurso:VALUECLS)
+	eval(dma.preload(Integer.parseInt(idRecurso), idtoRecurso))		
+	DatValue(IDO==idolinea, PROPNAME=="rdn",rdnLinea:VALOR!=null)	
+	ObjValue(idoDoc:IDO!=null,classDoc:CLASSNAME, PROPNAME=="consumo"||=="línea"||=="subtarea",IDOVALUE==idolinea )
+	DatValue(IDO==idoDoc, PROPNAME=="rdn",rdnDoc:VALOR!=null)	
+	not(
+		(and
+			ObjValue(ID==idArt, PROPNAME=="unidad",unidad:VALOR)							
+			ObjValue(ID==idRecurso, PROPNAME=="costes",idCostesRecurso:VALOR!=null)								
+			ObjValue(ID==idCostesRecurso, PROPNAME=="unidad",VALOR==unidad)
+			DatValue(ID==idCostesRecurso, PROPNAME=="coste",costeRecurso:DOUBLEVALUE!=null)
+		)
+	)
+then
+	dma.printRule("\n\n ========================  INFORMAR NO HAY DATOS PARA CALCULAR COSTE UNITARIO");
+	dma.showMessage("Para los datos de recurso y producto seleccionados en la línea "+rdnLinea+" de "+classDoc+" "+rdnDoc+" no se puede calcular su coste unitario");
+end
+
+
+
+rule "FECHA ULTIMA COMPRA DE UN CLIENTE ES LA ULTIMA FECHA QUE SE LE VENDIO ALGO"
+salience -100
+agenda-group "bddrules" when
+	FactHierarchy(idtoDoc:IDTO,tipoDoc:CLASSSUP=="DOCUMENTO_VENTA_NOMINATIVO")
+	not( FactHierarchy(IDTO==idtoDoc,CLASSSUP=="PRESUPUESTO"))
+	DatValue(idoDoc:IDO,IDTO==idtoDoc,PROPNAME=="fecha",fechaDoc:QMIN!=null)
+	ObjValue(IDO==idoDoc,PROPNAME=="cliente",idoCliente:IDOVALUE!=null,idtoCliente:VALUECLS!=null,clsCliente:RANGENAME)
+	Model(CLASSNAME==clsCliente,PROPNAME=="fecha_última_compra",OP==Constants.OP_INTERSECTION)
+	ObjValue(IDO==idoDoc,PROPNAME=="línea",idoLinea:IDOVALUE!=null)
+then
+	dma.printRule("\n\n===============  FECHA ULTIMA COMPRA DE UN CLIENTE ES LA ULTIMA FECHA QUE SE LE VENDIO ALGO ");
+	
+	if(idoDoc>0){
+		TimeValue fechaCurrTV=(TimeValue)dma.getValue(idoCliente,idtoCliente,"fecha_última_compra");
+		long fechaCurr=0;
+		if(fechaCurrTV!=null) fechaCurr=fechaCurrTV.getRelativeSecondsMax();
+		if(fechaDoc>fechaCurr)	dma.setValueNotLock(idoCliente,idtoCliente,"fecha_última_compra",new TimeValue(fechaDoc.longValue()));
+	}else
+		dma.setValueNotLock(idoCliente,idtoCliente,"fecha_última_compra",new TimeValue(fechaDoc.longValue()));
+end	
+
+rule "FECHA ULTIMA COMPRA/VENTA ARTICULO"
+salience -200
+agenda-group "rules" when
+	
+	FactHierarchy(idtoDoc:IDTO,tipoDoc:CLASSSUP=="DOCUMENTO_VENTA"||=="DOCUMENTO_COMPRA")
+	not( FactHierarchy(IDTO==idtoDoc,CLASSSUP=="PRESUPUESTO"))
+		
+	ObjValue(IDTO==idtoDoc,idoDoc:IDO,PROPNAME=="línea",idoLinea:IDOVALUE)
+	DatValue(IDO==idoDoc,PROPNAME=="fecha",fechaDoc:QMIN!=null,fechaDocChanged:hasCHANGED)	
+	ObjValue(IDO==idoLinea, PROPNAME=="producto",idoProducto:IDOVALUE!=null,idtoProducto:VALUECLS,productoChanged:hasCHANGED)
+	
+	eval(productoChanged||fechaDocChanged)	
+then
+	dma.printRule("===============FECHA ULTIMA COMPRA/VENTA ARTICULO");
+	String propiedadfecha="fecha_última_venta";
+	if(tipoDoc.equals("DOCUMENTO_COMPRA")) 
+		propiedadfecha="fecha_última_compra";
+		
+	if(idoDoc>0){
+		TimeValue fechaCurrTV=(TimeValue)dma.getValue(idoProducto,idtoProducto,propiedadfecha);
+		long fechaCurr=0;
+		if(fechaCurrTV!=null) fechaCurr=fechaCurrTV.getRelativeSecondsMax();
+		if(fechaDoc>fechaCurr)	dma.setTimeValue(idoProducto,idtoProducto,dma.getIdProperty(propiedadfecha),fechaDoc.longValue(),false);
+	}else
+		dma.setTimeValue(idoProducto,idtoProducto,dma.getIdProperty(propiedadfecha),fechaDoc.longValue(),false);
+end	
+
+
+rule "COSTE_ACTUAL_PREVIO"
+salience 10
+agenda-group "rules" when 
+	
+	FactHierarchy(idtoArt:IDTO,CLASSSUP=="ARTÍCULO")	
+	Model(IDTO==idtoArt,PROPNAME=="coste_actual_previo",OP==Constants.OP_INTERSECTION)
+	Individual(idoArt:IDO!=null,IDTO==idtoArt,STATE==Constants.INDIVIDUAL_STATE_READY)
+	DatValue(IDO==idoArt,PROPNAME=="coste_actual", initCA:INITIALDOUBLE!=null,valor:DOUBLEVALUE,hasCHANGED==true)
+	initPrevioList:ArrayList() from collect(DatValue(IDO==idoArt,PROPNAME=="coste_actual_previo",INITIALVALOR!=null))
+then
+	dma.printRule("=========== COSTE_ACTUAL_PREVIO");
+	Double initPrevio=null;
+	if(initPrevioList.size()==1){
+		DatValue f=(DatValue)initPrevioList.get(0);
+		initPrevio=f.getINITIALDOUBLE();
+	}
+	if(valor==null || valor.equals(initCA)){
+		if(initPrevio==null) dma.delValuesNotLock(idoArt,idtoArt,"coste_actual_previo");
+		else dma.setValueNotLock(idoArt,idtoArt,"coste_actual_previo",new DoubleValue(initPrevio));
+	}else{
+		dma.setValueNotLock(idoArt,idtoArt,"coste_actual_previo",new DoubleValue(initCA));
+	}
+end
+
+rule "MARGEN % BENEFICIO EN LINEA"
+agenda-group "rules" when
+	FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA_ARTÍCULOS") 	
+	DatValue(IDTO==idtoLinea,idoLinea:IDO,PROPNAME=="coste_unitario",coste:DOUBLEVALUE!=null)
+	ObjValue(IDO==idoLinea,PROPNAME=="documento",idoDoc:IDOVALUE!=null)
+	
+	not((and 	FactHierarchy(idtoFactura:IDTO,CLASSSUP=="FACTURA_A_CLIENTE")
+				ObjValue(IDO==idtoLinea,PROPNAME=="documento",VALUECLS==idtoFactura,ido2:IDOVALUE!=null && !=idoDoc)
+				Individual(ID==ido2,STATE==Constants.INDIVIDUAL_STATE_READY)))
+		
+	DatValue(IDO==idoDoc,PROPNAME=="factor_descuento_global",factor:DOUBLEVALUE!=null)				
+	DatValue(IDO==idoLinea,PROPNAME=="precio",precio:DOUBLEVALUE!=null)
+	
+then
+	dma.printRule("==========MARGEN % BENEFICIO EN LINEA");
+	dma.setValue(idoLinea,idtoLinea,"margen_beneficio",new DoubleValue(Auxiliar.redondea(100*(1-(coste/(precio*(1-factor)))),3)));
+end
+
+rule "MARGEN % BENEFICIO EN DOCUMENTO"
+agenda-group "rules" when
+	
+	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="FACTURA_A_CLIENTE")	
+	Lock(IDTO==idtoDoc,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+
+	coste:Double(doubleValue!=0.0)    from accumulate((and	ObjValue(IDO==idoDoc,PROPNAME=="línea",idoLinea:IDOVALUE!=null)
+															DatValue(IDO==idoLinea,PROPNAME=="cantidad",q:DOUBLEVALUE!=null)
+															DatValue(IDO==idoLinea,PROPNAME=="coste_unitario",c:DOUBLEVALUE!=null)),
+									sum(c*q))
+	DatValue(IDO==idoDoc,PROPNAME=="base",base:DOUBLEVALUE!=null&&!=0)
+	
+then
+	double margen=Auxiliar.redondea(100*(1-coste/base),3);
+	dma.printRule("==========MARGEN % BENEFICIO EN DOCUMENTO "+margen);
+	dma.setValue(idoDoc,idtoDoc,"margen_beneficio",new DoubleValue(Auxiliar.redondea(100*(1-coste/base),3)));
+end
+

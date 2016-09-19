@@ -1,0 +1,102 @@
+<html>
+	<script src="checkJava.vbs"></script>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+		<meta name="GENERATOR" content="Microsoft FrontPage Express 2.0">
+		<title>DYNAGENT</title>
+	</head>
+
+	<script type='text/JavaScript'>
+		var a=navigator.userAgent.toLowerCase();
+
+		var link='http://www.java.com/es/download/index.jsp';
+		
+		var isOpera=(a.indexOf("opera")!=-1);
+		var isKonq=(a.indexOf('konqueror')!=-1);
+		var isSafari=(a.indexOf('safari')!=-1)&&(a.indexOf('mac')!=-1);
+		var isKhtml=isSafari||isKonq;
+		var isIE=(a.indexOf("msie")!=-1)&&!isOpera;
+		var isAtLeastIE11 = !!(navigator.userAgent.match(/Trident/) && !navigator.userAgent.match(/MSIE/));
+		isIE=isIE||isAtLeastIE11;
+		var isFF=(a.indexOf('firefox')!=-1);
+		var isWinFF=isFF&&(a.indexOf("win")!=-1);
+		var isWinIE=isIE&&(a.indexOf("win")!=-1);
+		var isCSS1Compat=(!isIE)||(document.compatMode&&document.compatMode=="CSS1Compat");
+
+		if (isWinIE)
+		{
+			var hayJava = JPlug.isEnabled();
+			if (hayJava != null) {
+				if (!hayJava)
+				   if(confirm("No tiene instalado JAVA o está deshabilitado en su navegador. Es necesario para ejecutar la aplicación. ¿Desea descargarlo?"))
+					   openJavaDownload();
+			}else{
+				if (!navigator.javaEnabled()){
+					if(confirm("No tiene instalado JAVA o está deshabilitado en su navegador. Es necesario para ejecutar la aplicación. ¿Desea descargarlo?")){
+						openJavaDownload();
+					}
+				}
+			}
+		}else{
+			if (!navigator.javaEnabled()){
+				if(confirm("No tiene instalado JAVA o está deshabilitado en su navegador. Es necesario para ejecutar la aplicación. ¿Desea descargarlo?")){
+					openJavaDownload();
+				}
+			}
+		}
+
+		function openJavaDownload(){
+			
+			resultWindow=window.open(link);
+			//Comprobamos que la ventana no haya sido bloqueada por un bloqueado de ventanas emergentes
+			if(resultWindow==null || resultWindow=='undefined'){
+				displayConfirm();
+			}else{
+				//Necesitamos hacer esto ya que cuando se trata de CROME resultWindow no es nulo aunque haya sido bloqueada
+				setTimeout('testPopup()',3000);
+			}
+		}
+
+		function testPopup()
+		{
+			if(resultWindow)
+			{
+				if(resultWindow.innerHeight==undefined || resultWindow.innerHeight==0)
+				{
+					displayConfirm();
+				}
+			}
+		}
+
+		function displayConfirm(){
+			alert("Hay activo un bloqueador de ventanas que ha impedido la carga de la pagina de descarga. Se abrirá en esta misma ventana.");
+			window.open(link, '_self');
+			if(resultWindow)
+				resultWindow.close();
+		}
+	</script>
+ 
+	<body bgcolor="#FFFFFF" TOPMARGIN=0 LEFTMARGIN=0 MARGINHEIGHT=0 MARGINWIDTH=0 scroll=no>
+		<!--width=100% height=100%-->
+
+		<applet id="applet" code="dynagent.gui.dynaApplet.class"
+			width=100% height=100%
+			codebase="bin" 
+			ALIGN=LEFT 
+			BORDER=0 
+			VSPACE=0 
+			HSPACE=0 
+			archive="dynagent.jar, dynagent-common.jar"><!-- Añado tambien common porque se utiliza en dynaApplet y asi evitamos un tiempo con la pantalla en blanco-->
+			<!-- archive="dynagent.jar, jdom.jar, dynagent-common.jar, dynagent-framework.jar, dynagent-ruleengine.jar, elecom.jar, commons-lang-2.3.jar, drools-core-4.0.7.jar, mvel-1.3.1-java1.4.jar, tinylaf.jar, dynagent-calendar.jar, jasperreports-3.7.3.jar, commons-logging-1.1.1.jar, apache-mime4j-0.6.jar, commons-codec-1.3.jar, httpclient-4.0.3.jar, httpcore-4.0.1.jar, httpmime-4.0.3.jar">-->
+			<!-- archive="dynagent.jar, jdom.jar, dynagent-common.jar, dynagent-framework.jar, dynagent-ruleengine.jar, elecom.jar, commons-lang-2.3.jar, commons-fileupload-1.0.jar, jndi-1.2.1.jar, xercesImpl.jar, commons-beanutils-1.7.jar, commons-collections-2.1.jar, commons-digester-1.7.jar, xml-apis.jar, drools-core-4.0.7.jar, mvel-1.3.1-java1.4.jar, antlr-runtime.jar, tinylaf.jar, dynagent-calendar.jar, jasperreports-3.7.3.jar, commons-logging-1.0.2.jar, apache-mime4j-0.6.jar, commons-codec-1.3.jar, httpclient-4.0.3.jar, httpcore-4.0.1.jar, httpmime-4.0.3.jar">-->
+
+			<param name="java_arguments" value="-Xmx950m">
+			<param name="separate_jvm" value="true" />
+			<param name="urlDownloadJava" value="http://www.java.com/es/download/index.jsp">
+			<param name="logo" value="Dynagent">
+			<param name="configurationRules" value="configurationRules.dpkg">
+			<param name="modes" value="Configuración;Negocio">
+			<!-- Insertar parametros -->
+		</applet>
+	</body>
+</html>

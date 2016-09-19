@@ -1,0 +1,414 @@
+//created on: 01-dic-2008
+package dynagent.ruleengine.src.ruler.ERPrules
+
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.exceptions.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import org.drools.WorkingMemory;
+import dynagent.common.utils.QueryConstants;
+
+global DataModelAdapter dma;
+
+
+rule "MOSTRAR FOTOS, VALOR POR DEFECTO"
+agenda-group "reports" when
+    
+	FactHierarchy(namereport:CLASS,CLASSSUP=="REPORT")	
+ 	ObjValue(idUTask:ID,CLASSNAME==namereport,PROPNAME=="params",paramIdto:VALUECLS,idoParams:IDOVALUE)
+	Model(IDTO==paramIdto,propOrden:PROPNAME)
+	eval(propOrden.contains("stocks a 0"))
+	not(ObjValue(IDO==idoParams,PROPNAME==propOrden,VALOR!=null))
+then
+    dma.printRule(" ================REPORT, VALOR POR DEFECTO STOCKS A CERO");     
+	dma.setValue(idoParams,paramIdto,propOrden,new BooleanValue(false));
+end
+
+rule "ASIGNACIÓN VALOR POR DEFECTO EN REPORTS"
+salience 100
+agenda-group "rules" when 
+	FactHierarchy(claseReport:CLASS,CLASSSUP=="REPORT")
+	f:Model(CLASSNAME==claseReport,OP==Constants.OP_DEFAULTVALUE,valor:DEFAULTVALUE!=null, idProp:PROP,valuecls:VALUECLS,propname:PROPNAME)
+	DatValue(CLASSNAME==claseReport,id:ID!=null,idoReport:IDO,idtoReport:IDTO,PROPNAME==Constants.PROP_RDN, VALOR!=null)
+	not(DatValue(CLASSNAME==claseReport,ID==id,PROPNAME==propname,VALOR!=null))
+	not(ObjValue(ID==id,PROPNAME==propname,VALOR!=null))
+then
+	dma.printRule("\n\n   ===========  ASIGNACIÓN VALOR POR DEFECTO EN REPORTS: report/parametro:"+claseReport+"  propiedad:"+propname+"  valor:"+valor);
+	Value val=null;
+	if(dma.getDDM().isDataProperty(idProp)){
+		val=dma.buildDataValue(idProp,valor);
+	}
+	else{
+		val=dma.buildObjectValue(idProp,valor,valuecls);
+	}
+	dma.setValue(idoReport,idtoReport,propname,val);
+end
+
+/*Importante: Se dispara en el grupo reports porque no puede hacerse como la regla de valores por defecto en reports ya que no existe el prototipo de parametros en ese momento.
+Esta regla se esta disparando cuando se entra en los parametros del reports, mientras que la otra se dispara al iniciar la aplicacion*/
+rule "ASIGNACIÓN VALOR POR DEFECTO EN PARAMETROS REPORTS"
+salience 100
+agenda-group "reports" when
+	FactHierarchy(claseReport:CLASS,CLASSSUP=="PARAMS")
+	f:Model(CLASSNAME==claseReport,OP==Constants.OP_DEFAULTVALUE,valorDefecto:DEFAULTVALUE!=null, idProp:PROP,valuecls:VALUECLS,propname:PROPNAME)
+	Individual(CLASSNAME==claseReport,id:ID!=null,idoReport:IDO,idtoReport:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	not(DatValue(CLASSNAME==claseReport,ID==id,PROPNAME==propname))
+	not(ObjValue(ID==id,PROPNAME==propname))
+then
+	dma.printRule("\n\n   ===========  ASIGNACIÓN VALOR POR DEFECTO EN PARAMETROS REPORTS: parametros:"+claseReport+"  propiedad:"+propname+"  valor:"+valorDefecto);
+	Value val=null;
+	if(dma.getDDM().isDataProperty(idProp)){
+		//soporta definir un desfase relativo respecto a la fecha actual +/-xxxperiodo signo + o - seguido de valor numerico y seguido de periodo que representa dicho valor a=año, m=mes, d=dia
+		// ejemplo un año menos -1a
+		boolean incorrecto=false;		
+		if(propname.contains("fecha")){			
+			long segundosRelativo=Auxiliar.segundosPeriodoRelativo(valorDefecto);
+			dma.printRule(" tiene fecha "+segundosRelativo);
+			if(segundosRelativo!=0){
+				Calendar c= Calendar.getInstance();
+	 			valorDefecto=""+ (c.getTimeInMillis()/Constants.TIMEMILLIS+ segundosRelativo);
+	 			dma.printRule(" defecto "+valorDefecto);			
+			}else incorrecto=true;
+		}
+		if(!incorrecto){	
+			val=dma.buildDataValue(idProp,valorDefecto);
+			dma.setValue(idoReport, idtoReport, propname, val);
+		}		
+	}
+	else{
+		val=dma.buildObjectValue(idProp,valorDefecto,valuecls);
+		dma.setValue(idoReport,idtoReport,propname, val);
+	}		
+end
+
+rule "REPORT:TARIFA DE CLIENTE"
+agenda-group "reports" when    
+	ObjValue(idParams:ID,idoParams:IDO,idtoParams:IDTO,nombreProp:PROPNAME!=null, idoCliente:IDOVALUE!=null) 
+	eval(nombreProp.startsWith("cliente@"))
+	ObjValue(IDO==idoCliente,PROPNAME=="tarifa_precio", tarifa:OBJECTVALUE) 
+    Model(IDTO==idtoParams,pTarifaParam:PROPNAME,OP==Constants.OP_INTERSECTION)
+    eval(pTarifaParam.startsWith("tarifa@"))
+then
+    dma.printRule("================ REPORT:TARIFA DE CLIENTE "+nombreProp+","+pTarifaParam);
+	dma.setValue(idoParams,idtoParams,pTarifaParam,tarifa);
+end
+
+rule "REPORT:MARCA DE CLIENTE"
+agenda-group "reports" when    
+	ObjValue(idParams:ID,idoParams:IDO,idtoParams:IDTO,nombreProp:PROPNAME!=null, idoCliente:IDOVALUE!=null) 
+	eval(nombreProp.startsWith("cliente@"))
+	Model(IDTO==idtoParams,pMarcaParam:PROPNAME,OP==Constants.OP_INTERSECTION)
+    eval(pMarcaParam.startsWith("marca@rp@tarifa_precios"))
+    
+	marcas:ArrayList() from collect(ObjValue(IDO==idoCliente,PROPNAME=="marca",idoMarca:IDOVALUE, marca:OBJECTVALUE))   
+	not( ObjValue(IDO==idoParams,PROPNAME=="marca"))										    
+then
+    dma.printRule("================ REPORT:MARCA DE CLIENTE "+nombreProp+","+pMarcaParam+","+marcas.size());
+    //dma.delValues(idoParams,idtoParams,pMarcaParam);
+    for(ObjValue ov:(ArrayList<ObjValue>)marcas){
+		dma.addValue(idoParams,idtoParams,pMarcaParam,ov.getOBJECTVALUE());
+	}
+end
+
+rule "REPORT, FECHA POR DEFECTO EN CIERRE CAJA Y DESGLOSE VENTAS"
+salience 100
+agenda-group "reports" when
+	Model(clase:CLASSNAME,OP!=null, propiedad:PROPNAME)
+	eval( propiedad.contains("fecha") && (propiedad.contains("caja")||propiedad.contains("tickets por")))
+	Individual(CLASSNAME==clase,idParams:ID!=null ,idoParams:IDO,idtoParams:IDTO)
+	not(DatValue(ID==idParams,PROPNAME==propiedad))
+then
+    dma.printRule("\n\n ================REPORT, FECHA POR DEFECTO EN CIERRE CAJA Y DESGLOSE VENTAS");
+	dma.setValue(idoParams,idtoParams,propiedad,new TimeValue(Auxiliar.getFechaActual()));
+end
+
+rule "REPORT, FECHA INICIO POR DEFECTO EN REPORTS HISTORICOS"
+agenda-group "reports" when
+    
+	Model(clase:CLASSNAME,OP!=null, propiedad:PROPNAME)
+	eval(propiedad.contains("fecha inicio@rp"))
+	Individual(CLASSNAME==clase,idParams:ID!=null ,idoParams:IDO,idtoParams:IDTO)    
+	not(DatValue(ID==idParams,PROPNAME==propiedad))
+then
+    dma.printRule("\n\n ================REPORT, FECHA INICIO POR DEFECTO EN REPORTS HISTORICOS "+propiedad);
+    Calendar cal=Calendar.getInstance();
+	int este_anno=cal.get(Calendar.YEAR);
+	cal.clear();
+	cal.set(Calendar.YEAR, este_anno);
+	dma.setValue(idoParams,idtoParams,propiedad,new TimeValue(cal.getTime()));
+end
+
+rule "REPORT, REVISION INICIAL POR DEFECTO"
+agenda-group "reports" when
+    
+	Model(clase:CLASSNAME,OP!=null, propiedad:PROPNAME)
+	eval(propiedad.contains("revisión inicial@rp"))
+	Individual(CLASSNAME==clase,idParams:ID!=null ,idoParams:IDO,idtoParams:IDTO)    
+	not(DatValue(ID==idParams,PROPNAME==propiedad))
+then
+    dma.printRule(" ================REPORT, REVISION INICIAL POR DEFECTO");  
+	dma.setValue(idoParams,idtoParams,propiedad,new IntValue(1));
+end
+
+rule "MI EMPRESA POR DEFECTO EN INFORMES"
+agenda-group "reports" when
+    
+	Model(clase:CLASSNAME,OP!=null, propiedad:PROPNAME)
+	Model(CLASSNAME==clase,OP==Constants.OP_CARDINALITY,QMIN>=1,PROPNAME==propiedad)
+	eval(propiedad.contains("empresa@rp"))
+	Individual(CLASSNAME==clase,idParams:ID!=null,idoParams:IDO,idtoParams:IDTO)
+	not(ObjValue(ID==idParams, PROPNAME==propiedad))       
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="mi_empresa",empresa:OBJECTVALUE!=null)    
+then
+    dma.printRule("\n\n ================ REPORT, MI EMPRESA POR DEFECTO EN INFORMES. report="+clase);
+   dma.setValue(idoParams,idtoParams,propiedad,empresa);
+end
+
+rule "DELEGACION POR DEFECTO EN INFORMES"
+agenda-group "reports" when    
+	Model(clase:CLASSNAME,OP!=null, propiedad:PROPNAME)
+	//Model(CLASSNAME==clase,OP==Constants.OP_CARDINALITY,QMIN>=1,PROPNAME==propiedad)
+	eval(propiedad.startsWith("delegacion")||propiedad.startsWith("delegación"))
+	Individual(CLASSNAME==clase,idParams:ID!=null,idoParams:IDO,idtoParams:IDTO)
+	not(ObjValue(ID==idParams, PROPNAME==propiedad))       
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="delegación",deleg:OBJECTVALUE!=null)
+then
+    dma.printRule("\n\n ================ DELEGACION POR DEFECTO EN INFORMES. report="+clase+" prop:"+propiedad);
+   dma.setValue(idoParams,idtoParams,propiedad,deleg);
+end
+
+ rule "FILTRADO DATOS POR VISIBILIDAD ASIGNADA AL USUARIO LOGADO GRUPORULES REPORTS"
+ agenda-group "reports" when 
+  	DocDataModel(usuario:USER!=null)
+  	
+	ObjValue(CLASSNAME=="USER", idusuario:ID!=null,PROPNAME=="dato_a_filtrar",typeFiltro:RANGENAME,valorFiltro:VALOR!=null,ovvalorFiltro:OBJECTVALUE)//usuario logado es un agente comercial (agente)
+	
+  	DatValue(ID==idusuario,PROPNAME==Constants.PROP_RDN,VALOR==usuario)
+	RangeFilter(idFiltroRoot:ID!=null,idoFiltroRoot:IDO,idtoFiltroRoot:IDTO,tipoObjeto:CLASSNAME,propiedadfiltro:PROPNAME,propfiltro:PROP,claseFiltro:RANGENAME==typeFiltro) //para asegurarse que tiene la proiedad (en lugar de hacerlo en base a la clase
+	(or
+		exists(FactHierarchy(CLASS==claseFiltro,CLASSSUP==typeFiltro))
+		exists(FactHierarchy(CLASS==typeFiltro,CLASSSUP==claseFiltro))
+	)
+	not(ObjValue(ID==idFiltroRoot, PROPNAME==propiedadfiltro,VALOR==valorFiltro))
+		
+then	
+	dma.printRule("\n============ FILTRADO DATOS POR VISIBILIDAD ASIGNADA AL USUARIO LOGADO GRUPORULES REPORTS: propiedadfiltro="+propiedadfiltro+" tipoObjeto="+tipoObjeto+"  ido="+idFiltroRoot);
+	dma.setValue(idoFiltroRoot,idtoFiltroRoot,propiedadfiltro,ovvalorFiltro);
+	//OBLIGAMOS A QUE TENGAN VALOR EN ESA PROPIEDAD LOS INDIVIDUOS A ENCONTRAR
+	Property pr=dma.getDDM().SystemGetProperty(idoFiltroRoot,idtoFiltroRoot,propfiltro);
+	if(pr.getCardMin()!=null&&pr.getCardMin().intValue()==1){
+		System.err.println("\n debug no hace falta fijar cardinalidad pr="+pr);
+	}
+	else{
+		dma.setCardinality(idoFiltroRoot,idtoFiltroRoot,propfiltro,1);
+		Property prAfter=dma.getDDM().SystemGetProperty(idoFiltroRoot,idtoFiltroRoot,propfiltro);
+		//System.err.println("\n debug DE HA FIJADO CARDINALIDAD AL FILTRO, PR DESPUES="+prAfter);
+	}
+end
+
+
+rule "AL IMPRIMIR UN DOCUMENTO O RECIBO SI NO ESTÁ EMITIDO SE MARCA COMO EMITIDO"
+ agenda-group "reports" when 
+  	
+ 	FactHierarchy(namedoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL"||=="VENCIMIENTO")
+	FactHierarchy(namereport:CLASS,CLASSSUP=="REPORT")
+	Individual(CLASSNAME==namedoc,iddoc:ID,idoDoc:IDO,idtoDoc:IDTO)
+ 	ObjValue(idUTask:ID,CLASSNAME==namereport,PROPNAME=="params",idparam:VALUE)
+ 	ObjValue(ID==idparam,VALUE==iddoc)
+	f:ObjValue(ID==idUTask,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null,OP==null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+then
+	dma.printRule("");
+ 	dma.printRule("=================AL TERMINAR DE IMPRIMIR UN DOCUMENTO O RECIBO SI NO ESTÁ EMITIDO SE MARCA COMO EMITIDO. DOCUMENTO="+namedoc+"  id="+iddoc);
+ 	dma.setValue(idoDoc,idtoDoc,"emitido",new BooleanValue(true));
+end
+
+rule "CONFIRMAR_IMPRESIÓN TRUE EN REPORTS DE DOCUMENTOS COMERCIALES Y RECIBO"
+ agenda-group "reports" when 
+  	
+ 	FactHierarchy(idtodoc:IDTO,namedoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL"||=="VENCIMIENTO")
+	FactHierarchy(idtoreport:IDTO,CLASSSUP=="REPORT")
+	Model(idUTask:ID!=null,IDTO==idtoreport,OP==Constants.OP_UNION,PROPNAME=="targetClass",VALUECLS==idtodoc)
+	Model(IDTO==idtodoc,PROPNAME=="emitido", OP==Constants.OP_INTERSECTION)
+then
+	dma.printRule("");
+ 	dma.printRule("====RULE CONFIRMAR_IMPRESIÓN TRUE EN REPORTS DE DOCUMENTOS COMERCIALES Y RECIBO DOCUMENTO="+namedoc);
+ 	dma.setValue(Integer.parseInt(idUTask),idtoreport,Constants.PROP_CHECKPRINTING,new BooleanValue(true));
+end
+
+
+rule "REPORTS:FILTRADO DE SUBFAMILIA A PARTIR DE LA FAMLIA"
+ agenda-group "reports" when   	
+	
+    ObjValue(clsRoot:CLASSNAME, idoRoot:IDO, propFamilia:PROPNAME, idFamilia:VALOR!=null,ovfamilia:OBJECTVALUE)
+    eval( propFamilia.startsWith("familia@rp"))
+    RangeFilter(IDO==idoRoot,PROPNAME==propFamilia)
+    RangeFilter(IDO==idoRoot,propiedadSubfamilia:PROPNAME,filtroSubfamilia:VALUE!=null)
+	eval( propiedadSubfamilia.startsWith("subfamilia@rp"))    
+	not(exists(FilterValue(ID==filtroSubfamilia,PROPNAME=="familia",VALOR==idFamilia))) 
+then
+	dma.printRule("\n\n-----------------REPORTS:FILTRADO DE SUBFAMILIA A PARTIR DE LA FAMLIA: familia: "+idFamilia+"  idoRoot:"+idoRoot+"  clsRoot:"+clsRoot);
+	dma.addFilterValue(filtroSubfamilia,"familia",ovfamilia);
+end
+
+rule "REPORT, ORDEN SELECCION"
+agenda-group "reports" when
+    
+ 	ObjValue(idoUTask:IDO,PROPNAME=="params",paramIdto:VALUECLS,idoParams:IDOVALUE)
+	Model(IDTO==paramIdto,propOrden:PROPNAME,idProp:PROP,OP==Constants.OP_INTERSECTION)
+	eval(propOrden.contains("listaidos"))
+ 	ObjValue(IDO==idoParams,propArticulo:PROPNAME,idoSrc:IDOVALUE!=null)
+ 	eval(propArticulo.contains("artículo"))	
+then
+	dma.printRule("=================REPORT, ORDEN SELECCION");
+	StringValue lista=(StringValue)dma.getValue(idoParams,paramIdto,propOrden);
+	String res="";
+	
+	if( lista!=null  ) res=lista.getValue()+","+idoSrc;
+	else res=""+idoSrc;
+	
+	dma.setValue(idoParams,paramIdto,propOrden,new StringValue(res));
+end
+
+rule "REPORT, ORDEN LINEA"
+agenda-group "reports" when
+    
+	ObjValue(ido:IDO,idto:IDTO,RANGENAME=="ORDEN_LÍNEA",ordenIdo:IDOVALUE!=null)  	
+	DatValue(IDO==ordenIdo,PROPNAME=="rdn", ordenRdn:VALOR)
+	Model(IDTO==idto,propOrden:PROPNAME,OP==Constants.OP_INTERSECTION)
+	eval(propOrden.contains("orden linea"))
+then
+    dma.printRule(" ================REPORT, ORDEN LINEA");  
+    String orden="linea.\"número\"";
+    if(ordenRdn.equals("Cantidad")) orden="linea.cantidad";
+    if(ordenRdn.equals("Precio_Articulo")) orden="linea.precio";
+    if(ordenRdn.equals("Producto")) orden="articulo.rdn";
+    
+	dma.setValue(ido,idto,propOrden,new StringValue(orden));
+end
+
+rule "REPORT, PARAMETRO ARRAY"
+agenda-group "reports" when
+    
+ 	ObjValue(idoUTask:IDO,PROPNAME=="params",paramIdto:VALUECLS,idoParams:IDOVALUE)
+	Model(IDTO==paramIdto,propArray:PROPNAME,idProp:PROP,OP==Constants.OP_INTERSECTION)
+
+	eval(propArray.matches("(?i).+\\sarray@.+"))
+	
+	
+ 	source:ArrayList() from accumulate((and ObjValue(IDO==idoParams,propSource:PROPNAME,idoSrc:IDOVALUE!=null) 	
+ 											eval(propArray.split("@")[0].startsWith(propSource.split("@")[0]))
+ 										),
+ 										init(ArrayList res=new ArrayList();),
+ 										action(res.add(idoSrc);),
+ 										result(res)) 		
+then
+    dma.printRule(" ================REPORT, PARAMETRO ARRAY");  
+    
+	String res="";
+	for(Integer ido:(ArrayList<Integer>)source){
+		int tableid=QueryConstants.getTableId(ido);
+		int idto=QueryConstants.getIdto(ido);
+		if(res.length()>0) res+=",";
+		res+="("+tableid+","+idto+")";
+	}
+	dma.printRule("ARRAY "+res);
+	dma.setValue(idoParams,paramIdto,propArray,new StringValue(res));
+end
+
+/*rule "DEBUG REPORT"
+agenda-group "rules" when
+    FactHierarchy(sup:CLASSSUP=="REPORT", clase:CLASS!=sup)	 	
+	
+then
+    dma.printRule(" ================DEBUG REPORT "+clase);  
+    
+end*/
+
+
+rule "REPORT, ORDEN LINEA POR DEFECTO"
+agenda-group "reports" when
+    
+	FactHierarchy(namereport:CLASS,CLASSSUP=="REPORT")	
+ 	ObjValue(idUTask:ID,CLASSNAME==namereport,PROPNAME=="params",paramIdto:VALUECLS,idoParams:IDOVALUE)
+	Model(IDTO==paramIdto,propOrden:PROPNAME)
+	eval(propOrden.contains("ordenar lineas"))
+	not(ObjValue(IDO==idoParams,PROPNAME==propOrden,VALOR!=null))
+	 
+	DatValue(idoOrden:IDO,idtoOrden:IDTO,CLASSNAME=="ORDEN_LÍNEA",PROPNAME=="rdn", VALOR=="Producto")
+then
+    dma.printRule(" ================REPORT, ORDEN LINEA POR DEFECTO");     
+	dma.setValue(idoParams,paramIdto,propOrden,new ObjectValue(idoOrden,idtoOrden));
+end
+
+rule "REPORT, TRAZABILIDAD FECHAS"
+agenda-group "reports" when
+    
+	FactHierarchy(namereport:CLASS,CLASSSUP=="REPORT")	
+ 	ObjValue(idUTask:ID,CLASSNAME==namereport,PROPNAME=="params",paramIdto:VALUECLS,idoParams:IDOVALUE)
+	Model(IDTO==paramIdto,propLote:PROPNAME)
+	eval(propLote.contains("lote"))
+	
+	Model(IDTO==paramIdto,propSolape:PROPNAME)
+	eval(propSolape.contains("dias_solape_seguridad"))
+	
+	DatValue(IDO==idoParams,PROPNAME==propSolape,solape:INTVALUE!=null&&!=0)
+	
+	ObjValue(IDO==idoParams,PROPNAME==propLote,idoLote:IDOVALUE!=null)
+	DatValue(IDO==idoLote,PROPNAME=="fecha_inicio",orden:DATE!=null)
+	
+	Model(IDTO==paramIdto,propFmin:PROPNAME)
+	eval(propFmin.contains("traza_fecha_min"))
+	
+	Model(IDTO==paramIdto,propFmax:PROPNAME)
+	eval(propFmax.contains("traza_fecha_max"))
+then
+    dma.printRule(" ================REPORT, TRAZABILIDAD FECHAS");   
+    
+    Calendar cal=Calendar.getInstance();	
+	cal.clear();
+	cal.setTime(orden);
+	cal.add(Calendar.DATE, -solape);
+	dma.setValue(idoParams,paramIdto,propFmin,new TimeValue(cal.getTime()));
+	cal.add(Calendar.DATE, solape);	
+	dma.setValue(idoParams,paramIdto,propFmax,new TimeValue(cal.getTime()));		
+end
+
+rule "PERMISO VIEW DENEGADO EN ORDEN LINEA o LISTA"
+agenda-group "inicializerules" when 
+ 	jb:JBossEngine()
+		
+	Model(idto:IDTO,propOrden:PROPNAME,idProp:PROP)
+	eval(propOrden.contains("orden linea") || propOrden.contains("listaidos") || propOrden.contains("array") || propOrden.contains("traza_fecha_"))
+    not(FactAccess(IDTO==idto,DENNIED==1,ACCESSTYPE==Constants.ACCESS_VIEW,IDO==null,PROP==idProp,USER==null,VALUE==null,VALUECLS==null))
+then
+	dma.printRule("=================PERMISO VIEW DENEGADO EN ORDEN LINEA o LISTA");
+	FactAccess f=new FactAccess(idto,null,idProp ,null,null,null,null,null,new Integer(1),Constants.ACCESS_VIEW,Constants.MAX_ACCESS_PRIORITY,dma.getDDM()); 
+	jb.insertFact(f);
+end
+	
+rule "REPORT, CLIENTE DE VENCIMIENTO"
+agenda-group "reports" when
+    
+	FactHierarchy(namereport:CLASS,CLASSSUP=="REPORT")	
+	FactHierarchy(idtoVenc:IDTO,CLASSSUP=="VENCIMIENTO_DE_COBRO")	
+	ObjValue(idUTask:ID,CLASSNAME==namereport,PROPNAME=="params",paramIdto:VALUECLS,idoParams:IDOVALUE)	
+ 	ObjValue(IDO==idoParams,propVenc:PROPNAME,VALUECLS==idtoVenc,idoVenc:IDOVALUE)
+ 	eval(propVenc.startsWith("vencimiento@"))
+ 	
+	Model(IDTO==paramIdto,propCliente:PROPNAME)
+	eval(propCliente.startsWith("cliente@"))
+	not(ObjValue(IDO==idoParams,PROPNAME==propCliente,VALOR!=null))
+	 
+	ObjValue(IDO==idoVenc,PROPNAME=="cliente", cliente:OBJECTVALUE)
+then
+    dma.printRule(" ================REPORT, CLIENTE DE VENCIMIENTO");     
+	dma.setValue(idoParams,paramIdto,propCliente,cliente);
+end
+
+

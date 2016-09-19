@@ -1,0 +1,1449 @@
+<?xml version="1.0"?>
+
+<project name="DYNAGENT" default="all" basedir="." xmlns:if="ant:if">
+
+	<property file="jboss-build.properties"/>
+	<property name="name" value="dynagent" />
+	<property name="build.dir" value="${workspace.dir}build/${name}" />
+	<property name="localizacion" value="local" />
+
+	<property name="srcServer.dir" value="${workspace.dir}${proyect.server}/src" />
+	<property name="srcServerWeb.dir" value="${workspace.dir}${proyect.serverweb}/src" />
+	<property name="srcRegister.dir" value="${workspace.dir}${proyect.register}/src" />
+	<property name="srcHtml5.dir" value="${workspace.dir}${proyect.html5}/src" />
+	<property name="srcWsemantic.dir" value="${workspace.dir}${proyect.wsemantic}/src" />
+	<property name="srcSurvey.dir" value="${workspace.dir}${proyect.survey}/src" />
+	<property name="srcHelp.dir" value="${workspace.dir}${proyect.help}/src" />
+	<property name="srcEJBEngine.dir" value="${workspace.dir}${proyect.ejbengine}/ejbModule" />
+	<property name="classServer.dir" value="${workspace.dir}${proyect.server}/bin" />
+	<property name="classServerWeb.dir" value="${workspace.dir}${proyect.serverweb}/bin" />
+	<property name="classRegister.dir" value="${workspace.dir}${proyect.register}/bin" />
+	<property name="classHtml5.dir" value="${workspace.dir}${proyect.html5}/bin" />
+	<property name="classWsemantic.dir" value="${workspace.dir}${proyect.wsemantic}/bin" />
+	
+	<property name="classSurvey.dir" value="${workspace.dir}${proyect.survey}/bin" />
+	<property name="classHelp.dir" value="${workspace.dir}${proyect.help}/bin" />
+	<property name="classEJBEngine.dir" value="${workspace.dir}${proyect.ejbengine}/build/classes" />
+	<property name="classRuleengine.dir" value="${workspace.dir}${proyect.ruleengine}/bin" />
+	<property name="classNucleo.dir" value="${workspace.dir}${proyect.nucleo}/bin" />
+	<property name="classAps.dir" value="${workspace.dir}${proyect.aps}/bin" />
+	<property name="classFramework.dir" value="${workspace.dir}${proyect.framework}/bin" />
+	<property name="classCalendar.dir" value="${workspace.dir}${proyect.calendar}/bin" />
+	<property name="classElecom.dir" value="${workspace.dir}${proyect.elecom}/bin" />
+	<property name="classCommon.dir" value="${workspace.dir}${proyect.common}/bin" />
+	<property name="classImportExport.dir" value="${workspace.dir}${proyect.importexport}/bin" />
+	<property name="classReplicator.dir" value="${workspace.dir}${proyect.replicator}/bin" />
+	<property name="classTools.dir" value="${workspace.dir}${proyect.tools}/bin" />
+	<property name="classMigration.dir" value="${workspace.dir}${proyect.migration}/bin" />
+	<property name="classBusiness.dir" value="${workspace.dir}${proyect.business}/bin" />
+	<property name="classVersionRules.dir" value="${workspace.dir}${proyect.versionRules}/bin" />
+	
+	<property name="srcGenericFilesServer" value="${classBusiness.dir}/../src/dynagent/business/genericfiles/server" />
+	
+	<!--property name="srcRules" value="${classRuleengine.dir}/dynagent/ruleengine/src/ruler/ERPrules" /-->
+	<property name="srcRules" value="src/rules" />
+	<property name="srcGenericRules" value="${workspace.dir}${proyect.knowledge}/${srcRules}" />
+
+	<!--	<condition property="localizacion" value="local">
+		<property name="url" value="localhost" />
+		<else>
+			<condition property="localizacion" value="dell">
+				<property name="url" value="192.168.0.33" />
+			</condition>
+		</else>
+	</condition>
+	<condition property="host" value="localhost">
+		<isset property="localizacion">local</isset>
+	</condition>-->
+
+	<!--	<property name="local" value="true" />
+	<target name="cond" if="local">
+		<property name="url" value="localhost" />
+	</target>
+-->
+
+	<target name="check-cond">
+		<condition property="cond-is-true">
+			<equals arg1="${localizacion}" arg2="local" />
+		</condition>
+		<condition property="cond-is-true2">
+			<equals arg1="${localizacion}" arg2="dell" />
+		</condition>
+	</target>
+
+	<target name="cond-if1" depends="check-cond" if="cond-is-true">
+		<property name="url" value="localhost" />
+		<echo message="local"/>
+	</target>
+	<target name="cond-if2" depends="check-cond" if="cond-is-true2">
+		<property name="url" value="192.168.0.33" />
+		<echo message="dell"/>
+	</target>
+
+
+
+	<target name="prepareServer">
+		<mkdir dir="${build.dir}/server" />
+		<delete includeemptydirs="true">
+			<fileset dir="${build.dir}/server" includes="**/*"/>
+		</delete>
+		<mkdir dir="${build.dir}/server/j2ee" />
+		<mkdir dir="${classServer.dir}" />
+		<javac encoding="UTF-8" srcdir="${classServer.dir}/../src" destdir="${classServer.dir}" debug="true" debuglevel="lines,vars,source">
+			<exclude name="**/old/**/*.java" />
+			<exclude name="**/reports/app/**/*.java" />
+			<exclude name="**/test/**/*.java" />
+			<exclude name="dynagent/server/importers/**/*.java" />
+			<exclude name="dynagent/server/applicationMessages/**/*.java" />
+			<classpath>
+				<fileset dir="${build.dir}/common">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${lib.dir}">
+					<include name="jasperreports-3.7.3.jar"/>
+					<include name="commons-lang-2.3.jar"/>
+					<include name="jdom.jar"/>
+					<include name="ejb.jar"/>
+					<include name="commons-collections-2.1.jar"/>
+					<include name="mysql-connector-java-5.1.6-bin.jar"/>
+					<include name="jboss-system.jar"/>
+					<include name="commons-fileupload-1.0.jar"/>
+					<include name="poi-3.6-20091214.jar"/>
+					<include name="sqljdbc.jar"/>
+					<include name="j2ee.jar"/>
+					<include name="bsh-2.0b2.jar"/>
+				</fileset>
+			</classpath>
+		</javac>
+	</target>
+	
+	<target name="prepareServerWeb">
+		<mkdir dir="${build.dir}/serverweb" />
+		<delete includeemptydirs="true">
+			<fileset dir="${build.dir}/serverweb" includes="**/*"/>
+		</delete>
+		<mkdir dir="${build.dir}/serverweb/j2ee" />
+		<mkdir dir="${classServerWeb.dir}" />
+		<javac srcdir="${classServerWeb.dir}/../src" destdir="${classServerWeb.dir}" debug="true" debuglevel="lines,vars,source">
+			<classpath>
+				<fileset dir="${build.dir}/common">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${build.dir}/ruleengine">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${build.dir}/server/j2ee">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${build.dir}/ejbengine/j2ee">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${lib.dir}">
+					<include name="jdom.jar"/>
+					<include name="ejb.jar"/>
+					<include name="jboss-system.jar"/>
+					<include name="j2ee.jar"/>
+				</fileset>
+			</classpath>
+		</javac>
+	</target>
+	
+	<target name="prepareRegister">
+			<mkdir dir="${build.dir}/register" />
+			<delete includeemptydirs="true">
+				<fileset dir="${build.dir}/register" includes="**/*"/>
+			</delete>
+			<mkdir dir="${build.dir}/register/j2ee" />
+			<mkdir dir="${classRegister.dir}" />
+			<javac srcdir="${classRegister.dir}/../src" destdir="${classRegister.dir}" debug="true" debuglevel="lines,vars,source">
+				<classpath>
+					<fileset dir="${build.dir}/common">
+						<include name="*.jar"/>
+					</fileset>
+					<fileset dir="${build.dir}/ruleengine">
+						<include name="*.jar"/>
+					</fileset>
+					<fileset dir="${build.dir}/server/j2ee">
+						<include name="*.jar"/>
+					</fileset>
+					<fileset dir="${build.dir}/ejbengine/j2ee">
+						<include name="*.jar"/>
+					</fileset>
+					<fileset dir="${lib.dir}">
+						<include name="j2ee.jar"/>
+						<include name="register/commons-logging-1.0.4.jar"/>
+						<include name="register/commons-codec-1.3.jar"/>
+						<include name="register/commons-fileupload-1.0.jar"/>
+						<include name="register/commons-httpclient-3.0.1.jar"/>
+						<include name="register/bcmail-jdk14-128.jar"/>
+						<include name="register/bcprov-jdk14-128.jar"/>
+						<include name="register/paypal_wpstoolkit.jar"/>
+					</fileset>
+					<fileset dir="${lib.dir}/jcaptcha" includes="*.jar"/>
+				</classpath>
+			</javac>
+		</target>
+
+	<!-- Si se le ha pasado el parametro client con -Dclient=celop por ejemplo, se llamara al ant html5-war primero, y luego a este html5-client-war que machacara el war con el web.xml de ese cliente-->
+	<target name="html5-client-war" depends="prepareHtml5" if="client">  
+			<war warfile="${build.dir}/html5/j2ee/${name}-html5.war" webxml="${workspace.dir}Clients/src/${client}/html5/web.xml" includes="url">
+				<classes dir="${classHtml5.dir}">
+					<include name="dynagent/html5/**"/>
+				</classes>
+				<fileset dir="${srcHtml5.dir}/../WebContent/">
+					<include name="**.*"/>
+					<include name="WEB-INF/lib/**.*"/>
+					<include name="css/**.*"/>
+					<include name="tpl/**.*"/>
+					<include name="images/**.*"/>
+					<include name="js/**/**.*"/>
+					<include name="lib/**.*"/>
+				</fileset>
+				<webinf dir="${srcHtml5.dir}/../WebContent/WEB-INF">
+					<include name="jboss-web.xml"/>
+				</webinf>
+			</war>
+			<!--<copy file="${build.dir}/server/j2ee/${name}-web.war" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+	</target>
+		
+		<target name="prepareHtml5">
+			<mkdir dir="${build.dir}/html5" />
+			<delete includeemptydirs="true">
+				<fileset dir="${build.dir}/html5" includes="**/*"/>
+			</delete>
+			<mkdir dir="${build.dir}/html5/j2ee" />
+			<mkdir dir="${classHtml5.dir}" />
+			<copydir dest="${classHtml5.dir}/dynagent/html5/xml" src="${classHtml5.dir}/../src/dynagent/html5/xml"/>
+			<copydir dest="${classHtml5.dir}/dynagent/html5/xsl" src="${classHtml5.dir}/../src/dynagent/html5/xsl"/>
+			<javac srcdir="${classHtml5.dir}/../src" destdir="${classHtml5.dir}" debug="true" debuglevel="lines,vars,source">
+				<classpath>
+					<fileset dir="${build.dir}/common">
+						<include name="*.jar"/>
+					</fileset>
+					<fileset dir="${build.dir}/server/j2ee">
+						<include name="*.jar"/>
+					</fileset>
+					<fileset dir="${lib.dir}">
+						<include name="servlet-api-2.4.jar"/>
+						<include name="jdom.jar"/>
+						<include name="json/json-lib-2.4-jdk15.jar"/>
+						<include name="ejb.jar"/>
+					</fileset>
+				</classpath>
+			</javac>
+		</target>
+	
+	<target name="html5-war" depends="prepareHtml5">   
+		<war warfile="${build.dir}/html5/j2ee/${name}-html5.war" webxml="${srcHtml5.dir}/../WebContent/WEB-INF/web.xml" includes="url">
+			<classes dir="${classHtml5.dir}">
+				<include name="dynagent/html5/**"/>
+			</classes>
+			<fileset dir="${srcHtml5.dir}/../WebContent/">
+				<include name="**.*"/>
+				<include name="WEB-INF/lib/**.*"/>
+				<include name="css/**.*"/>
+				<include name="tpl/**.*"/>
+				<include name="images/**.*"/>
+				<include name="js/**/**.*"/>
+				<include name="lib/**.*"/>
+			</fileset>
+			<webinf dir="${srcHtml5.dir}/../WebContent/WEB-INF">
+				<include name="jboss-web.xml"/>
+			</webinf>
+		</war>
+		<!--<copy file="${build.dir}/server/j2ee/${name}-web.war" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+	</target>
+				
+	<target name="html5" depends="html5-war,html5-client-war,cond-if1,cond-if2">
+		<!--<ear destfile="${build.dir}/html5/${name}-html5.ear" appxml="${classHtml5.dir}/../application.xml">
+			<fileset dir="${build.dir}/html5/j2ee" includes="*"/>
+			<fileset dir="${build.dir}/server/j2ee" includes="*.jar"/>
+			<fileset dir="${build.dir}/common" includes="*"/>
+		</ear>
+		<copy file="${build.dir}/html5/${name}-html5.ear" todir="${jboss.deploy.dir}" overwrite="on"/>-->
+		<copy file="${build.dir}/html5/j2ee/${name}-html5.war" todir="${jboss.deploy.dir}" overwrite="on"/>
+	</target>
+	
+	<target name="earHtml5" depends="common,ruleengine,prepareHtml5,prepareServer,ejb-jar">
+		<antcall target="html5"/>
+	</target>
+	
+<!-- =====================  configurador web========================= -->
+	<target name="prepareWsemantic">
+		<mkdir dir="${workspace.dir}build/wsemantic" />
+		<delete includeemptydirs="true">
+			<fileset dir="${workspace.dir}build/wsemantic" includes="**/*"/>
+		</delete>
+		<mkdir dir="${workspace.dir}build/wsemantic/j2ee" />
+		<mkdir dir="${classWsemantic.dir}" />
+		<javac srcdir="${classWsemantic.dir}/../src" destdir="${classWsemantic.dir}" debug="true" debuglevel="lines,vars,source">
+			<classpath>
+				<fileset dir="${build.dir}/common">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${build.dir}/server/j2ee">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${lib.dir}">
+					<include name="servlet-api-2.4.jar"/>
+					<include name="jdom.jar"/>
+					<include name="json/json-lib-2.4-jdk15.jar"/>
+					<include name="ejb.jar"/>
+				</fileset>
+			</classpath>
+		</javac>
+	</target>
+
+	<target name="wsemantic-war" depends="prepareWsemantic">   
+	<war warfile="${workspace.dir}build/wsemantic/j2ee/${name}-wsemantic.war" webxml="${srcWsemantic.dir}/../WebContent/WEB-INF/web.xml" includes="url">
+		<classes dir="${classWsemantic.dir}">
+			<include name="wsemantic/**"/>
+		</classes>
+		<fileset dir="${srcWsemantic.dir}/../WebContent/">
+			<include name="**.*"/>
+			<include name="WEB-INF/lib/**.*"/>
+			<include name="css/**.*"/>
+			<include name="fonts/**.*"/>
+			<include name="tpl/**.*"/>
+			<include name="images/**.*"/>
+			<include name="js/**/**.*"/>
+			<include name="lib/**.*"/>
+		</fileset>
+		<webinf dir="${srcWsemantic.dir}/../WebContent/WEB-INF">
+			<include name="jboss-web.xml"/>
+		</webinf>
+	</war>	
+</target>
+			
+<target name="wsemantic" depends="wsemantic-war,cond-if1,cond-if2">
+	<copy file="${workspace.dir}build/wsemantic/j2ee/${name}-wsemantic.war" todir="${jboss.deploy.dir}" overwrite="on"/>
+</target>
+<!-- ================================= END configurador web ============================================= -->
+	<target name="prepareSurvey">
+		<mkdir dir="${build.dir}/survey" />
+		<delete includeemptydirs="true">
+			<fileset dir="${build.dir}/survey" includes="**/*"/>
+		</delete>
+		<mkdir dir="${build.dir}/survey/j2ee" />
+		<mkdir dir="${classSurvey.dir}" />
+		<javac srcdir="${classSurvey.dir}/../src" destdir="${classSurvey.dir}" debug="true" debuglevel="lines,vars,source">
+			<classpath>
+				<fileset dir="${build.dir}/common">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${build.dir}/server/j2ee">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${lib.dir}">
+					<include name="servlet-api-2.4.jar"/>
+					<include name="jdom.jar"/>
+					<include name="json/json-lib-2.4-jdk15.jar"/>
+					<include name="ejb.jar"/>					
+				</fileset>
+			</classpath>
+		</javac>
+	</target>
+	
+	<target name="prepareHelp">
+		<mkdir dir="${build.dir}/help" />
+		<delete includeemptydirs="true">
+			<fileset dir="${build.dir}/help" includes="**/*"/>
+		</delete>
+		<mkdir dir="${build.dir}/help/j2ee" />
+		<mkdir dir="${classHelp.dir}" />
+		<javac srcdir="${classHelp.dir}/../src" destdir="${classHelp.dir}" debug="true" debuglevel="lines,vars,source">
+		</javac>
+	</target>
+	
+	<target name="prepareEJBEngine">
+		<mkdir dir="${build.dir}/ejbengine" />
+		<delete includeemptydirs="true">
+			<fileset dir="${build.dir}/ejbengine" includes="**/*"/>
+		</delete>
+		<mkdir dir="${build.dir}/ejbengine/j2ee" />
+		<mkdir dir="${classEJBEngine.dir}" />
+		<javac srcdir="${srcEJBEngine.dir}" destdir="${classEJBEngine.dir}" debug="true" debuglevel="lines,vars,source">
+			<classpath>
+				<fileset dir="${build.dir}/common">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${build.dir}/ruleengine">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${build.dir}/server/j2ee">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${lib.dir}">
+					<include name="jdom.jar"/>
+					<include name="ejb.jar"/>
+					<include name="jboss-system.jar"/>
+					<include name="j2ee.jar"/>
+				</fileset>
+			</classpath>
+		</javac>
+	</target>
+	
+	<target name="prepareBusiness">
+		<mkdir dir="${classBusiness.dir}" />
+		<mkdir dir="${classBusiness.dir}/dynagent/business/genericFiles" />
+		<copydir dest="${classBusiness.dir}/dynagent/business/genericFiles" src="${classBusiness.dir}/../src/dynagent/business/genericFiles"/>
+		<javac srcdir="${classBusiness.dir}/../src" destdir="${classBusiness.dir}" debug="true" debuglevel="lines,vars,source">
+		</javac>
+	</target>
+	
+	<target name="prepareVersionRules">
+		<mkdir dir="${classVersionRules.dir}" />
+		<javac srcdir="${classVersionRules.dir}/../src" destdir="${classVersionRules.dir}" debug="true" debuglevel="lines,vars,source">
+		</javac>
+	</target>
+
+	<target name="prepareRuleengine">
+		<mkdir dir="${build.dir}/ruleengine" />
+		<delete includeemptydirs="true">
+			<fileset dir="${build.dir}/ruleengine" includes="**/*"/>
+		</delete>
+		<mkdir dir="${classRuleengine.dir}" />
+		<javac encoding="UTF-8" srcdir="${classRuleengine.dir}/../src" destdir="${classRuleengine.dir}" debug="true" debuglevel="lines,vars,source">
+			<exclude name="**/old/**/*.java" />
+			<exclude name="**/test/**/*.java" />
+			<exclude name="**/FactPeer.java" />
+			<exclude name="**/FactODatosAttrib.java" />
+			<exclude name="**/JessEngine.java" />
+			<classpath>
+				<fileset dir="${build.dir}/common">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${lib.dir}">
+					<include name="commons-lang-2.3.jar"/>
+					<include name="jdom.jar"/>
+					<include name="drools-core-4.0.7.jar"/>
+					<include name="mvel-1.3.1-java1.4.jar"/>
+				</fileset>
+			</classpath>
+		</javac>
+	</target>
+
+	<target name="prepareNucleo">
+		<mkdir dir="${build.dir}/nucleo" />
+		<delete includeemptydirs="true">
+			<fileset dir="${build.dir}/nucleo" includes="**/*"/>
+		</delete>
+		<mkdir dir="${classNucleo.dir}" />
+		<javac srcdir="${classNucleo.dir}/../src" destdir="${classNucleo.dir}" debug="true" debuglevel="lines,vars,source">
+			<exclude name="**/old/**/*.java" />
+			<classpath>
+				<fileset dir="${build.dir}/common">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${build.dir}/calendar">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${build.dir}/framework">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${build.dir}/ruleengine">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${build.dir}/elecom">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${lib.dir}">
+					<include name="tinylaf.jar"/>
+					<include name="jdom.jar"/>
+				</fileset>
+			</classpath>
+		</javac>
+	</target>
+
+	<target name="prepareAps">
+		<mkdir dir="${build.dir}/aps" />
+		<mkdir dir="${build.dir}/aps/j2ee" />
+		<delete includeemptydirs="true">
+			<fileset dir="${build.dir}/aps" includes="**/*"/>
+		</delete>
+	</target>
+
+	<target name="prepareFramework">
+		<mkdir dir="${build.dir}/framework" />
+		<delete includeemptydirs="true">
+			<fileset dir="${build.dir}/framework" includes="**/*"/>
+		</delete>
+		<mkdir dir="${classFramework.dir}" />
+		<javac srcdir="${classFramework.dir}/../src" destdir="${classFramework.dir}" debug="true" debuglevel="lines,vars,source">
+			<classpath>
+				<fileset dir="${build.dir}/common">
+					<include name="*.jar"/>
+				</fileset>
+			</classpath>
+		</javac>
+	</target>
+
+	<target name="prepareElecom">
+		<mkdir dir="${build.dir}/elecom" />
+		<delete includeemptydirs="true">
+			<fileset dir="${build.dir}/elecom" includes="**/*"/>
+		</delete>
+		<mkdir dir="${classElecom.dir}" />
+		<javac srcdir="${classElecom.dir}/../src" destdir="${classElecom.dir}" debug="true" debuglevel="lines,vars,source">
+			<exclude name="**/old/**/*.java" />
+			<classpath>
+				<fileset dir="${build.dir}/common">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${build.dir}/calendar">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${lib.dir}">
+					<include name="tinylaf.jar"/>
+				</fileset>
+			</classpath>
+		</javac>
+	</target>
+
+	<target name="prepareCalendar">
+		<mkdir dir="${build.dir}/calendar" />
+		<delete includeemptydirs="true">
+			<fileset dir="${build.dir}/calendar" includes="**/*"/>
+		</delete>
+		<mkdir dir="${classCalendar.dir}" />
+		<javac srcdir="${classCalendar.dir}/../src" destdir="${classCalendar.dir}" debug="true" debuglevel="lines,vars,source">
+			<classpath>
+				<fileset dir="${build.dir}/common">
+					<include name="*.jar"/>
+				</fileset>
+			</classpath>
+		</javac>
+	</target>
+
+	<target name="prepareCommon">
+		<mkdir dir="${build.dir}/common" />
+		<delete includeemptydirs="true">
+			<fileset dir="${build.dir}/common" includes="**/*"/>
+		</delete>
+		<mkdir dir="${classCommon.dir}" />
+		<javac srcdir="${classCommon.dir}/../src" destdir="${classCommon.dir}" debug="true" debuglevel="lines,vars,source">
+			<classpath>
+				<fileset dir="${lib.dir}">
+					<include name="jdom.jar"/>
+					<include name="jasperreports-3.7.3.jar"/>
+					<include name="commons-lang-2.3.jar"/>
+					<include name="httpcomponents-client-4.0.3/*.jar"/>
+					<include name="javamail-1.4/mail.jar"/>
+					<include name="javamail-1.4/lib/smtp.jar"/>
+					<include name="javamail-1.4/lib/dsn.jar"/>
+					<include name="javamail-1.4/lib/imap.jar"/>
+					<include name="javamail-1.4/lib/mailapi.jar"/>
+					<include name="javamail-1.4/lib/pop3.jar"/>
+					<include name="commons-codec-1.9.jar"/>
+					<include name="poi-3.6-20091214.jar"/>
+					<include name="ftp4j-1.7.1.jar"/>
+				</fileset>
+			</classpath>
+		</javac>
+	</target>
+	
+	<target name="prepareImportExport">
+		<mkdir dir="${build.dir}/importexport" />
+		<delete includeemptydirs="true">
+			<fileset dir="${build.dir}/importexport" includes="**/*"/>
+		</delete>
+		<mkdir dir="${classImportExport.dir}" />
+		<javac srcdir="${classImportExport.dir}/../src" destdir="${classImportExport.dir}" debug="true" debuglevel="lines,vars,source">
+			<classpath>
+				<fileset dir="${lib.dir}">
+					<include name="jdom.jar"/>
+				</fileset>
+				<fileset dir="${build.dir}/common">
+					<include name="*.jar"/>
+				</fileset>
+				<fileset dir="${build.dir}/ruleengine">
+					<include name="*.jar"/>
+				</fileset>
+			</classpath>
+		</javac>
+	</target>
+
+	<target name="prepareReplicator">
+		<mkdir dir="${build.dir}/replicator" />
+		<delete includeemptydirs="true">
+			<fileset dir="${build.dir}/replicator" includes="**/*"/>
+		</delete>
+	</target>
+	
+	<target name="prepareTools">
+		<mkdir dir="${build.dir}/tools" />
+		<delete includeemptydirs="true">
+			<fileset dir="${build.dir}/tools" includes="**/*"/>
+		</delete>
+	</target>
+				
+	<target name="prepareMigration">
+		<mkdir dir="${build.dir}/migration" />
+		<delete includeemptydirs="true">
+			<fileset dir="${build.dir}/migration" includes="**/*"/>
+		</delete>
+	</target>
+				
+	<!-- ***************************************************************** -->
+	<!-- THE EJB APPLICATION                                               -->
+	<!-- ***************************************************************** -->
+
+	<target name="ejb-jar" depends="prepareServer,cond-if1,cond-if2">
+		
+		<jar	jarfile="${build.dir}/server/j2ee/${name}-ejb.jar"
+		  update="on"
+		  basedir="${classServer.dir}" 
+		  includes="${name}/**,url">
+			<!--<metainf dir="${jboss.config}\SERVER\EJB" includes="**/*.xml,url" />-->
+		</jar>
+		<!--<copy file="${build.dir}/server/j2ee/${name}-ejb.jar" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+		<!--<copy file="${build.dir}/server/j2ee/${name}-ejb.jar" todir="${jboss.tomcat}" overwrite="on"/>-->
+		<!--copy file="${build.dir}/server/j2ee/${name}-ejb.jar" todir="${jboss.lib}" overwrite="on"/-->
+
+	</target>
+	
+
+	<target name="ejbEngine-jar" depends="prepareEJBEngine,cond-if1,cond-if2">
+				
+		<jar	jarfile="${build.dir}/ejbengine/j2ee/${name}-ejbengine.jar"
+		  update="on"
+		  basedir="${classEJBEngine.dir}" 
+		  includes="${name}/**,url">
+			<metainf dir="${classEJBEngine.dir}/META-INF" includes="**/*.xml,url" />
+		</jar>
+		<!--<copy file="${build.dir}/server/j2ee/${name}-ejb.jar" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+		<!--<copy file="${build.dir}/server/j2ee/${name}-ejb.jar" todir="${jboss.tomcat}" overwrite="on"/>-->
+		<!--copy file="${build.dir}/server/j2ee/${name}-ejb.jar" todir="${jboss.lib}" overwrite="on"/-->
+
+	</target>
+	
+	<!-- **********************************END THE EJB APPLICATION************************************************ -->
+	
+	<manifest file="MANIFEST.MF">
+		<attribute name="Built-By" value="${user.name}"/>
+		<attribute name="Main-Class" value="dynagent.gui.dynaApplet"/>
+		<attribute name="Class-Path" value="dynagent.jar dynagent-calendar.jar elecom.jar dynagent-common.jar dynagent-framework.jar dynagent-ruleengine.jar commons-collections-2.1.jar commons-digester-1.7.jar commons-lang-2.3.jar jdom.jar drools-core-4.0.7.jar mvel-1.3.1-java1.4.jar tinylaf.jar jasperreports-3.7.3.jar commons-logging-1.1.1.jar apache-mime4j-0.6.jar commons-codec-1.3.jar httpclient-4.0.3.jar httpcore-4.0.1.jar httpmime-4.0.3.jar batik-anim.jar batik-awt-util.jar batik-bridge.jar batik-codec.jar batik-css.jar batik-dom.jar batik-ext.jar batik-extension.jar batik-gui-util.jar batik-gvt.jar batik-parser.jar batik-script.jar batik-svg-dom.jar batik-svggen.jar batik-swing.jar batik-transcoder.jar batik-util.jar batik-xml.jar xml-apis-ext.jar poi-3.6-20091214.jar saxon9-jdom.jar saxon9.jar barbecue-1.5-beta1.jar"/>
+		<!--<attribute name="Class-Path" value="jdom.jar dynagent-common.jar dynagent-framework.jar dynagent-ruleengine.jar elecom.jar commons-lang-2.3.jar commons-fileupload-1.0.jar jndi-1.2.1.jar xercesImpl.jar commons-beanutils-1.7.jar commons-collections-2.1.jar commons-digester-1.7.jar xml-apis.jar drools-core-4.0.7.jar mvel-1.3.1-java1.4.jar antlr-runtime.jar tinylaf.jar dynagent-calendar.jar jasperreports-3.7.3.jar commons-logging-1.0.2.jar apache-mime4j-0.6.jar commons-codec-1.3.jar httpclient-4.0.3.jar httpcore-4.0.1.jar httpmime-4.0.3.jar"/>-->
+		
+		<attribute name="Application-Name" value="Dynagent ERP"/>
+		<!--attribute name="Application-Library-Allowable-Codebase" value="http://server.dynagent.es* http://dynagent.dnsalias.com* http://localhost*"/-->
+		<attribute name="Permissions" value="all-permissions"/>
+	</manifest>
+	
+	
+	<target name="ruleengine" depends="prepareRuleengine,cond-if1,cond-if2">
+		<jar	jarfile="${build.dir}/ruleengine/${name}-ruleengine.jar"
+		  update="on"
+		  basedir="${classRuleengine.dir}"
+		  includes="**/*.class">
+		</jar>
+		<!--<copy file="${build.dir}/ruleengine/${name}-ruleengine.jar" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+		<copy file="${build.dir}/ruleengine/${name}-ruleengine.jar" todir="${jboss.tomcat}" overwrite="on"/>
+		<!--copy file="${build.dir}/ruleengine/${name}-ruleengine.jar" todir="${jboss.lib}" overwrite="on"/-->
+		<signjar if:set="signpwd" alias="${signcompany}" storepass="${signpwd}" storetype="pkcs12" keystore="${basedir}/dynagent.pfx" tsaurl="http://timestamp.comodoca.com/rfc3161">
+			<path>
+				<fileset dir="${jboss.tomcat}" includes="${name}-ruleengine.jar" />
+			</path>
+		</signjar>
+	</target>
+	
+	<target name="nucleo" depends="prepareNucleo,cond-if1,cond-if2">
+		<jar	manifest="MANIFEST.MF" index="true" jarfile="${build.dir}/nucleo/${name}.jar"
+		  update="on"
+		  basedir="${classNucleo.dir}">
+			<indexjars>
+				<fileset dir="${jboss.tomcat}">
+					<include name="*.jar"/>
+					<exclude name="${name}.jar"/>
+				</fileset>
+			</indexjars>
+		</jar>
+		
+		<!--<copy file="${build.dir}/nucleo/${name}.jar" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+		<copy file="${build.dir}/nucleo/${name}.jar" todir="${jboss.tomcat}" overwrite="on"/>
+		<signjar if:set="signpwd" alias="${signcompany}" storepass="${signpwd}" storetype="pkcs12" keystore="${basedir}/dynagent.pfx" tsaurl="http://timestamp.comodoca.com/rfc3161">
+			<path>
+				<fileset dir="${jboss.tomcat}" includes="${name}.jar" />
+			</path>
+		</signjar>
+	</target>
+
+	<target name="aps-jar" depends="prepareAps,cond-if1,cond-if2">
+		<jar	jarfile="${build.dir}/aps/j2ee/${name}-aps.jar"
+		  update="on"
+		  basedir="${classAps.dir}">
+			<metainf dir="${jboss.config}\APS\EJB" includes="**/*.xml,url" />
+		</jar>
+
+		<!--<copy file="${build.dir}/dynAPS/${name}-aps.jar" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+		<copy file="${build.dir}/aps/j2ee/${name}-aps.jar" todir="${jboss.tomcat}" overwrite="on"/>
+	</target>
+
+	<target name="framework" depends="prepareFramework,cond-if1,cond-if2">
+		<jar	jarfile="${build.dir}/framework/${name}-framework.jar"
+		  update="on"
+		  basedir="${classFramework.dir}">
+		</jar>
+		<!--<copy file="${build.dir}/nucleo/${name}.jar" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+		<copy file="${build.dir}/framework/${name}-framework.jar" todir="${jboss.tomcat}" overwrite="on"/>
+		<signjar if:set="signpwd" alias="${signcompany}" storepass="${signpwd}" storetype="pkcs12" keystore="${basedir}/dynagent.pfx" tsaurl="http://timestamp.comodoca.com/rfc3161">
+			<path>
+				<fileset dir="${jboss.tomcat}" includes="dynagent-framework.jar" />
+			</path>
+		</signjar>
+	</target>
+
+	<target name="calendar" depends="prepareCalendar,cond-if1,cond-if2">
+		<jar	jarfile="${build.dir}/calendar/${name}-calendar.jar"
+		  update="on"
+		  basedir="${classCalendar.dir}">
+		</jar>
+		<!--<copy file="${build.dir}/nucleo/${name}.jar" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+		<copy file="${build.dir}/calendar/${name}-calendar.jar" todir="${jboss.tomcat}" overwrite="on"/>
+		<signjar if:set="signpwd" alias="${signcompany}" storepass="${signpwd}" storetype="pkcs12" keystore="${basedir}/dynagent.pfx" tsaurl="http://timestamp.comodoca.com/rfc3161">
+			<path>
+				<fileset dir="${jboss.tomcat}" includes="dynagent-calendar.jar" />
+			</path>
+		</signjar>
+	</target>
+
+	<target name="elecom" depends="prepareElecom,cond-if1,cond-if2">
+		<jar	jarfile="${build.dir}/elecom/elecom.jar"
+		  update="on"
+		  basedir="${classElecom.dir}">
+		</jar>
+		<!--<copy file="${build.dir}/nucleo/${name}.jar" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+		<copy file="${build.dir}/elecom/elecom.jar" todir="${jboss.tomcat}" overwrite="on"/>
+		<signjar if:set="signpwd" alias="${signcompany}" storepass="${signpwd}" storetype="pkcs12" keystore="${basedir}/dynagent.pfx" tsaurl="http://timestamp.comodoca.com/rfc3161">
+			<path>
+				<fileset dir="${jboss.tomcat}" includes="elecom.jar" />
+			</path>
+		</signjar>
+	</target>
+
+	<target name="common" depends="prepareCommon,cond-if1,cond-if2">
+		<jar	jarfile="${build.dir}/common/dynagent-common.jar"
+		  update="on"
+		  basedir="${classCommon.dir}">
+		</jar>
+		<!--<copy file="${build.dir}/nucleo/${name}.jar" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+		<copy file="${build.dir}/common/dynagent-common.jar" todir="${jboss.tomcat}" overwrite="on"/>
+		<!--copy file="${build.dir}/common/${name}-common.jar" todir="${jboss.lib}" overwrite="on"/-->
+		<signjar if:set="signpwd" alias="${signcompany}" storepass="${signpwd}" storetype="pkcs12" keystore="${basedir}/dynagent.pfx" tsaurl="http://timestamp.comodoca.com/rfc3161">
+			<path>
+				<fileset dir="${jboss.tomcat}" includes="dynagent-common.jar" />
+			</path>
+		</signjar>
+	</target>
+	
+	<target name="importexport" depends="prepareImportExport,cond-if1,cond-if2">
+		<jar	jarfile="${build.dir}/importexport/dynagent-importexport.jar"
+		  update="on"
+		  basedir="${classImportExport.dir}">
+		</jar>
+		<!--<copy file="${build.dir}/nucleo/${name}.jar" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+		<copy file="${build.dir}/importexport/dynagent-importexport.jar" todir="${jboss.tomcat}" overwrite="on"/>
+		<!--copy file="${build.dir}/common/${name}-common.jar" todir="${jboss.lib}" overwrite="on"/-->
+		<signjar if:set="signpwd" alias="${signcompany}" storepass="${signpwd}" storetype="pkcs12" keystore="${basedir}/dynagent.pfx" tsaurl="http://timestamp.comodoca.com/rfc3161">
+			<path>
+				<fileset dir="${jboss.tomcat}" includes="dynagent-importexport.jar" />
+			</path>
+		</signjar>
+	</target>
+
+	<target name="replicator" depends="prepareReplicator,cond-if1,cond-if2">
+		<jar	jarfile="${build.dir}/replicator/${name}-replicator.jar"
+		  update="on"
+		  basedir="${classReplicator.dir}">
+		</jar>
+		<!--<copy file="${build.dir}/replicator/${name}-replicator.jar" todir="..\..\..\..\${name}-replicator\lib" overwrite="on"/>-->
+		<copy file="${build.dir}/replicator/${name}-replicator.jar" todir="${jboss.tomcat}" overwrite="on"/>
+		<signjar if:set="signpwd" alias="${signcompany}" storepass="${signpwd}" storetype="pkcs12" keystore="${basedir}/dynagent.pfx" tsaurl="http://timestamp.comodoca.com/rfc3161">
+			<path>
+				<fileset dir="${jboss.tomcat}" includes="${name}-replicator.jar" />
+			</path>
+		</signjar>
+	</target>
+			
+	<target name="tools" depends="prepareTools,cond-if1,cond-if2">
+		<jar	jarfile="${build.dir}/tools/${name}-tools.jar"
+		  update="on"
+		  basedir="${classTools.dir}">
+		</jar>
+		<!--<copy file="${build.dir}/tools/${name}-tools.jar" todir="..\..\..\..\${name}-tools\lib" overwrite="on"/>-->
+		<!--copy file="${build.dir}/tools/${name}-tools.jar" todir="${jboss.tomcat}" overwrite="on"/>
+		<signjar if:set="signpwd" alias="${signcompany}" storepass="${signpwd}" storetype="pkcs12" keystore="${basedir}/dynagent.pfx" tsaurl="http://timestamp.comodoca.com/rfc3161">
+			<path>
+				<fileset dir="${jboss.tomcat}" includes="${name}-tools.jar" />
+			</path>
+		</signjar-->
+	</target>
+		
+	<target name="migration" depends="prepareMigration,cond-if1,cond-if2">
+		<jar	jarfile="${build.dir}/migration/${name}-migration.jar"
+		  update="on"
+		  basedir="${classMigration.dir}">
+		</jar>
+		<!--<copy file="${build.dir}/migration/${name}-migration.jar" todir="..\..\..\..\${name}-migration\lib" overwrite="on"/>-->
+		<copy file="${build.dir}/migration/${name}-migration.jar" todir="${jboss.tomcat}" overwrite="on"/>
+		<signjar if:set="signpwd" alias="${signcompany}" storepass="${signpwd}" storetype="pkcs12" keystore="${basedir}/dynagent.pfx" tsaurl="http://timestamp.comodoca.com/rfc3161">
+			<path>
+				<fileset dir="${jboss.tomcat}" includes="${name}-migration.jar" />
+			</path>
+		</signjar>
+	</target>
+	
+	<!-- ***************************************************************** -->
+	<!-- THE WEB APPLICATION                                               -->
+	<!-- ***************************************************************** -->
+
+
+	<target name="web-war" depends="prepareServer,ejb-jar,cond-if1,cond-if2">
+		<war 	warfile="${build.dir}/server/j2ee/${name}-web.war" webxml="${srcGenericFilesServer}/web/web.xml" includes="url">
+			<fileset dir="${srcServer.dir}/web">
+				<include name="*"/>
+			</fileset>
+			<!--<webinf dir="${jboss.config}\SERVER\WEB">
+				<include name="jboss-web.xml"/>
+			</webinf>-->
+			<classes dir="${classServer.dir}">
+				<include name="dynagent/web/**"/>
+			</classes>
+		</war>
+		<!--<copy file="${build.dir}/server/j2ee/${name}-web.war" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+	</target>
+
+	<target name="serverWeb-war" depends="prepareServerWeb,cond-if1,cond-if2">
+		<war 	warfile="${build.dir}/serverweb/j2ee/${name}-web.war" webxml="${srcServerWeb.dir}/../WebContent/WEB-INF/web.xml" includes="url">
+			<classes dir="${classServerWeb.dir}">
+				<include name="dynagent/web/**"/>
+			</classes>
+			<fileset dir="${srcServerWeb.dir}/../WebContent/">
+				<include name="**.*"/>
+				<include name="WEB-INF/lib/**.*"/>
+			</fileset>
+			<webinf dir="${srcServerWeb.dir}/../WebContent/WEB-INF">
+				<include name="jboss-web.xml"/>
+			</webinf>
+		</war>
+		<!--<copy file="${build.dir}/server/j2ee/${name}-web.war" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+	</target>
+
+	<target name="register-war" depends="prepareRegister">
+		<war warfile="${build.dir}/register/j2ee/${name}-register.war" webxml="${srcRegister.dir}/../WebContent/WEB-INF/web.xml" includes="url">
+			<classes dir="${classRegister.dir}">
+				<include name="dynagent/register/**"/>
+			</classes>
+			<fileset dir="${srcRegister.dir}/../WebContent/">
+				<include name="**.*"/>
+				<include name="WEB-INF/lib/**.*"/>
+			</fileset>
+			<webinf dir="${srcRegister.dir}/../WebContent/WEB-INF">
+				<include name="jboss-web.xml"/>
+			</webinf>
+		</war>
+		<!--<copy file="${build.dir}/server/j2ee/${name}-web.war" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+	</target>
+	
+	<target name="survey-war" depends="prepareSurvey">   
+		<war warfile="${build.dir}/survey/j2ee/${name}-survey.war" webxml="${srcSurvey.dir}/../WebContent/WEB-INF/web.xml" includes="url">
+			<classes dir="${classSurvey.dir}">
+				<include name="dynagent/survey/**"/>
+			</classes>
+			<fileset dir="${srcSurvey.dir}/../WebContent/">
+				<include name="**.*"/>
+				<include name="WEB-INF/lib/**.*"/>
+				<include name="css/**.*"/>
+				<include name="images/**.*"/>
+				<include name="js/**/**.*"/>
+				<include name="lib/**.*"/>
+			</fileset>
+			<webinf dir="${srcSurvey.dir}/../WebContent/WEB-INF">
+				<include name="jboss-web.xml"/>
+			</webinf>
+		</war>
+		<!--<copy file="${build.dir}/server/j2ee/${name}-web.war" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+	</target>
+	
+	<target name="help-war" depends="prepareHelp">
+		<war warfile="${build.dir}/help/j2ee/${name}-help.war" webxml="${srcHelp.dir}/../WebContent/WEB-INF/web.xml" includes="url">
+			<classes dir="${classHelp.dir}">
+				<include name="dynagent/help/**"/>
+			</classes>
+			<fileset dir="${srcHelp.dir}/../WebContent/">
+				<include name="**.*"/>
+				<include name="images/**.*"/>
+				<include name="WEB-INF/lib/**.*"/>
+			</fileset>
+			<webinf dir="${srcHelp.dir}/../WebContent/WEB-INF">
+				<include name="jboss-web.xml"/>
+			</webinf>
+		</war>
+		<!--<copy file="${build.dir}/server/j2ee/${name}-web.war" todir="..\..\..\..\${name}\lib" overwrite="on"/>-->
+	</target>
+	
+	<!-- ***************************************************************** -->
+	<!-- THE COMPLETE J2EE APPLICATION                                     -->
+	<!-- ***************************************************************** -->
+
+	<target name="server" depends="prepareServer,ejb-jar,web-war,cond-if1,cond-if2">
+		<ear destfile="${build.dir}/server/${name}-ejb.ear" appxml="${srcGenericFilesServer}/application.xml">
+			<fileset dir="${build.dir}/server/j2ee" includes="*"/>
+			<fileset dir="${build.dir}/common" includes="*"/>
+			<fileset dir="${build.dir}/ruleengine" includes="*"/>
+		</ear>
+		<copy file="${build.dir}/server/${name}-ejb.ear" todir="${jboss.deploy.dir}" overwrite="on"/>
+		<antcall target="business"/>
+	</target>
+	
+	<target name="serverWeb" depends="ejbEngine-jar,serverWeb-war,cond-if1,cond-if2">
+		<ear destfile="${build.dir}/serverweb/${name}-web.ear" appxml="${classServerWeb.dir}/../application.xml">
+			<fileset dir="${build.dir}/serverweb/j2ee" includes="*"/>
+			<fileset dir="${build.dir}/server/j2ee" includes="*.jar"/>
+			<fileset dir="${build.dir}/common" includes="*"/>
+			<fileset dir="${build.dir}/ruleengine" includes="*"/>
+			<fileset dir="${build.dir}/ejbengine/j2ee" includes="*.jar"/>
+		</ear>
+		<copy file="${build.dir}/serverweb/${name}-web.ear" todir="${jboss.deploy.dir}" overwrite="on"/>
+		<!--<antcall target="businessweb"/>-->
+	</target>
+	
+	<target name="register" depends="ejbEngine-jar,register-war,cond-if1,cond-if2">
+		<ear destfile="${build.dir}/register/${name}-register.ear" appxml="${classRegister.dir}/../application.xml">
+			<fileset dir="${build.dir}/register/j2ee" includes="*"/>
+			<!--fileset dir="${build.dir}/server/j2ee" includes="*.jar"/>
+			<fileset dir="${build.dir}/common" includes="*"/>
+			<fileset dir="${build.dir}/ruleengine" includes="*"/-->
+			<fileset dir="${build.dir}/ejbengine/j2ee" includes="*.jar"/>
+			<!--fileset dir="${lib.dir}/jcaptcha" includes="*.jar"/-->
+		</ear>
+		<copy file="${srcRegister.dir}/../registerParams.txt" todir="${jboss.deploy.dir}" overwrite="on"/>
+		<copy file="${build.dir}/register/${name}-register.ear" todir="${jboss.deploy.dir}" overwrite="on"/>
+	</target>
+	
+	<target name="survey" depends="survey-war,cond-if1,cond-if2">
+		<copy file="${build.dir}/survey/j2ee/${name}-survey.war" todir="${jboss.deploy.dir}" overwrite="on"/>
+	</target>
+	
+	<target name="help" depends="help-war,cond-if1,cond-if2">
+		<ear destfile="${build.dir}/help/${name}-help.ear" appxml="${classHelp.dir}/../application.xml">
+			<fileset dir="${build.dir}/help/j2ee" includes="*"/>
+		</ear>
+		<copy file="${build.dir}/help/${name}-help.ear" todir="${jboss.deploy.dir}" overwrite="on"/>
+
+	</target>
+	
+	<target name="business" depends="prepareBusiness">
+		<java classname="dynagent.business.Main" fork="true">
+            <arg value="-b"/>
+			<arg line="${business.num}"/>
+           	<arg value="-j"/>
+			<arg value="${jboss.home}"/>
+			<arg value="-r"/>
+			<arg value="${business.replica}"/>
+			<arg value="-g"/>
+			<arg value="${business.gestor}"/>
+			<arg value="-u"/>
+			<arg value="${business.user}"/>
+			<arg value="-p"/>
+			<arg value="${business.password}"/>
+			<arg value="-rules"/>
+			<arg value="${business.rules}"/>
+			<arg value="-hide"/>
+			<arg value="${business.hidehistoryDDBB}"/>
+			<arg value="-dbport"/>
+			<arg value="${business.dbport}"/>
+			<arg value="-sharedbean"/>
+			<arg value="${business.sharedbean}"/>
+			<arg value="-licensecode"/>
+			<arg value="${business.licensecode}"/>
+			<classpath>
+	        	<pathelement location="${classBusiness.dir}"/>
+	        </classpath>   
+        </java>
+	</target>
+
+	<target name="ear" depends="common,ruleengine">
+		<antcall target="server"/>
+	</target>
+	
+	<target name="earWeb" depends="common,ruleengine,prepareServerWeb,prepareServer,ejb-jar">
+		<antcall target="serverWeb"/>
+	</target>
+	
+	<target name="earRegister" depends="common,ruleengine,prepareRegister,prepareServer,ejb-jar">
+		<antcall target="register"/>
+	</target>
+
+	<target name="aps" depends="prepareAps,aps-jar,cond-if1,cond-if2">
+		<ear destfile="${build.dir}/aps/${name}-aps.ear" appxml="${jboss.config}\APS\application.xml">
+			<fileset dir="${build.dir}/aps/j2ee" includes="*"/>
+		</ear>
+		<copy file="${build.dir}/aps/${name}-aps.ear" todir="${jboss.deploy.dir}" overwrite="on"/>
+	</target>
+
+	<target name="all" depends="common,ruleengine,server,framework,calendar,elecom,nucleo" />
+
+	<!--
+	<target name="server_aps" depends="prepareServer,prepareAps,ejb-jar,aps-jar,web-war,cond-if1,cond-if2">
+		<ear destfile="${build.dir}/server/${name}.ear" appxml="..\..\SERVER\JBOSS\EJB2\application.xml">
+			<fileset dir="${build.dir}/server/j2ee" includes="*"/>
+			<fileset dir="${build.dir}/dynAPS/j2ee" includes="*"/>
+		</ear>
+		<copy file="${build.dir}/server/${name}.ear" todir="${jboss.deploy.dir}" overwrite="on"/>
+	</target>-->
+
+
+	<target name="obfuscateServer">
+
+			<taskdef resource="proguard/ant/task.properties" classpath="C:/DYNAGENT/proguard4.10/lib/proguard.jar" />
+			
+			<proguard configuration="obfuscationServer.pro">
+				-injars      ${build.dir}/server/dynagent-ejb.ear
+				-outjars     "${jboss.deploy.dir}/dynagent-ejb.ear"
+			</proguard>
+			<antcall target="business"/>
+	</target>
+	
+	<target name="obfuscate">
+
+		<taskdef resource="proguard/ant/task.properties" classpath="C:/DYNAGENT/proguard4.10/lib/proguard.jar" />
+
+		<proguard configuration="obfuscation.pro">
+			-injars      ${build.dir}/nucleo/dynagent.jar
+			-outjars     "${jboss.tomcat}/dynagent.jar"
+			-injars      ${build.dir}/framework/dynagent-framework.jar
+			-outjars     "${jboss.tomcat}/dynagent-framework.jar"
+			-injars      ${build.dir}/elecom/elecom.jar
+			-outjars     "${jboss.tomcat}/elecom.jar"
+			-injars      ${build.dir}/calendar/dynagent-calendar.jar
+			-outjars     "${jboss.tomcat}/dynagent-calendar.jar"
+			-injars      ${build.dir}/ruleengine/dynagent-ruleengine.jar
+			-outjars     "${jboss.tomcat}/dynagent-ruleengine.jar"
+			-injars      ${build.dir}/common/dynagent-common.jar
+			-outjars     "${jboss.tomcat}/dynagent-common.jar"
+			<!---injars      ${build.dir}/importexport/dynagent-importexport.jar
+			-outjars     "${jboss.tomcat}/dynagent-importexport.jar"-->
+		</proguard>
+
+		<jar	manifest="MANIFEST.MF" index="true" jarfile="${jboss.tomcat}/${name}.jar"
+		  update="on"
+		  basedir="${classNucleo.dir}"
+			excludes="**/*.class">
+			<indexjars>
+				<fileset dir="${jboss.tomcat}">
+					<include name="*.jar"/>
+					<exclude name="${name}.jar"/>
+				</fileset>
+			</indexjars>
+		</jar>
+		
+		<!-- Los firmamos ya que al crearse de nuevo la firma que tuvieran ha perdido su validez -->
+		<signjar if:set="signpwd" alias="${signcompany}" storepass="${signpwd}" storetype="pkcs12" keystore="${basedir}/dynagent.pfx" tsaurl="http://timestamp.comodoca.com/rfc3161">
+			<path>
+				<fileset dir="${jboss.tomcat}" includes="dyna*.jar" />
+				<fileset dir="${jboss.tomcat}" includes="elecom.jar" />
+			</path>
+		</signjar>
+		
+	</target>
+			
+	<target name="signjar">
+		<signjar if:set="signpwd" alias="${signcompany}" storepass="${signpwd}" storetype="pkcs12" keystore="${basedir}/dynagent.pfx" tsaurl="http://timestamp.comodoca.com/rfc3161">
+			<path>
+				<fileset dir="${jboss.tomcat}" includes="*.jar" />
+			</path>
+		</signjar>
+	</target>
+	
+	<path id="drools.classpath">
+		<fileset dir="${lib.dir}/drools">
+			<include name="**/*.jar"/>
+		</fileset>
+	</path>
+
+	<path id="compileRules.classpath">
+		<fileset dir="${jboss.tomcat}">
+			<include name="dynagent-common.jar"/>
+			<include name="dynagent-ruleengine.jar"/>
+			<include name="jdom.jar"/>
+			<include name="dynagent-importexport.jar"/>
+		</fileset>
+	</path>
+
+
+	<taskdef name="compiler" classname="org.drools.contrib.DroolsCompilerAntTask" classpathref="drools.classpath" />
+
+	<!-- Ejemplo para compilar reglas normales y reglas del cliente: ant rules -Dclient=multiges -->
+	<target name="rulesClient" if="client">
+		<compiler 
+			srcdir="${customworkspace.dir}Clients/src/${client}/"
+			tofile="${jboss.tomcat}/${client}Rules.dpkg"
+			binformat="package"
+			classpathref="compileRules.classpath">
+			<include name="*.drl" />
+		</compiler>
+		
+		<java classname="dynagent.version.DpkgToGzip" fork="true">
+			<arg line="${jboss.tomcat}/${client}Rules.dpkg"/>
+			<classpath>
+	        	<pathelement location="${classVersionRules.dir}"/>
+	        </classpath>
+		</java>
+	</target>
+	
+
+	<target name="rules" depends="prepareVersionRules">
+		<compiler 
+			srcdir="${srcGenericRules}/"
+			tofile="${jboss.tomcat}/rules.dpkg"
+			binformat="package"
+			classpathref="compileRules.classpath">
+			
+			<include name="JBossQueries.drl" />
+			<include name="Initialize_Rules.drl"/>
+			<include name="SystemRules.drl"/>
+			<include name="PrecargasRules.drl"/>			
+			<include name="CardinalityRules.drl" />
+			<include name="DefaultValues_Rules.drl"/>
+			<include name="VariosRules.drl"/>
+			<include name="Report_Rules.drl"/>
+			<include name="FilterRules.drl"/>
+			<include name="StandardRules.drl" />
+			
+			<include name="Almacenamiento_Rules.drl" />
+			
+			<include name="Contabilidad*.drl" />				
+			<include name="Liquidaciones_Rules.drl" />
+		
+			<include name="AgentesComerciales_Rules.drl" />																
+
+			<include name="Costes_Rules.drl"/>
+			<include name="Produccion_rules.drl"/>
+			<include name="Trazabilidad_Rules.drl"/>			
+			<include name="Replica_Rules.drl"/>					
+			<include name="Facturación_Rules.drl"/>		
+			<include name="Tesorería_Rules.drl"/>					
+			<include name="Proyectos.drl"/>
+			<include name="Tiendas_Rules.drl"/>														
+			<include name="RulesConfigurablesPorUsuario.drl"/>																																								
+			<include name="Logistica_Rules.drl"/>							
+			<include name="Disponibilidad.drl"/>						
+			<include name="Predefinidos.drl" />
+			<include name="Remesas.drl"/>
+			<include name="RemesasSEPA.drl"/>
+			
+			<include name="agregados.drl" />
+			
+		</compiler>
+		
+		<java classname="dynagent.version.DpkgToGzip" fork="true">
+			<arg line="${jboss.tomcat}/rules.dpkg"/>
+			<classpath>
+	        	<pathelement location="${classVersionRules.dir}"/>
+	        </classpath>
+		</java>
+
+		<compiler 
+			srcdir="${srcGenericRules}/"
+			tofile="${jboss.tomcat}/configurationRules.dpkg"
+			binformat="package"
+			classpathref="compileRules.classpath">
+			<include name="Initialize_Rules.drl"/>
+			<include name="ConfigurationAvanzada_Rules.drl" />
+			<include name="JBossQueries.drl" />
+			<include name="CheckModel"/>
+			<include name="Clasificacion_Rules.drl" />
+			<include name="SystemRules.drl"/>
+			<include name="StandardRules.drl" />
+			<include name="FilterRules.drl"/>
+			<include name="Replica_Rules.drl"/>		
+		</compiler>
+		<java classname="dynagent.version.DpkgToGzip" fork="true">
+			<arg line="${jboss.tomcat}/configurationRules.dpkg"/>
+			<classpath>
+				<pathelement location="${classVersionRules.dir}"/>
+			</classpath>
+		</java>
+		
+		<antcall target="rulesClient"/>
+	</target>
+
+	<target name="rulesWsem">
+		<compiler 
+			srcdir="${srcGenericRules}/"
+			tofile="${jboss.tomcat}/wsemantic.dpkg"
+			binformat="package"
+			classpathref="compileRules.classpath">
+			
+			<include name="JBossQueries.drl" />
+			<include name="Initialize_Rules.drl"/>
+			<include name="SystemRules.drl"/>
+			<include name="PrecargasRules.drl"/>			
+			<include name="CardinalityRules.drl" />
+			<include name="DefaultValues_Rules.drl"/>		
+		</compiler>
+		
+		<java classname="dynagent.version.DpkgToGzip" fork="true">
+			<arg line="${jboss.tomcat}/wsemantic.dpkg"/>
+			<classpath>
+	        	<pathelement location="${classVersionRules.dir}"/>
+	        </classpath>
+		</java>
+
+		<compiler 
+			srcdir="${srcGenericRules}/"
+			tofile="${jboss.tomcat}/configurationRules.dpkg"
+			binformat="package"
+			classpathref="compileRules.classpath">
+			<include name="Initialize_Rules.drl"/>
+			<include name="ConfigurationAvanzada_Rules.drl" />
+			<include name="JBossQueries.drl" />
+			<include name="CheckModel"/>
+			<include name="Clasificacion_Rules.drl" />
+			<include name="SystemRules.drl"/>
+			<include name="StandardRules.drl" />
+			<include name="FilterRules.drl"/>
+			<include name="Replica_Rules.drl"/>		
+		</compiler>
+		<java classname="dynagent.version.DpkgToGzip" fork="true">
+			<arg line="${jboss.tomcat}/configurationRules.dpkg"/>
+			<classpath>
+				<pathelement location="${classVersionRules.dir}"/>
+			</classpath>
+		</java>
+		
+		<antcall target="rulesClient"/>
+	</target>
+
+				
+	<target name="rulesRamsons" depends="prepareVersionRules">
+
+		<compiler 
+			srcdir="${srcGenericRules}/"
+			tofile="${jboss.tomcat}/rules.dpkg"
+			binformat="package"
+			classpathref="compileRules.classpath">
+
+			<include name="Ramsons.drl"/>
+			<include name="JBossQueries.drl" />			
+			
+			
+			<include name="ConfigurationAvanzada_Rules.drl" />
+
+			<include name="CardinalityRules.drl" />			
+			<include name="Initialize_Rules.drl"/>			
+			<include name="DefaultValues_Rules.drl"/>
+			<include name="FilterRules.drl"/>
+			<include name="PrecargasRules.drl"/>								
+			<include name="Report_Rules.drl"/>
+			
+			<include name="Almacenamiento_Rules.drl" />
+			<include name="Costes_Rules.drl"/>
+			<include name="SystemRules.drl"/>						
+			<include name="VariosRules.drl"/>
+			
+			<include name="AgentesComerciales_Rules.drl" />						
+			<include name="Facturación_Rules.drl"/>					
+			<include name="Tesorería_Rules.drl"/>			
+			
+			
+			<include name="RulesConfigurablesPorUsuario.drl"/>
+
+
+			
+			<include name="Remesas.drl"/>	
+			<include name="ImportExport*.drl" />
+			<include name="Contabilidad*.drl" />						
+			<include name="agregados.drl" />
+			<!--	
+
+			
+			<include name="Produccion_rules.drl"/>	
+			<include name="Predefinidos.drl" />
+			<include name="Proyectos.drl"/>
+			<include name="Tiendas_Rules.drl"/>
+			<include name="Trazabilidad_Rules.drl"/>
+			<include name="Replica_Rules.drl" />
+			<include name="Liquidaciones_Rules.drl" />
+			<include name="Logistica_Rules.drl" />-->
+		
+						
+			
+		</compiler>
+		
+		<java classname="dynagent.version.DpkgToGzip" fork="true">
+			<arg line="${jboss.tomcat}/rules.dpkg"/>
+				<classpath>
+			<pathelement location="${classVersionRules.dir}"/>
+			</classpath>
+		</java>
+		
+		<compiler 
+			srcdir="${srcGenericRules}/"
+			tofile="${jboss.tomcat}/configurationRules.dpkg"
+			binformat="package"
+			classpathref="compileRules.classpath">
+			<include name="Initialize_Rules.drl"/>
+			<include name="ConfigurationAvanzada_Rules.drl" />
+			<include name="JBossQueries.drl" />
+			<include name="CheckModel"/>
+			<include name="Clasificacion_Rules.drl" />		
+			<include name="SystemRules.drl"/>			
+		</compiler>
+
+		<java classname="dynagent.version.DpkgToGzip" fork="true">
+			<arg line="${jboss.tomcat}/configurationRules.dpkg"/>
+			<classpath>
+				<pathelement location="${classVersionRules.dir}"/>
+			</classpath>
+		</java>
+		<compiler 
+			srcdir="${workspace.dir}Ramsons/${srcRules}/"
+			tofile="${jboss.tomcat}/ramsonsRules.dpkg"
+			binformat="package"
+			classpathref="compileRules.classpath">
+			<include name="*.drl" />
+		</compiler>
+		<java classname="dynagent.version.DpkgToGzip" fork="true">
+			<arg line="${jboss.tomcat}/ramsonsRules.dpkg"/>
+			<classpath>
+				<pathelement location="${classVersionRules.dir}"/>
+			</classpath>
+		</java>
+	</target>
+	
+	<target name="rulesGamito" depends="prepareVersionRules">
+		<compiler 
+			srcdir="${srcGenericRules}/"
+			tofile="${jboss.tomcat}/rules.dpkg"
+			binformat="package"
+			classpathref="compileRules.classpath">
+			<include name="*.drl" />
+			<exclude name="Academica*.drl" />
+			<exclude name="AgentesComerciales*.drl" />
+			<exclude name="Debug*.drl" />
+			<exclude name="Deprecated*.drl" />			
+			<exclude name="RolesComerciales*.drl" />
+			<exclude name="PrevencionRiesgos*.drl" />
+			<exclude name="Liquidaciones*.drl" />
+			<exclude name="Tiendas*.drl" />
+			<exclude name="Vales*.drl" />
+			<exclude name="Replica*.drl" />
+			<exclude name="En_implement*.drl" />
+			<exclude name="Logistica*.drl" />
+			<exclude name="ImportExport*.drl" />
+			<exclude name="Contabilidad*.drl" />
+			<exclude name="Predefinidos.drl" />
+			<exclude name="CheckModel*.drl" />																		
+		</compiler>
+		
+		<java classname="dynagent.version.DpkgToGzip" fork="true">
+			<arg line="${jboss.tomcat}/rules.dpkg"/>
+			<classpath>
+				<pathelement location="${classVersionRules.dir}"/>
+			</classpath>
+		</java>
+		
+		<compiler 
+			srcdir="${workspace.dir}Gamito/${srcRules}/"
+			tofile="${jboss.tomcat}/gamitoRules.dpkg"
+			binformat="package"
+			classpathref="compileRules.classpath">
+			<include name="*.drl" />
+		</compiler>
+		
+		<java classname="dynagent.version.DpkgToGzip" fork="true">
+			<arg line="${jboss.tomcat}/gamitoRules.dpkg"/>
+			<classpath>
+				<pathelement location="${classVersionRules.dir}"/>
+			</classpath>
+		</java>
+	</target>
+
+	<target name="rulesServer" >
+		<compiler 
+			srcdir="${srcGenericRules}/" 		
+			tofile="${jboss.tomcat}/query.dpkg"
+			binformat="package"
+			classpathref="compileRules.classpath">
+			<include name="JBossQueries.drl" />
+			<!--<include name="Initialize*.drl" />
+			<include name="Configuration*.drl" />			
+			-->
+		</compiler>
+		<java classname="dynagent.version.DpkgToGzip" fork="true">
+			<arg line="${jboss.tomcat}/query.dpkg"/>
+			<classpath>
+				<pathelement location="${classVersionRules.dir}"/>
+			</classpath>
+		</java>
+		<copy file="${jboss.tomcat}/query.dpkg" todir="${classTools.dir}/.." overwrite="on"/>
+	</target>
+
+	<target name="rulesWeb" >
+		<java classname="dynagent.version.Main" fork="true">
+           	<arg line="${srcGenericRules}"/>
+			<classpath>
+                <pathelement location="${classVersionRules.dir}"/>
+            </classpath>   
+		</java>
+		<compiler 
+			srcdir="${srcGenericRules}/temp/"
+			tofile="${jboss.deploy.dir}/rules.dpkg"
+			binformat="package"
+			classpathref="compileRules.classpath">
+			
+			<include name="JBossQueries.drl" />
+			<include name="AgentesComerciales_Rules.drl" />
+			<include name="Almacenamiento_Rules.drl" />
+			<include name="CardinalityRules.drl" />
+			<include name="ConfigurationAvanzada_Rules.drl" />
+			<include name="Costes_Rules.drl"/>
+			<include name="DefaultValues_Rules.drl"/>
+			<include name="Facturación_Rules.drl"/>
+			<include name="FilterRules.drl"/>			
+			<include name="Initialize_Rules.drl"/>
+			<include name="PrecargasRules.drl"/>
+			<include name="Produccion_rules.drl"/>
+			<include name="Proyectos.drl"/>
+			<include name="Report_Rules.drl"/>
+			<include name="RulesConfigurablesPorUsuario.drl"/>
+			<include name="SystemRules.drl"/>
+			<include name="Tesorería_Rules.drl"/>
+			<include name="Tiendas_Rules.drl"/>
+			<include name="Trazabilidad_Rules.drl"/>
+			<include name="VariosRules.drl"/>
+			<!--
+			<include name="Contabilidad*.drl" />
+			<include name="ImportExport*.drl" />		
+			<include name="Predefinidos.drl" />					
+			<include name="Liquidaciones_Rules.drl" />
+			<include name="Logistica_Rules.drl" />
+			<include name="Remesas.drl"/>		
+			<include name="Replica_Rules.drl" />			
+			-->
+		</compiler>
+
+		<java classname="dynagent.version.DpkgToGzip" fork="true">
+			<arg line="${jboss.deploy.dir}/rules.dpkg"/>
+			<classpath>
+	        	<pathelement location="${classVersionRules.dir}"/>
+	        </classpath>
+		</java>
+	</target>
+	
+	<target name="rulesKnowledge" >
+		<compiler 
+			srcdir="${srcGenericRules}/" 		
+			tofile="${jboss.tomcat}/rules.rules"
+			binformat="knowledge"
+			classpathref="compileRules.classpath">
+			<include name="*.drl" />
+		</compiler>
+	</target>
+
+	<target name="junitHudson">
+		<xslt basedir="source" destdir="../"  extension=".xml" style="../marathon.xsl"/>
+	</target>
+</project>

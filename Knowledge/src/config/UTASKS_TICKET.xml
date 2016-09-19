@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<CONFIG>
+	<UTASKS>
+		
+		<!--AREA TIENDAS-->
+		
+		<UT A_FUNC="Tiendas" NAME="TICKETS">
+			<TG_CLASS CLASS="TICKET_VENTA"  />
+		</UT>
+	
+		<UT A_FUNC="Tiendas" NAME="NUEVO_TICKET">
+			<TG_CLASS CLASS="TICKET_VENTA"  />
+		</UT>
+		<UT A_FUNC="Tiendas" NAME="CREDITO">
+			<TG_CLASS CLASS="CRÉDITO_TARJETA"  />
+		</UT>	
+		<UT A_FUNC="Tiendas" NAME="Artículo Financiero">
+			<TG_CLASS CLASS="ARTÍCULO_FINANCIERO"  />
+		</UT>
+		<UT A_FUNC="Tiendas" NAME="TICKET_EXTERNO" GLOBAL="TRUE">
+			<TG_CLASS CLASS="TICKET_VENTA"  />
+		</UT>	
+	</UTASKS>
+</CONFIG>

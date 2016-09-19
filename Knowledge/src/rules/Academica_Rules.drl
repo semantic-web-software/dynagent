@@ -1,0 +1,101 @@
+package dynagent.ruleengine.src.ruler.ERPrules;
+import dynagent.ruleengine.src.ruler.ERPrules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+global DataModelAdapter dma;
+
+rule "CURSO DE GRUPO FORMATIVO NUEVO ES EL CURSO DE SU ACCION FORMATIVA"
+ agenda-group "rules" when 
+  	
+	Lock(CLASSNAME=="ACCIÓN_FORMATIVA", idacc:ID!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK, LEVEL==Constants.LEVEL_PROTOTYPE)
+	ObjValue(ID==idacc,PROPNAME=="curso",idcurso:VALOR!=null,curso:OBJECTVALUE) 
+	ObjValue(ID==idacc,PROPNAME=="grupo_formativo",idgrupo:VALUE!=null,idtogrupo:VALUECLS) 
+	not(ObjValue(ID==idgrupo,PROPNAME=="curso",VALOR==idcurso))
+then
+ 	dma.printRule("\n\n=================>>CURSO DE GRUPO FORMATIVO NUEVO ES EL CURSO DE SU ACCION FORMATIVA");
+ 	dma.setValue(idgrupo,idtogrupo,"curso",curso);
+end
+
+rule "DIRECCION ENVIO POR DEFECTO DE ALUMNO LA DE SU EMPRESA"
+ agenda-group "rules" when 
+  	
+	Lock(CLASSNAME=="ALUMNO", idal:ID!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK, LEVEL==Constants.LEVEL_PROTOTYPE)
+	ObjValue(ID==idal,idtoal:IDTO,PROPNAME=="empresa",empresa:VALOR!=null)
+	ObjValue(ID==empresa, PROPNAME=="dirección_envío", direcc:OBJECTVALUE!=null)
+	not(ObjValue(ID==idal,PROPNAME=="dirección_envío",VALOR!=null))
+then
+ 	dma.printRule("\n\n================= DIRECCION ENVIO POR DEFECTO DE ALUMNO LA DE SU EMPRESA");
+	dma.setValue(idal,idtoal,"dirección_envío",direcc);
+end
+
+
+rule "FACTURAR ACCION FORMATIVA: creacion factura a la empresa del alumno"
+agenda-group "rules" when
+    
+    ObjValue(CLASSNAME=="Facturar_acción_formativa_a_empresa", idUTask:ID,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME==Constants.PROP_RDN,VALOR==Constants.INDIVIDUAL_INFORMADO)
+    ObjValue(ID==idUTask, idtoUtask:IDTO,PROPNAME=="sourceClass",idAccionForm:VALOR!=null)
+    ObjValue(ID==idAccionForm, PROPNAME=="alumno",alumno:VALOR!=null,idtoalumno:VALUECLS)
+    eval(dma.preload(new Integer(alumno),idtoalumno))
+    ObjValue(ID==alumno, PROPNAME=="empresa",idempresa:VALOR!=null,empresa:OBJECTVALUE)
+    not(
+    	(and
+    		ObjValue(ID==idUTask, PROPNAME=="targetClass",idFact:VALOR!=null)
+    		ObjValue(ID==idFact, PROPNAME=="cliente",VALOR==idempresa)
+    	)
+    )
+then
+	dma.printRule("\n\n   ====================================FACTURAR ACCION FORMATIVA: creacion factura a la empresa del alumno: empresa="+empresa);
+	Domain domfact=dma.creaIndividualOfClass("FACTURA_A_CLIENTE");
+	dma.setValue(domfact,"cliente",empresa);
+	dma.addValue(idUTask,idtoUtask,"targetClass",new ObjectValue(domfact));
+end
+
+rule "FACTURAR ACCION FORMATIVA: asignacion accion formativa a la factura"
+agenda-group "rules" when
+    
+    ObjValue(CLASSNAME=="Facturar_acción_formativa_a_empresa", idUTask:ID,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME==Constants.PROP_RDN,VALOR==Constants.INDIVIDUAL_INFORMADO)
+    ObjValue(ID==idUTask, PROPNAME=="sourceClass",idAccionForm:VALOR!=null,accionform:OBJECTVALUE)
+    ObjValue(ID==idAccionForm, PROPNAME=="alumno",alumno:VALOR!=null)
+    ObjValue(ID==idAccionForm, PROPNAME=="curso",idcurso:VALOR!=null,curso:OBJECTVALUE)
+    ObjValue(ID==alumno, PROPNAME=="empresa",empresa:VALOR!=null)
+    ObjValue(ID==idUTask, PROPNAME=="targetClass",idFact:VALOR!=null)
+	ObjValue(ID==idFact, idtoFact:IDTO,PROPNAME=="cliente",VALOR==empresa)
+    not(
+    	(and
+	    	ObjValue(ID==idFact, PROPNAME=="línea",idlinea:VALOR!=null)
+	    	ObjValue(ID==idlinea, PROPNAME=="lote",VALOR==idAccionForm)
+	    )
+	 )
+then
+	dma.printRule("\n\n   ====================================FACTURAR ACCION FORMATIVA: accion formativa a la factura");
+	Domain domlinea=dma.creaIndividualOfClass("LÍNEA_ARTÍCULOS");
+	dma.setValue(domlinea,"cantidad",dma.buildDataValue("cantidad","1"));
+	dma.setValue(domlinea,"lote",accionform);
+	dma.setValue(domlinea,"producto",curso);
+	dma.addValue(idFact,idtoFact,"línea",new ObjectValue(domlinea));
+end
+
+rule "AGENTE COMERCIAL DE LA FACTURA DE ACCION FORMATIVA"
+agenda-group "rules" when
+    
+    ObjValue(CLASSNAME=="Facturar_acción_formativa_a_empresa", idUTask:ID,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME==Constants.PROP_RDN,VALOR==Constants.INDIVIDUAL_INFORMADO)
+    ObjValue(ID==idUTask, PROPNAME=="targetClass",idFact:VALOR!=null)
+	ObjValue(ID==idFact, idtoFact:IDTO,PROPNAME=="línea",linea:VALOR)
+	ObjValue(ID==linea, PROPNAME=="lote",idAccionForm:VALOR)
+	ObjValue(ID==idAccionForm, PROPNAME=="agente_comercial",agente:OBJECTVALUE!=null)
+	not(ObjValue(ID==idFact, PROPNAME=="agente_comercial",VALOR!=null))
+then
+	dma.printRule("\n\n   ====================================AGENTE COMERCIAL DE LA FACTURA DE ACCION FORMATIVA");
+	dma.setValue(idFact,idtoFact,"agente_comercial",agente);
+end

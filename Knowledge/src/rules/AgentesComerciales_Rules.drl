@@ -1,0 +1,776 @@
+package dynagent.ruleengine.src.ruler.ERPrules;
+import dynagent.ruleengine.src.ruler.ERPrules.datarules.*;
+import dynagent.ruleengine.meta.api.DataModelAdapter;
+import dynagent.ruleengine.meta.api.DocDataModel;
+import dynagent.ruleengine.src.ruler.ERPrules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.knowledge.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.utils.QueryConstants;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import dynagent.common.basicobjects.*;
+global DataModelAdapter dma;
+
+
+rule "SERIE COMERCIAL EN PEDIDOS"
+agenda-group "rules" when 
+	DocDataModel(user:USER!=null)
+	DatValue(CLASSNAME=="USER", idUser:ID, PROPNAME==Constants.PROP_RDN,VALOR==user)
+	ObjValue(ID==idUser,PROPNAME=="userRol",idoRol:IDOVALUE)
+	DatValue(IDO==idoRol,PROPNAME=="rdn",VALOR=="comercial")
+	 
+	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="PEDIDO_DE_CLIENTE")	
+	ObjValue(idoDoc:IDO<0,IDTO==idtoDoc,PROPNAME=="agente_comercial",idoAgente:IDOVALUE!=null)
+	DatValue(IDO==idoAgente,PROPNAME=="rdn",rdnAgente:VALOR!=null)
+then
+	dma.printRule("==========  RSERIE COMERCIAL EN PEDIDOS");
+	StringValue rdnDoc=(StringValue)dma.getValue(idoDoc,idtoDoc,"rdn");
+	if(rdnDoc!=null)	dma.setValue(idoDoc,idtoDoc,"rdn",new StringValue(rdnAgente+"/&"+idoDoc+"&"));
+end
+
+rule "PRECARGA objetivos COMISIONES EN  LIQUIDACIÓN_COMISIÓN: NUEVO MODELO"
+salience 100
+	agenda-group "rules" when 
+	
+	
+	 comisiones: HashSet(size>0) 
+            	from accumulate(
+            				 (and 
+         
+							  	FactHierarchy(nameComision:CLASS,CLASSSUP=="COMISIÓN")
+							  	ObjValue(CLASSNAME==nameComision,idoComision:IDO!=null, PROPNAME=="objetivo_mínimo",idobjetivo:VALOR!=null,objetivo:OBJECTVALUE)
+							  	not(Individual(ID==idobjetivo))
+             				  ),
+                              init	( HashSet<ObjectValue> comisiones2 = new HashSet<ObjectValue> ();),
+                              action( comisiones2.add(objetivo);),                            
+                              result(comisiones2))
+then
+	dma.printRule("\n\n=============== PRECARGA objetivo COMISIONES EN  LIQUIDACIÓN_COMISIÓN: NUEVO MODELO");
+	dma.ruleGetFromServer( (HashSet<IDIndividual>)comisiones,1,false,true);
+end
+
+rule "PRECARGA COMISIONES EN VENTAS"
+//TODO OPTIMIZAR
+agenda-group "rules" when 
+	
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="FACTURA_A_CLIENTE"||=="TICKET_VENTA")
+	exists(Lock(CLASSNAME==nameDoc,idDoc:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK))
+	FactHierarchy(CLASSSUP=="COMISIÓN",clsComision:CLASS)
+	not(Individual(CLASSNAME==clsComision))
+then
+	dma.printRule("\n\n =========== PRECARGA COMISIONES EN VENTAS");
+	instance instancefilter=dma.buildInstanceWith ("COMISIÓN",null,null,null,null);//comisión  sin fijar nada
+	//TODO HACER QUERY BUSQUE POR AQUELLOS QUE TIENEN VALORES EN AGENTE_COMERCIAL, GRUPO COMERCIALES, O SIN FIJAR ESTOS QUE CORRESPONDAN CON EL/LOS COMERCIALES DE LAS LIQUIDACIONES
+	try{
+	HashSet<IDIndividual> idosCargados = 	dma.loadIndividualsWithSatisficedFilter(instancefilter,2,true);
+	dma.printRule(".....info: idosCargados: "+idosCargados);
+	}catch(OperationNotPermitedException ie){
+		dma.showMessage("Una comision está incompleta, hable con el administrador");
+	}
+end
+
+
+
+rule "EXCLUSIVIDAD COMERCIAL SIN DUPLICIDAD" //Obviando alcanzar objetivos
+salience 100 
+	agenda-group "rules" when 
+	
+	FactHierarchy(idtoCliente:IDTO,CLASSSUP=="CLIENTE")
+	Lock(IDTO==idtoCliente,idoCliente:IDO!=null, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(IDO==idoCliente, PROPNAME=="exclusividad_comercial",idoExcl1:IDOVALUE!=null)
+	ObjValue(IDO==idoExcl1, PROPNAME=="agente_comercial",idoAgente:IDOVALUE!=null)			
+	exists((and ObjValue(IDO==idoCliente, PROPNAME=="exclusividad_comercial",idoExcl2:IDOVALUE!=idoExcl1)
+				ObjValue(IDO==idoExcl2, PROPNAME=="agente_comercial",IDOVALUE==idoAgente)))				
+	then
+	throw new OperationNotPermitedException("Duplicidad: ya existe un registro para ese comercial colaborador en el mismo cliente.");
+end 
+	
+rule "COMISIÓN EXCLUSIVA POR AMBITO EN LÍNEA VENTA" //Obviando alcanzar objetivos
+salience 100 //mas prioridad que evolucion
+	agenda-group "rules" when 
+	
+	FactHierarchy(nameDoc:CLASS,clsDocSup:CLASSSUP=="FACTURA_A_CLIENTE"||=="TICKET_VENTA")
+	Lock(CLASSNAME==nameDoc,idoDoc:IDO!=null, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(IDO==idoDoc, PROPNAME=="cliente",idoCliente:IDOVALUE!=null,clienteChanged:hasCHANGED)	
+	DatValue(IDO==idoDoc,PROPNAME=="fecha",fechaChanged:hasCHANGED)	
+	ObjValue(IDO==idoDoc, PROPNAME=="línea", idLinea:VALOR!=null,idoLinea:IDOVALUE,lineaChanged:hasCHANGED)
+	Individual(IDO==idoLinea,linSt:STATE)	 		
+	eval(fechaChanged || lineaChanged || clienteChanged || linSt.equals(Constants.INDIVIDUAL_STATE_LOCK))
+	
+	ObjValue(ID==idLinea,idtolinea:IDTO, PROPNAME=="producto", idoArticuloComisionado:IDOVALUE!=null,idtoArticuloComisionado:VALUECLS!=null,productoChanged:hasCHANGED)
+	eval(dma.preload(new Integer(idtoArticuloComisionado),idtoArticuloComisionado))
+
+	
+
+	comisionDom:Domain() from accumulate((and
+											FactHierarchy(nameComision:CLASS,CLASSSUP=="COMISIÓN")
+											Individual(CLASSNAME==nameComision,idoComision:IDO!=null,idtoComision:IDTO)
+											  	//tiene que cumplir las fechas si las hubiera
+											
+											forall(
+												DatValue(IDO==idoComision, PROPNAME=="fecha_inicio", inicioComisionSegundos:QMIN!=null)
+											  	DatValue(IDO==idoDoc, PROPNAME=="fecha", fechaLiquSegundos:QMIN>=inicioComisionSegundos)
+											)
+											forall(
+												DatValue(IDO==idoComision, PROPNAME=="fecha_fin", finComisionSegundos:QMIN!=null)
+											  	DatValue(IDO==idoDoc, PROPNAME=="fecha", fechaLiquSegundos:QMIN<=finComisionSegundos)
+											)
+										
+											
+											not((and	 	ObjValue(IDO==idoComision, PROPNAME=="agente_comercial",idoAgente1:IDOVALUE!=null) 	
+															not((and 	ObjValue(IDO==idoCliente, PROPNAME=="agente_comercial",IDOVALUE==idoAgente1)						
+																		DatValue(IDO==idoCliente,PROPNAME=="porcentaje_exclusividad_defecto", DOUBLEVALUE>0)))
+												
+															//En la misma venta no puede aplicar una comision para el comercial de la parte de exclusiva y otra para la parte de colaborador, pues en la linea
+															//solo puedo asignar una, por tanto, en el caso de exclusividad, basta con fijarse en el caso comercial de la parte colaborador, y obviar el otro caso 	
+															not((and 	ObjValue(IDO==idoCliente, PROPNAME=="exclusividad_comercial",idoExclus:IDOVALUE)
+																		ObjValue(IDO==idoExclus,PROPNAME=="agente_comercial",IDOVALUE==idoAgente1)))
+																			
+															//No hace falta ver si el agente de la venta está en los colaboradores, pues ya esta contemplado antes
+															not((and 	ObjValue(IDO==idoDoc,PROPNAME=="agente_comercial",IDOVALUE==idoAgente1)					
+																		DatValue(IDO==idoCliente,PROPNAME=="porcentaje_exclusividad_defecto", DOUBLEVALUE==0)))															
+											))									
+											
+													  		
+											DatValue(IDO==idoComision,PROPNAME=="rdn",rdnArtiComision:VALOR!=null)	
+										
+											ObjValue(IDO==idoComision,PROPNAME=="prioridad",idoPrioridad:IDOVALUE!=null)
+											DatValue(IDO==idoPrioridad,PROPNAME=="peso_prioridad",pesoPrioridadComision:INTVALUE!=null)
+											forall(//si tenemos un modelo multiempresa la comisión que aplique tiene que estar asociada a la empresa en la que se está liquidando
+												ObjValue(IDO==idoComision, PROPNAME=="mi_empresa", idoEmpresa:IDOVALUE!=null)
+												ObjValue(IDO==idoLinea, PROPNAME=="mi_empresa",IDOVALUE==idoEmpresa)
+											  )
+											forall(
+												  ObjValue(IDO==idoComision, propiedadAmbitoComision:PROPNAME=="familia"||=="subfamilia"||=="marca",VALOR!=null)
+											  	  ObjValue(IDO==idoComision, PROPNAME==propiedadAmbitoComision,idoAmbitoarticulo:IDOVALUE!=null)
+											  	  ObjValue(IDO==idoArticuloComisionado,PROPNAME=="marca"||=="familia"||=="subfamilia",IDOVALUE==idoAmbitoarticulo)
+											)
+											
+											forall(
+												  ObjValue(IDO==idoComision, PROPNAME=="cliente",VALOR!=null)
+											  	  ObjValue(IDO==idoComision, PROPNAME=="cliente",IDOVALUE==idoCliente)	
+											)
+												
+											forall(
+												  ObjValue(IDO==idoComision, PROPNAME=="grupo_cliente",VALOR!=null)
+											  	  ObjValue(IDO==idoComision, PROPNAME=="grupo_cliente",idoGrupo:IDOVALUE!=null)
+											  	  ObjValue(IDO==idoCliente, PROPNAME=="grupo_cliente",IDOVALUE==idoGrupo)	
+											)
+																					
+											forall(
+												  ObjValue(IDO==idoComision, PROPNAME=="producto",VALOR!=null)
+											  	  ObjValue(IDO==idoComision, PROPNAME=="producto",idoAmbitoarticulo:IDOVALUE!=null)
+											  	  IndividualValue(IDO==idoArticuloComisionado,PROPNAME=="rdn",IDO==idoAmbitoarticulo)
+											)
+											
+											forall(
+												  ObjValue(IDO==idoComision, PROPNAME=="tarifa_precio",VALOR!=null)
+											  	  ObjValue(IDO==idoComision, PROPNAME=="tarifa_precio",idoAmbitoTarifa:IDOVALUE!=null)
+											  	  ObjValue(IDO==idoCliente,PROPNAME=="tarifa_precio",IDOVALUE==idoAmbitoTarifa)
+											)
+								),
+								init(TreeMap mapa=new TreeMap();),
+								action(mapa.put(pesoPrioridadComision,new Domain(idoComision,idtoComision));),
+								result(mapa.size()==0?new Domain(0,0):mapa.get(mapa.lastKey())))
+
+												
+	//Las comsiones al ser propias de la fase de facturacion, no evolucionan, por tanto ademas de ser sensibles a cambios relevantes como cliente, etc., deben actuar 
+	//en cuando la factura se crea, para lo cual se añade la condicion de evolucion fecha changed, ya que la fecha de factura no evoluciona (En evoluciones se consumen los changed de los datos que si evolucionan o afectan a la evolucion)			
+	eval((fechaChanged || lineaChanged || clienteChanged || productoChanged) )
+	
+	//Un ticket con comision que es posteriormente facturado, no puede cambiarse o anularse dicha comision
+	not((and 	eval(clsDocSup.equals("FACTURA_A_CLIENTE"))
+				exists((and ObjValue(IDO==idoLinea, PROPNAME=="documento", IDOVALUE!=null,idtoRange:VALUECLS)
+							FactHierarchy(IDTO==idtoRange,CLASSSUP=="TICKET_VENTA")
+							ObjValue(IDO==idoLinea, PROPNAME=="comisión",VALOR!=null)
+						))
+		))
+	
+then
+	dma.printRule("============= COMISIÓN EXCLUSIVA POR AMBITO EN LÍNEA VENTA rdnArtiComision:");
+	if(comisionDom.getIdo()==0) dma.delValues(idoLinea,idtolinea,"comisión");
+	else dma.setValue(idoLinea,idtolinea,"comisión",new ObjectValue(comisionDom));
+end
+
+
+/*rule "COMISIÓN POR OBJETIVOS" //Obviando alcanzar objetivos
+salience 90//IMPORTANTE MANTENER PRIORIDADES RELATIVAS (articulo>famila>subfamila>marca>sin_ambito)
+	agenda-group "rules" when 
+	
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_VENTA_NOMINATIVO")
+	Lock(CLASSNAME==nameDoc,idDoc:ID!=null, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(ID==idDoc, PROPNAME=="línea", idLinea:VALOR!=null)
+	ObjValue(ID==idLinea,idoLinea:IDO,idtolinea:IDTO, PROPNAME=="producto", idoArticuloComisionado:IDOVALUE!=null,idtoArticuloComisionado:VALUECLS!=null)
+	eval(dma.preload(new Integer(idtoArticuloComisionado),idtoArticuloComisionado))
+	ObjValue(ID==idDoc, PROPNAME=="agente_comercial",agente:VALOR!=null)
+	
+	not(DatValue(ID==idLinea, PROPNAME=="comisión", VALOR!=null))//PARA SABER QUE AUN NO SE HA INDICADO LA COMISIÓN EN LA LÍNEA	
+	
+	FactHierarchy(nameComision:CLASS,CLASSSUP=="COMISIÓN")
+	Individual(CLASSNAME==nameComision,idoComision:IDO!=null,idtoComision:IDTO)
+	  	//tiene que cumplir las fechas si las hubiera
+	forall(
+		DatValue(IDO==idoComision, PROPNAME=="fecha_inicio", inicioComisionSegundos:QMIN!=null)
+	  	DatValue(ID==idDoc, PROPNAME=="fecha", fechaLiquSegundos:QMIN>=inicioComisionSegundos)
+	)
+	forall(
+		DatValue(IDO==idoComision, PROPNAME=="fecha_fin", finComisionSegundos:QMIN!=null)
+	  	DatValue(ID==idDoc, PROPNAME=="fecha", fechaLiquSegundos:QMIN<=finComisionSegundos)
+	)
+	forall(
+		ObjValue(IDO==idoComision,PROPNAME=="agente_comercial",VALOR!=null)
+		ObjValue(IDO==idoComision,PROPNAME=="agente_comercial",VALOR==agente)//no tiene pq ser la misma restricción, cardinalidad N son aditivos las posibilidades
+	)
+	forall(
+		ObjValue(IDO==idoComision,PROPNAME=="grupo_agente_comercial",VALOR!=null)
+		ObjValue(IDO==idoComision,PROPNAME=="grupo_agente_comercial",grupoComision:VALOR)//no tiene pq ser la misma restricción, cardinalidad N son aditivos las posibilidades
+		ObjValue(ID==agente,PROPNAME=="grupo_agente_comercial",VALOR==grupoComision)		
+	)	
+	
+	DatValue(IDO==idoComision,PROPNAME=="rdn",rdnArtiComision:VALOR!=null)	
+	ObjValue(IDO==idoComision,PROPNAME=="prioridad",idoPrioridad:IDOVALUE!=null)
+	DatValue(IDO==idoPrioridad,PROPNAME=="peso_prioridad",pesoPrioridadComision:INTVALUE!=null)
+	forall(//si tenemos un modelo multiempresa la comisión que aplique tiene que estar asociada a la empresa en la que se está liquidando
+		ObjValue(ID==idDoc, PROPNAME=="mi_empresa", empresa:VALOR!=null)
+		ObjValue(IDO==idoComision, PROPNAME=="mi_empresa",VALOR==empresa)
+	  )
+	forall(
+		  ObjValue(IDO==idoComision, propiedadAmbitoComision:PROPNAME=="familia_artículo_comisionado"||=="subfamilia_artículo_comisionado"||=="marca_artículo_comisionado",VALOR!=null)
+	  	  ObjValue(IDO==idoComision, PROPNAME==propiedadAmbitoComision,idAmbitoarticulo:VALOR!=null,idoAmbitoarticulo:IDOVALUE!=null)
+	  	  IndividualValue(IDO==idoArticuloComisionado,PROPNAME=="marca"||=="familia"||=="subfamilia",VALOR==idAmbitoarticulo)
+	 )
+	 forall(
+	 	  ObjValue(IDO==idoComision, PROPNAME=="artículo_comisionado",VALOR!=null)
+	  	  ObjValue(IDO==idoComision, PROPNAME=="artículo_comisionado",idAmbitoarticulo:VALOR!=null,idoAmbitoarticulo:IDOVALUE!=null)
+	  	  IndividualValue(IDO==idoArticuloComisionado,PROPNAME=="rdn",IDO==idoAmbitoarticulo)
+	 )
+	 
+	totalUnidadesVendidasEsaComision: Double() 
+    from accumulate(
+	    				 (and
+		    				  ObjValue(ID==idLiq, PROPNAME=="línea", linea:VALOR!=null ) 
+							  ObjValue(ID==linea, PROPNAME=="artículo_comisionado", anyArticuloComisionadoCumplaRestricciones:IDOVALUE!=null)		
+							  forall(
+								  ObjValue(IDO==idoComision, propiedadAmbitoComision:PROPNAME=="familia_artículo_comisionado"||=="subfamilia_artículo_comisionado"||=="marca_artículo_comisionado",VALOR!=null)
+	  	  						  ObjValue(IDO==idoComision, PROPNAME==propiedadAmbitoComision,idAmbitoarticulo:VALOR!=null,idoAmbitoarticulo:IDOVALUE!=null)
+	  	  						  IndividualValue(IDO==anyArticuloComisionadoCumplaRestricciones,PROPNAME=="marca"||=="familia"||=="subfamilia",VALOR==idAmbitoarticulo)
+	 						)
+						 forall(
+						 	  ObjValue(IDO==idoComision, PROPNAME=="artículo_comisionado",VALOR!=null)
+						  	  ObjValue(IDO==idoComision, PROPNAME=="artículo_comisionado",idAmbitoarticulo:VALOR!=null,idoAmbitoarticulo:IDOVALUE!=null)
+						  	  IndividualValue(IDO==anyArticuloComisionadoCumplaRestricciones,PROPNAME=="rdn",IDO==idoAmbitoarticulo)
+						 )
+							  
+							  
+							      				  
+							  DatValue(ID==linea, PROPNAME=="cantidad", cantidad:DOUBLEVALUE!=null ) 
+	     				  ),
+	                      sum(cantidad)
+    				)  				
+    totalFacturadoEsaComision: Double() 
+    from accumulate(
+	    				 (and
+		    				  ObjValue(ID==idLiq, PROPNAME=="línea", linea:VALOR!=null ) 
+		    				   ObjValue(ID==linea, PROPNAME=="artículo_comisionado", anyArticuloComisionadoCumplaRestricciones:IDOVALUE!=null)		
+							  forall(
+								  ObjValue(IDO==idoComision, propiedadAmbitoComision:PROPNAME=="familia_artículo_comisionado"||=="subfamilia_artículo_comisionado"||=="marca_artículo_comisionado",VALOR!=null)
+	  	  						  ObjValue(IDO==idoComision, PROPNAME==propiedadAmbitoComision,idAmbitoarticulo:VALOR!=null,idoAmbitoarticulo:IDOVALUE!=null)
+	  	  						  IndividualValue(IDO==anyArticuloComisionadoCumplaRestricciones,PROPNAME=="marca"||=="familia"||=="subfamilia",VALOR==idAmbitoarticulo)
+	 						)
+						 forall(
+						 	  ObjValue(IDO==idoComision, PROPNAME=="artículo_comisionado",VALOR!=null)
+						  	  ObjValue(IDO==idoComision, PROPNAME=="artículo_comisionado",idAmbitoarticulo:VALOR!=null,idoAmbitoarticulo:IDOVALUE!=null)
+						  	  IndividualValue(IDO==anyArticuloComisionadoCumplaRestricciones,PROPNAME=="rdn",IDO==idoAmbitoarticulo)
+						 )
+							  DatValue(ID==linea, PROPNAME=="base_comisionable", cantidad2:DOUBLEVALUE!=null) 
+	     				  ),
+	                      sum(cantidad2))	
+	 
+	   //PARA QUE NO APLIQUE COMISIONES EN LAS QUE SE EXIGE UNOS OBJETIVOS MINIMOS FACTURACION Y ESE COMERCIAL NO LOS CUMPLIO
+	    not(
+	    	(and
+		    	 ObjValue(IDO==idoComision, PROPNAME=="objetivo_mínimo", objetivo:VALOR!=	null)
+		    	 ObjValue(ID==objetivo, PROPNAME=="tipo_objetivo", tipoobjetivo:VALOR!=null)
+		    	 DatValue(ID==tipoobjetivo, PROPNAME=="rdn", VALOR=="Importe_base")
+		    	 DatValue(ID==objetivo, PROPNAME=="cantidad", DOUBLEVALUE>totalFacturadoEsaComision)
+		    )
+	    )
+	    
+	   not(
+	    	(and
+		    	 ObjValue(IDO==idoComision, PROPNAME=="objetivo_mínimo", objetivo:VALOR!=	null)
+		    	 ObjValue(ID==objetivo, PROPNAME=="tipo_objetivo", tipoobjetivo:VALOR!=null)
+		    	 DatValue(ID==tipoobjetivo, PROPNAME=="rdn", VALOR=="Cantidad_venta")
+		    	 DatValue(ID==objetivo, PROPNAME=="cantidad", DOUBLEVALUE>totalUnidadesVendidasEsaComision)
+		    )
+	    )
+	//DEBE CUMPLIRSE QUE NO EXISTEA UNA COMISIÓN 2 APLICABLE CON MAS PESO 
+not((and
+			//ObjValue(ID==agente, PROPNAME=="comisión",idoComision2:IDOVALUE!=null,idtoComision2:VALUECLS)
+			//NEW
+		  	FactHierarchy(nameComision2:CLASS,CLASSSUP=="COMISIÓN")
+		  	Individual(CLASSNAME==nameComision2,idoComision2:IDO!=null,idtoComision2:IDTO)
+		  	forall(
+	  		DatValue(IDO==idoComision2, PROPNAME=="fecha_inicio", inicioComisionSegundos:QMIN!=null)
+	  		DatValue(ID==idLiq, PROPNAME=="fecha", fechaLiquSegundos:QMIN>=inicioComisionSegundos)
+	  	)
+	  	forall(
+	  		ObjValue(IDO==idoComision2, PROPNAME=="fecha_fin", finComisionSegundos:QMIN!=null)
+	  		DatValue(ID==idLiq, PROPNAME=="fecha", fechaLiquSegundos:QMIN<=finComisionSegundos)
+	  	)
+		  	
+			forall(
+				ObjValue(IDO==idoComision2,PROPNAME=="agente_comercial",VALOR!=null)
+				ObjValue(IDO==idoComision2,PROPNAME=="agente_comercial",VALOR==agente)//no tiene pq ser la misma restricción, cardinalidad N son aditivos las posibilidades
+			)
+			forall(
+				ObjValue(IDO==idoComision2,PROPNAME=="grupo_agente_comercial",VALOR!=null)
+				ObjValue(IDO==idoComision2,PROPNAME=="grupo_agente_comercial",grupoComision:VALOR)//no tiene pq ser la misma restricción, cardinalidad N son aditivos las posibilidades
+				ObjValue(ID==agente,PROPNAME=="grupo_agente_comercial",VALOR==grupoComision)		
+			)
+			//FIN NEW			
+			
+			ObjValue(IDO==idoComision2,PROPNAME=="prioridad",idoPrioridadComision2:IDOVALUE!=null)
+			DatValue(IDO==idoPrioridadComision2,PROPNAME=="peso_prioridad",pesoPrioridadComision2:INTVALUE>pesoPrioridadComision)
+			forall(//si tenemos un modelo multiempresa la comisión que aplique tiene que estar asociada a la empresa en la que se está liquidando
+				ObjValue(ID==idLiq, PROPNAME=="mi_empresa", empresa:VALOR!=null)
+				ObjValue(IDO==idoComision2, PROPNAME=="mi_empresa",VALOR==empresa)
+		  	)
+			forall(
+				  ObjValue(IDO==idoComision, propiedadAmbitoComision:PROPNAME=="familia_artículo_comisionado"||=="subfamilia_artículo_comisionado"||=="marca_artículo_comisionado",VALOR!=null)
+			  	  ObjValue(IDO==idoComision, PROPNAME==propiedadAmbitoComision,idAmbitoarticulo2:VALOR!=null,idoAmbitoarticulo2:IDOVALUE!=null)
+			  	  IndividualValue(IDO==idoArticuloComisionado,PROPNAME=="marca"||=="familia"||=="subfamilia",VALOR==idAmbitoarticulo2)
+			 )
+			 forall(
+			 	  ObjValue(IDO==idoComision, PROPNAME=="artículo_comisionado",VALOR!=null)
+			  	  ObjValue(IDO==idoComision, PROPNAME=="artículo_comisionado",idAmbitoarticulo2:VALOR!=null,idoAmbitoarticulo2:IDOVALUE!=null)
+			  	  IndividualValue(IDO==idoArticuloComisionado,PROPNAME=="rdn",IDO==idoAmbitoarticulo2)
+	 		)    
+		    //que cumpla los objetivos minimos
+		     not(
+		    	(and
+			    	 ObjValue(IDO==idoComision2, PROPNAME=="objetivo_mínimo", objetivo:VALOR!=null)
+			    	 ObjValue(ID==objetivo, PROPNAME=="tipo_objetivo", tipoobjetivo:VALOR!=null)
+			    	 DatValue(ID==tipoobjetivo, PROPNAME=="rdn", VALOR=="Importe_base")
+			    	 DatValue(ID==objetivo, PROPNAME=="cantidad", DOUBLEVALUE> totalFacturadoEsaComision)
+			    )
+		    )
+		   	not(
+		    	(and
+			    	 ObjValue(IDO==idoComision2, PROPNAME=="objetivo_mínimo", objetivo:VALOR!=	null)
+			    	 ObjValue(ID==objetivo, PROPNAME=="tipo_objetivo", tipoobjetivo:VALOR!=null)
+			    	 DatValue(ID==tipoobjetivo, PROPNAME=="rdn", VALOR=="Cantidad_venta")
+			    	 DatValue(ID==objetivo, PROPNAME=="cantidad", DOUBLEVALUE>totalUnidadesVendidasEsaComision)
+			    )
+		    )
+))
+//cierra el not de que no debe cumplirse que exista una comisión 2 aplicable con mas peso
+then
+	dma.printRule("============= COMISIÓN POR OBJETIVOS rdnArtiComision:"+rdnArtiComision+"  pesoPrioridadComision:"+pesoPrioridadComision);
+	dma.printRule("...totalUnidadesVendidasEsaComision="+totalUnidadesVendidasEsaComision+"  totalFacturadoEsaComision="+totalFacturadoEsaComision);
+	dma.setValue(idoLinea,idtolinea,"producto",new ObjectValue(idoComision,idtoComision));
+end*/
+
+rule "EL AGENTE COMERCIAL FIJO DE UNA LIQUIDACION COMISIÓN INTERNA DEBE TENER COMO EMPRESA LA EMPRESA INDICADA EN LA LIQUIDACIÓN"
+ agenda-group "rules" when 
+  	ddm:DocDataModel(usuario:USER!=null) 	
+  	FactHierarchy(tipoObjeto:CLASS,CLASSSUP=="LIQUIDACIÓN_COMISIÓN_INTERNA")
+	ObjValue(CLASSNAME==tipoObjeto, idLiqu:ID!=null,PROPNAME=="empresa",empresa:OBJECTVALUE!=null,idempresa:VALOR)
+	RangeFilter(ID==idLiqu,tipoObj:CLASSNAME,OP=="OR",PROPNAME=="agente_comercial", filtroAgente:VALUE!=null, idtoFiltro:VALUECLS) 
+	not(ObjValue(ID==filtroAgente,PROPNAME=="empresa",VALOR==idempresa))
+then	
+	dma.printRule("\n\n======= EL AGENTE COMERCIAL FIJO DE UNA LIQUIDACION COMISIÓN INTERNA DEBE TENER COMO EMPRESA LA EMPRESA INDICADA EN LA LIQUIDACIÓN idLiqu="+idLiqu+"  empres="+empresa);
+	dma.setValue(filtroAgente, idtoFiltro, "empresa", empresa);
+end
+
+/*
+rule "LIQUIDAR COMISIONES VENTAS: CREACION UNA LIQUIDACIÓN COMISIÓN POR CADA AGENTE COMERCIAL"
+agenda-group "rules"  when
+	  		
+    FactHierarchy(CLASSSUP=="Liquidar_comisión_venta", nameCls:CLASS)
+    F:ObjValue(CLASSNAME==nameCls, idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME==Constants.PROP_RDN,VALOR==Constants.INDIVIDUAL_INFORMADO)
+	FactHierarchy(CLASSSUP=="AGENTE_COMERCIAL", nameClsAgente:CLASS)
+	Individual(CLASSNAME==nameClsAgente,idoAgente:IDO!=null,idtoAgente:IDTO)
+	ObjValue(IDO==idoUTask,idtoUtask:IDTO, PROPNAME=="sourceClass",idSource:VALOR!=null)
+	ObjValue(IDO==idoUTask, PROPNAME=="params",idParam:VALOR!=null)
+	DatValue(ID==idParam, PROPNAME=="fecha_inicio",fechaInicio:DATE!=null)
+	DatValue(ID==idParam, PROPNAME=="fecha_fin",fechaFin:DATE!=null)	
+		//not(ObjValue(VALOR==idFact,PROPNAME=="venta_comisionada",ID!=null))//facturas que no estén comisionadas
+	(or
+			exists(ObjValue(ID==idSource,PROPNAME=="agente_comercial", IDOVALUE==idoAgente))
+			exists(DatValue(ID==idSource, IDO==idoAgente,PROPNAME=="rdn"))
+			//Ventas comercial devuelve agente 0 cuando es nulo por no casar con las exclusivas
+			exists(VentasComercial(IDOAGENTEVENTA==idoAgente&&>0))
+	)
+	not(
+		(and
+			ObjValue(IDO==idoUTask,PROPNAME=="targetClass",classLiqu:RANGENAME,idLiqu:VALOR!=null)
+			ObjValue(ID==idLiqu,PROPNAME=="agente_comercial" ||=="proveedor",IDOVALUE==idoAgente)
+		)
+	)
+then
+	dma.printRule("\n\n ============== LIQUIDAR COMISIONES VENTAS: CREACION UNA LIQUIDACIÓN COMISIÓN POR CADA AGENTE COMERCIAL: idoAgente:"+idoAgente);
+	String tipoLiquidacion=null;
+	
+	if(nameClsAgente.equals("AGENTE_COMERCIAL_EXTERNO")||dma.isSpecialized(nameClsAgente,"AGENTE_COMERCIAL_EXTERNO")){
+		tipoLiquidacion="AUTOFACTURA_COMISIÓN";		
+	}else if(nameClsAgente.equals("AGENTE_COMERCIAL_FIJO")||dma.isSpecialized(nameClsAgente,"AGENTE_COMERCIAL_FIJO")){
+		tipoLiquidacion="LIQUIDACIÓN_COMISIÓN_INTERNA";
+	}
+	
+	if(tipoLiquidacion!=null){
+		int idtoLiq=dma.getIdClass(tipoLiquidacion);
+		Domain domLiqu = dma.creaIndividualOfClass(idtoLiq);
+		//dma.printRule("..debug creada la liquidacion");
+		if(tipoLiquidacion=="LIQUIDACIÓN_COMISIÓN_INTERNA"){		
+			dma.setValue(domLiqu,"agente_comercial", new ObjectValue(idoAgente,idtoAgente));
+		}
+		//dma.printRule("..debug añadido el comercial");
+		
+		//si el agente es externo nos emite una factura donde es el proveedor
+		if(tipoLiquidacion.equals("AUTOFACTURA_COMISIÓN")){
+			dma.printRule("\n... el agente comercial es externo---> se crear una autofactura_comisión cuyo proveedor es el mismo agente");
+			dma.setValue(domLiqu, "proveedor", new ObjectValue(idoAgente,idtoAgente));		
+		}
+		dma.setValue(domLiqu, "fecha_inicio", new TimeValue(fechaInicio));
+		dma.setValue(domLiqu, "fecha_fin", new TimeValue(fechaFin));		
+		
+		dma.addValue(idoUTask, idtoUtask, "targetClass", new ObjectValue(domLiqu));
+		//dma.printRule("..debug añadido al targertClass de la accion");
+	}else{
+		dma.printRule("\n\n ============== WARNING EN RULE LIQUIDAR COMISIONES VENTAS: CREACION UNA LIQUIDACIÓN COMISIÓN POR CADA AGENTE COMERCIAL: nameClsAgente="+nameClsAgente+"  no contemplado"); 
+	}
+end*/
+
+rule "PRECARGA AGENTE COLABORADOR"
+ salience 100
+ //esta regla es necesaria porque muchos campos de los documentos dependen del sujeto: descuentos globales, tarifas, precios especiales,...
+ agenda-group "rules" when 
+  	
+  	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO")
+	VentasComercial(idoAgente:IDOAGENTEVENTA!=0)
+	not(Individual(IDO==idoAgente))
+then
+ 	dma.printRule("=========== PRECARGA AGENTE COLABORADOR");
+ 	dma.ruleGetFromServer(idoAgente,QueryConstants.getIdto(idoAgente),2,false); 	
+end
+
+rule "PRECARGA PRODUCTO COMERCIALIZAR"
+ salience -100
+ //esta regla es necesaria porque muchos campos de los documentos dependen del sujeto: descuentos globales, tarifas, precios especiales,...
+ agenda-group "rules" when 
+  	
+	ObjValue(typetask:CLASSNAME=="Liquidar_comisión_agente_comercial", idoUTask:IDO ,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+	FactHierarchy(idtoServicio:IDTO,CLASSSUP=="SERVICIO")
+	not(DatValue(IDTO==idtoServicio,PROPNAME=="rdn",VALOR=="Comercializar"))
+then
+ 	dma.printRule("=========== PRECARGA PRODUCTO COMERCIALIZAR");
+	HashMap<String, Value> values=new HashMap<String, Value> ();				
+		
+	values.put("rdn", new StringValue("Comercializar"));		
+	instance instancefilter=dma.buildInstanceWith(idtoServicio, values, null, null,null);
+	HashSet<IDIndividual> idos=dma.loadIndividualsWithSatisficedFilter(instancefilter);	
+end
+
+rule "FACTURAR A CLIENTE DE DISTRIBUIDOR"
+agenda-group "rules" when  
+	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	Lock(IDTO==idtoDoc,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+	
+	ObjValue(IDO==idoDoc,PROPNAME=="cliente",RANGENAME=="DISTRIBUIDOR",ovDistr:OBJECTVALUE!=null,idoDistr:IDOVALUE)
+	
+	DatValue(IDO==idoDistr,PROPNAME=="NIF-CIF-VAT",nifDistr:CVALUE!=null)
+	DatValue(IDO==idoDistr,PROPNAME=="rdn",rdnDist:CVALUE!=null)		
+then
+	dma.printRule(" ========= FACTURAR A CLIENTE DE DISTRIBUIDOR:"+rdnDist);
+	HashMap<String, Value> values=new HashMap<String, Value> ();
+	values.put("distribuidor", ovDistr);		
+	instance instancefilter=dma.buildInstanceWith("CLIENTE", values, null, null,null);
+	HashSet<IDIndividual> idos=dma.loadIndividualsWithSatisficedFilter(instancefilter);
+	dma.delValues(idoDoc,idtoDoc, "agente_comercial");//FALLO: si no se pone envia un fact nulo a servidor junto al fact con valor. TODO ver si commit no se da cuenta por haber dos clientes relacionados, uno por prop cliente y otro agente
+	dma.setValue(idoDoc,idtoDoc, "agente_comercial", ovDistr);
+	
+	if(idos.size()>0){
+		Iterator<IDIndividual> itrCl=idos.iterator();		
+		dma.setValue(idoDoc,idtoDoc, "cliente", new ObjectValue(itrCl.next()));
+		dma.showMessage("Ha sido reemplazado el distribuidor por su cliente asociado. Los precios pueden variar");
+	}else{
+	//busco por NIF
+		idos=lookClientByNIF(dma,nifDistr.getValue_s(),idoDistr,idoDoc,idtoDoc);
+		if(idos.size()>0) dma.showMessage("Ha sido reemplazado el distribuidor por su cliente asociado mismo NIF. Los precios pueden variar");
+	}
+end
+
+function HashSet lookClientByNIF(DataModelAdapter dma,String nifDistr,Integer idoDistr,Integer idoDoc,Integer idtoDoc){
+	HashMap<String, Value> values=new HashMap<String, Value> ();	
+	values.put("NIF-CIF-VAT",new StringValue(nifDistr));		
+	instance instancefilter=dma.buildInstanceWith("CLIENTE_EMPRESA", values, null, null,null);
+	HashSet<IDIndividual> idos=dma.loadIndividualsWithSatisficedFilter(instancefilter);
+	if(idos.size()==0){
+		instancefilter=dma.buildInstanceWith("CLIENTE_PARTICULAR", values, null, null,null);
+		idos=dma.loadIndividualsWithSatisficedFilter(instancefilter);
+	}				
+	if(idos.size()>0){
+		Iterator<IDIndividual> itrCl=idos.iterator();
+		while(itrCl.hasNext()){
+			IDIndividual id=itrCl.next();
+			//podria encontrarse así mismo
+			if(!id.getIDOIndividual().equals(idoDistr)){
+				dma.setValue(idoDoc,idtoDoc, "cliente", new ObjectValue(id));				
+				break;
+			}
+		}
+	}
+	return idos;
+}
+
+rule "LIQUIDAR COMISIONES AGENTE COMERCIAL"
+agenda-group "rules" when  
+   	//jb:JBossEngine()
+   	ObjValue(typetask:CLASSNAME=="Liquidar_comisión_agente_comercial", idoUTask:IDO ,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+        
+	agentes:ArrayList(size>0) from accumulate((and 	f:ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoAgente:IDOVALUE!=null)
+													DatValue(IDO==idoAgente,PROPNAME=="activo",VALOR=="true")),
+													init(ArrayList res=new ArrayList();),
+													action(res.add(f);),
+													result(res))																								
+	
+	ObjValue(IDO==idoUTask, PROPNAME=="params",idParam:VALOR!=null)
+	DatValue(ID==idParam, PROPNAME=="fecha_inicio",fechaInicio:QMIN!=null)
+	DatValue(ID==idParam, PROPNAME=="fecha_fin",fechaFin:QMAX!=null)	
+	
+	FactHierarchy(idtoProducto:IDTO,CLASSSUP=="SERVICIO")
+	DatValue(IDTO==idtoProducto,idoProducto:IDO,PROPNAME=="rdn",VALOR=="Comercializar")
+	
+	Model(IDTO==idtoUtask,PROPNAME=="targetClass",targetIdto:VALUECLS,OP==Constants.OP_INTERSECTION)
+then
+    dma.printRule(" ========= LIQUIDAR COMISIONES AGENTE COMERCIAL");
+    
+    HashSet<Integer> agentesIdoSrc=new HashSet<Integer>();
+	
+    String listaAgentes="ARRAY[";
+    for(int i=0;i<agentes.size();i++){ 
+    	int idoAgente=((ObjValue)agentes.get(i)).getIDOVALUE();    	
+    	
+    	if(i>0)   listaAgentes+=","; 	
+    	int idoAgenteDecomp=QueryConstants.decompressIdo(idoAgente);
+    	
+    	listaAgentes+=idoAgenteDecomp;//el procedimiento comisiones de base de datos supone codificacion * 1000 no comprimida
+    	agentesIdoSrc.add(idoAgente);
+    	
+    }
+    listaAgentes+="]";
+    int id_prod_comerc=QueryConstants.getTableId(idoProducto);
+    String sql="select com_tid,com_idto,agente,sum(importe_base),sum(comision),sum(cantidad),min(fecha_factura) as ini,max(fecha_factura) as end from comisiones("+id_prod_comerc+","+idtoProducto+","+listaAgentes+","+fechaInicio.longValue()+","+fechaFin.longValue()+")  group by agente,com_tid,com_idto having sum(importe_base)<>0 order by agente ";
+     
+	List<List<String>> res=Query.executeQuery(dma.getDDM(), sql,false);
+	
+	Domain domLiquidacion = null;
+	int oldAgente=0;
+		
+	Iterator itr=res.iterator();
+	while(itr.hasNext() || agentesIdoSrc.size()>0){					
+		
+		int com_tid=0,com_idto=0,ido_com=0;
+		int idtoAgente=0,idoAgente=0;
+		Integer idoAgenteNoCompress=0;	
+		double base=0, comision=0,cantidad=0;
+		long fecha_ini=fechaInicio.longValue(),fecha_end=fechaFin.longValue();
+			
+		if(itr.hasNext()){
+			List<String> fila=(List<String>)itr.next();
+				
+			com_tid=new Integer(fila.get(0));
+			com_idto=new Integer(fila.get(1));
+			ido_com=QueryConstants.getIdo(com_tid,com_idto);
+			idoAgenteNoCompress=new Integer(fila.get(2));	
+			idtoAgente=	QueryConstants.getIdtoNoCompress(idoAgenteNoCompress);
+			idoAgente=QueryConstants.compressIdo(idoAgenteNoCompress);
+		
+			base=new Double(fila.get(3));
+			comision=new Double(fila.get(4));
+			cantidad=new Double(fila.get(5));
+		
+			fecha_ini=new Long(fila.get(6));
+			fecha_end=new Long(fila.get(7));	
+					
+		}else{
+			idoAgente=agentesIdoSrc.iterator().next();	
+			idtoAgente=QueryConstants.getIdto(idoAgente);
+		}		
+		
+		agentesIdoSrc.remove(idoAgente);		
+
+		
+		double aLiquidar=comision;
+		dma.printRule("BASE "+base+" comision "+comision+" agente "+idoAgente);
+		int idtoAgenteExterno=dma.getIdClass("AGENTE_COMERCIAL_EXTERNO");
+		boolean esExterno=(idtoAgente==idtoAgenteExterno)||dma.isSpecialized(idtoAgente,idtoAgenteExterno);
+		int idtoDistr=dma.getIdClass("DISTRIBUIDOR");
+		boolean esDistribuidor=(idtoAgente==idtoDistr)||dma.isSpecialized(idtoAgente,idtoDistr);	
+		boolean esNuevoAgente= oldAgente==0 || oldAgente!=idoAgente;		
+		//si el agente es un distribuidor, busco un cliente que tenga asignado como distribuidor ese mismo agente,
+		//en cuyo caso facturo a dicho cliente 
+		if(esDistribuidor && esNuevoAgente){
+			dma.printRule("Es distribuidor");
+			domLiquidacion= dma.creaIndividualOfClass(dma.isSpecialized(dma.getIdClass("ALBARÁN_CLIENTE"),targetIdto)?"ALBARÁN_CLIENTE":"FACTURA_A_CLIENTE");
+			
+			//TODO: capturar NIF en SQL para poder utilizar funcion lookClientByNIF, como la regla "FACTURAR A CLIENTE DE DISTRIBUIDOR"
+			HashMap<String, Value> values=new HashMap<String, Value> ();						
+			values.put("distribuidor", new ObjectValue(idoAgente,idtoAgente));		
+			instance instancefilter=dma.buildInstanceWith("CLIENTE_EMPRESA", values, null, null,null);
+			HashSet<IDIndividual> idos=dma.loadIndividualsWithSatisficedFilter(instancefilter);
+			if(idos.size()==0){
+				instancefilter=dma.buildInstanceWith("CLIENTE_PARTICULAR", values, null, null,null);
+				idos=dma.loadIndividualsWithSatisficedFilter(instancefilter);
+			}				
+			
+			if(idos.size()==0)	dma.setValue(domLiquidacion, "cliente", new ObjectValue(idoAgente,idtoAgente));
+			else{
+				Iterator<IDIndividual> itrCl=idos.iterator();
+				dma.setValue(domLiquidacion, "cliente", new ObjectValue(itrCl.next()));
+			}
+			//es necesario que la factura diga quien es el agente porque el cliente puede tener varios agentes
+			dma.setValue(domLiquidacion, "agente_comercial", new ObjectValue(idoAgente,idtoAgente));
+			aLiquidar=base-comision;			
+		}
+								
+		if(esExterno && esNuevoAgente){
+			dma.printRule("Es externo");
+			domLiquidacion= dma.creaIndividualOfClass("FACTURA_PROVEEDOR");
+			dma.setValue(domLiquidacion, "proveedor", new ObjectValue(idoAgente,idtoAgente));
+		}
+		
+		/*if(!esExterno&&!esDistribuidor && esNuevoAgente){
+			domLiquidacion= dma.creaIndividualOfClass("LIQUIDACIÓN_COMISIÓN_INTERNA");
+			dma.setValue(domLiquidacion, "agente_comercial", new ObjectValue(idoAgente,idtoAgente));			
+		}*/
+		
+		Domain domLinea = dma.creaIndividualOfClass("LÍNEA_ARTÍCULOS_SERVICIO");
+		dma.setValue(domLinea,"producto", new ObjectValue(idoProducto,idtoProducto));
+		dma.printRule("....linea creada idolinea:"+domLinea.getIdo());		
+		
+		dma.setValue(domLinea, "cantidad", new DoubleValue(cantidad));
+		
+		dma.setValue(domLinea, "cantidad", new DoubleValue(cantidad));
+		double precio=0;
+		if(cantidad!=0) precio=base/cantidad;		
+		dma.setValue(domLinea, "precio", new DoubleValue(precio));
+		double descuento=0;
+		if(base!=0) descuento=comision/base*100;
+		dma.setValue(domLinea, "descuento", new DoubleValue(descuento));
+		//dma.setValue(domLinea, "importe", new DoubleValue(base-comision));
+		if(ido_com!=0){
+			dma.setValue(domLinea, "comisión", new ObjectValue(ido_com,com_idto));
+			dma.setValue(domLinea, "fecha_inicio", new TimeValue(fecha_ini));
+			dma.setValue(domLinea, "fecha_fin", new TimeValue(fecha_end));//no puedo poner fecha fin la de liquidar porque pueden faltar replica de tickets anteriores
+		}
+		
+		dma.addValue(domLiquidacion, "línea", new ObjectValue(domLinea));
+		
+		
+		dma.addValue(idoUTask,idtoUtask, "targetClass", new ObjectValue(domLiquidacion));	
+		oldAgente=idoAgente;			
+	}				
+end
+
+rule "COMISION: VARIACION POR CANTIDAD"
+salience -50 //menos prioridad que Liquidar
+	agenda-group "rules" when 
+	
+   	ObjValue(typetask:CLASSNAME=="Liquidar_comisión_agente_comercial", idoUTask:IDO ,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)        																							
+	
+	FactHierarchy(idtoProducto:IDTO,CLASSSUP=="SERVICIO")
+	DatValue(IDTO==idtoProducto,idoProducto:IDO,PROPNAME=="rdn",VALOR=="Comercializar")
+	
+	ObjValue(IDO==idoUTask,PROPNAME=="targetClass",idoDoc:IDOVALUE!=null)
+	ObjValue(IDO==idoDoc,PROPNAME=="línea",idoLinea:IDOVALUE!=null,idtoLinea:VALUECLS)
+	
+	DatValue(IDO==idoLinea,PROPNAME=="descuento",desc_lin:FIRSTDOUBLE!=null)//first sería el valor sql antes de que las regla corrigan por variacion, ya que la lógica de variacion no está en SQL				
+	ObjValue(IDO==idoLinea,PROPNAME=="comisión",idoCom:IDOVALUE!=null)
+	DatValue(IDO==idoLinea,PROPNAME=="importe",importe_base:DOUBLEVALUE!=null)
+	
+	DatValue(IDO==idoCom,PROPNAME=="porcentaje_base",porc_base_com:DOUBLEVALUE!=null)
+	ObjValue(IDO==idoCom,PROPNAME=="variación_por_cantidad",idoVar:IDOVALUE!=null)		
+	
+	DatValue(IDO==idoVar,PROPNAME=="valor_tramo",porcent_variacion:DOUBLEVALUE!=null)
+	ObjValue(IDO==idoVar,PROPNAME=="tipo_objetivo",idoTipoObj:IDOVALUE!=null)
+	
+	DatValue(IDO==idoTipoObj,PROPNAME=="rdn",VALOR=="Importe_base")
+	
+	DatValue(IDO==idoVar,PROPNAME=="objetivo_mínimo",obj_min:DOUBLEVALUE<=importe_base)
+	not DatValue(IDO==idoVar,PROPNAME=="objetivo_máximo",DOUBLEVALUE<=importe_base)
+	
+then
+	dma.printRule("========== COMISION: VARIACION POR CANTIDAD");
+	double incrm_porciento_variacion=porcent_variacion-porc_base_com;
+	double newDescuento=desc_lin+incrm_porciento_variacion;
+	//precio (comisión que aplica por unidad)=baseComisionable*porcentaje/cantidad
+	dma.setValue(idoLinea,idtoLinea,"descuento", new DoubleValue(newDescuento));
+end
+
+rule "CALCULO PRECIO LÍNEA COMISION"
+salience 200 //Mas prioridad que calculo del importe
+	agenda-group "rules" when 
+	
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="LÍNEA_COMISIÓN")
+	DatValue(CLASSNAME==nameDoc,idoLinea:IDO, PROPNAME=="base_comisionable",baseComisionable:DOUBLEVALUE!=null) 
+	Lock(IDO==idoLinea,idtolinea:IDTO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	DatValue(IDO==idoLinea, PROPNAME=="cantidad", cantidad:DOUBLEVALUE!=null)
+	DatValue(IDO==idoLinea, PROPNAME=="importe", importe:DOUBLEVALUE!=null)
+	DatValue(CLASSNAME=="APLICACIÓN", IDO!=null,PROPNAME=="n._dígitos_en_precio",digredondeo:INTVALUE>0)	
+then
+	dma.printRule("\n\n ========== CALCULO PRECIO LÍNEA COMISION");
+	//precio (comisión que aplica por unidad)=baseComisionable*porcentaje/cantidad
+	dma.setValue(idoLinea,idtolinea,"precio", new DoubleValue(Auxiliar.redondea(importe/cantidad,digredondeo)));
+end
+
+rule "PRECARGA DISTRIBUIDOR PARA COMISIONAR TICKET"
+agenda-group "rules" when	    		
+	FactHierarchy(idtoComision:IDTO,CLASSSUP=="COMISIÓN") 
+	Individual(IDTO==idtoComision,STATE==Constants.INDIVIDUAL_STATE_READY)		   		
+	  	
+	Lock(CLASSNAME=="TICKET_VENTA",idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)						
+	
+	ObjValue(IDO==idoDoc,PROPNAME=="delegación",idoDel:IDOVALUE!=null,ovDel:OBJECTVALUE)
+	
+	not ObjValue(CLASSNAME=="DISTRIBUIDOR",PROPNAME=="delegación",IDOVALUE==idoDel)																
+																											
+then
+	dma.printRule("=========PRECARGA DISTRIBUIDOR PARA COMISIONAR TICKET");
+	HashMap<String, Value> values=new HashMap<String, Value> ();				
+		
+	values.put("delegación", ovDel);		
+	instance instancefilter=dma.buildInstanceWith("DISTRIBUIDOR", values, null, null,null);
+	HashSet<IDIndividual> idos=dma.loadIndividualsWithSatisficedFilter(instancefilter);
+end
+
+
+rule "DISTRIBUIDOR DE DELEGACION ES SU AGENTE EN VENTAS"
+salience -100 //menos prioridad que "COMISIÓN EXCLUSIVA POR AMBITO EN LÍNEA VENTA" 
+agenda-group "rules" when 
+	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="FACTURA_A_CLIENTE"||=="TICKET_VENTA")
+	Lock(IDTO==idtoDoc,idoDoc:IDO!=null, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(IDO==idoDoc, PROPNAME=="cliente",idoCliente:IDOVALUE!=null,clienteChanged:hasCHANGED)	
+	not ObjValue(IDO==idoDoc, PROPNAME=="agente_comercial",IDOVALUE!=null)		
+
+	FactHierarchy(idtoDist:IDTO,CLASSSUP=="DISTRIBUIDOR")
+	Individual(IDTO==idtoDist,idoDist:IDO)
+	not DatValue(IDO==idoDist,PROPNAME=="activo",BOOLEANVALOR==false)
+	ObjValue(IDO==idoDist,PROPNAME=="delegación",idoDelCom:IDOVALUE)
+	(or 	exists ObjValue(IDO==idoDoc,PROPNAME=="delegación",IDOVALUE==idoDelCom)
+			exists ((and 	ObjValue(IDO==idoDoc,PROPNAME=="origen",idoAlm:IDOVALUE)
+							ObjValue(IDO==idoAlm,PROPNAME=="delegación",IDOVALUE==idoDelCom))))
+then
+	dma.printRule("==========  DISTRIBUIDOR DE DELEGACION ES SU AGENTE EN VENTAS");	
+	dma.setValue(idoDoc,idtoDoc,"agente_comercial",new ObjectValue(idoDist,idtoDist));
+end
+

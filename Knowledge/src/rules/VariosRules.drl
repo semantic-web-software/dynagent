@@ -1,0 +1,1175 @@
+package dynagent.ruleengine.src.ruler.ERPrules;
+import dynagent.ruleengine.src.ruler.ERPrules.*;
+import dynagent.ruleengine.src.ruler.ERPrules.datarules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import dynagent.common.communication.Reservation;
+import dynagent.common.basicobjects.*;
+import dynagent.common.utils.IndividualValues;
+import dynagent.common.utils.QueryConstants;
+
+global DataModelAdapter dma;
+
+/*
+YA NO ES IMPORTANTE ESTA REGLA PQ LOS PRECIOS, IVAS,... ATIENDEN A CAMBIOS DEL SUJETO
+rule "NO SE PUEDE CREAR LÍNEAS SI EL DOCUMENTO AÚN NO TIENE SUJETO"
+agenda-group "rules" when 
+
+	
+	ObjValue(idDoc:ID!=null,PROPNAME=="línea",idLinea:VALOR!=null)
+	Lock(ID==idDoc,nameDoc:CLASSNAME,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	FactHierarchy(CLASS==nameDoc,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	Model(CLASSNAME==nameDoc,OP==Constants.OP_CARDINALITY,sujeto:PROPNAME=="cliente"||PROPNAME=="proveedor", QMIN>=1)
+	not(ObjValue(CLASSNAME==nameDoc,ID==idDoc,PROPNAME=="cliente"||PROPNAME=="proveedor",idSujeto:VALOR!=null))
+	Lock(ID==idLinea,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+then
+	dma.printRule("\n\n =============NO SE PUEDE CREAR LÍNEAS SI EL DOCUMENTO AÚN NO TIENE SUJETO");
+	throw new OperationNotPermitedException("No se puede crear una linea cuando aun no se ha indicado el "+sujeto);
+end
+*/
+
+
+rule "DISTRIBUIDOR A PARTTIR DE CLIENTE CON ALMACEN"
+agenda-group "rules" when
+    
+     ObjValue(CLASSNAME=="CLONAR_COMO_DISTRIBUIDOR",idoUTask:IDO, PROPNAME=="sourceClass",tipoCliente:RANGENAME!=null,idtoCliente:VALUECLS,idoCliente:IDOVALUE!=null)
+     ObjValue(IDO==idoUTask,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	 DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+then
+   	dma.printRule("=======================DISTRIBUIDOR A PARTTIR DE CLIENTE CON ALMACEN"); 
+   	Domain domDistrib=dma.cloneIndividual(idoCliente,idtoCliente,dma.getIdClass("DISTRIBUIDOR"),"rdn#deuda#cuenta_contable#fecha_alta");   
+   	dma.setValue(idoCliente,idtoCliente,"distribuidor",new ObjectValue(domDistrib));
+   	dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(domDistrib)); 	    	    
+end
+
+rule "ASCENDER CLIENTE POTENCIAL A CLIENTE"
+agenda-group "rules" when
+    
+     ObjValue(CLASSNAME=="ASCENDER_CLIENTE_POTENCIAL_A_CLIENTE",idoUTask:IDO, PROPNAME=="sourceClass",tipoClientePotencial:RANGENAME!=null,idtoclientepotencial:VALUECLS,idoClientePotencial:IDOVALUE!=null)
+     ObjValue(IDO==idoUTask,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	 DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+then
+   	dma.printRule("\n\n=======================RULE  ASCENDER CLIENTE POTENCIAL A CLIENTE"); 
+   	String tipoCliente=null;
+   	if(tipoClientePotencial.equals("CLIENTE_POTENCIAL_EMPRESA")){
+   		tipoCliente="CLIENTE_EMPRESA";
+   	}
+   	else{
+	   	tipoCliente="CLIENTE_PARTICULAR";
+   	}
+   	int idtoTipoCliente=dma.getIdClass(tipoCliente);
+    Domain domCliente=dma.cloneIndividual(idoClientePotencial,idtoclientepotencial,idtoTipoCliente,null);
+    dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(domCliente));
+    //dma.deleteObject(new Integer(idClientePotencial),idtoclientepotencial);
+    dma.setValue(idoClientePotencial,idtoclientepotencial,"cliente",new ObjectValue(domCliente));
+end
+
+
+	 
+rule "CALCULO PROVINCIA A PARTIR DE PROVINCIA DE LOCALIDAD"
+agenda-group "rules" when 
+  	
+  	ObjValue(idRoot:ID,idtoRoot:IDTO,PROPNAME=="localidad",localidad:VALOR!=null)
+ 	Individual(ID==idRoot,STATE==Constants.INDIVIDUAL_STATE_READY)
+  	ObjValue(ID==localidad,idoLocalidad:IDO,idtoLocalidad:IDTO,PROPNAME=="provincia",idprovincia:VALOR!=null,provincia:OBJECTVALUE)
+  	not(ObjValue(ID==idRoot,PROPNAME=="provincia",VALOR==idprovincia))
+then
+	dma.printRule("\n\n ============ CALCULO PROVINCIA A PARTIR DE PROVINCIA DE LOCALIDAD");
+	dma.setValue(idRoot,idtoRoot,"provincia",provincia);
+end
+
+
+rule "PROVINCIA DE LOCALIDAD"//necesaria para arreglar localidad sin provincia de la web
+agenda-group "rules" when 
+  	  	
+ 	Individual(CLASSNAME=="LOCALIDAD",idoLocalidad:IDO,idtoLocalidad:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+  	(or not ObjValue(IDO==idoLocalidad,PROPNAME=="provincia",VALOR!=null)
+  		eval(idoLocalidad.intValue()<0))
+  	ObjValue(idoDoc:IDO,PROPNAME=="localidad",IDOVALUE==idoLocalidad)
+  	ObjValue(IDO==idoDoc,PROPNAME=="provincia",provincia:OBJECTVALUE!=null)  	  	
+then
+	dma.printRule("\n\n ============ PROVINCIA DE LOCALIDAD");
+	dma.setValue(idoLocalidad,idtoLocalidad,"provincia",provincia);
+end
+
+rule "PAIS DE PROVINCIA"//necesaria para arreglar provincia sin pais de la web
+agenda-group "rules" when 
+  	  	
+ 	Individual(CLASSNAME=="PROVINCIA",idoProvincia:IDO,idtoProvincia:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+  	(or not ObjValue(IDO==idoProvincia,PROPNAME=="país",VALOR!=null)
+  		eval(idoProvincia.intValue()<0))
+  	ObjValue(idoDoc:IDO,PROPNAME=="provincia",IDOVALUE==idoProvincia)
+  	ObjValue(IDO==idoDoc,PROPNAME=="país",pais:OBJECTVALUE!=null)  	  	
+then
+	dma.printRule("\n\n ============ PROVINCIA DE LOCALIDAD");
+	dma.setValue(idoProvincia,idtoProvincia,"país",pais);
+end
+
+rule "CALCULO PAÍS A PARTIR PAÍS DE PROVINCIA "
+agenda-group "rules" when 
+  	
+  	ObjValue(idRoot:ID,idoRoot:IDO,idtoRoot:IDTO,PROPNAME=="provincia",provincia:VALOR!=null,hasCHANGED==true)
+ 	Individual(clase:CLASSNAME,ID==idRoot,STATE==Constants.INDIVIDUAL_STATE_READY)//no bloquear para pueda arreglar datos de direccion replciados desde la web
+	ObjValue(ID==provincia,PROPNAME=="país",idpais:VALOR!=null,pais:OBJECTVALUE)
+	Model(CLASSNAME==clase,PROPNAME=="país",OP==Constants.OP_INTERSECTION)
+	not(ObjValue(ID==idRoot,PROPNAME=="país",VALOR==idpais))
+then
+	dma.printRule("\n =============== RULE CALCULO PAÍS A PARTIR PAÍS DE PROVINCIA: se va a asignar a idoRoot="+idoRoot+" el pais="+pais);
+	dma.setValue(idoRoot,idtoRoot,"país",pais);
+end
+
+
+rule "CARGA MOTOR LOCALIDADES"
+salience 100
+ agenda-group "rules" when 
+  	
+  	ObjValue(id:ID,PROPNAME=="localidad",localidad:VALOR!=null,idtolocalidad:VALUECLS)
+	Lock(ID==id,STATE==Constants.INDIVIDUAL_STATE_LOCK,LOCKEDBYUSER==true)
+	Individual(ID==id)	
+not(Individual(ID==localidad))
+then
+
+	dma.printRule("\n\n=================>>DISPARO RULE CARGA MOTOR LOCALIDADES");
+	dma.ruleGetFromServer(Integer.parseInt(localidad),idtolocalidad,1,false);
+end
+
+rule "CARGA MOTOR PROVINCIA"
+salience 100
+ agenda-group "rules" when 
+  	
+  	ObjValue(id:ID,PROPNAME=="provincia",provincia:VALOR!=null,idtoprovincia:VALUECLS)
+  	Individual(ID==id) 	 	
+	not(Individual(ID==provincia))
+	(or
+		exists((and
+			ObjValue(VALOR==provincia,iddom1:ID)
+			Lock(ID==iddom1,STATE==Constants.INDIVIDUAL_STATE_LOCK,LOCKEDBYUSER==true)
+		))
+		exists((and
+			ObjValue(VALOR==provincia,iddom1:ID)
+			ObjValue(VALOR==iddom1,iddom2:ID)
+			Lock(ID==iddom2,STATE==Constants.INDIVIDUAL_STATE_LOCK,LOCKEDBYUSER==true)
+		))
+	)	
+then
+	dma.printRule("\n\n=================>>DISPARO RULE CARGA MOTOR PROVINCIA");
+	dma.ruleGetFromServer(Integer.parseInt(provincia),idtoprovincia,1,false);
+end
+
+
+////////////////////////////////////////////////
+////CONFIGURACIÓN DE MI EMPRESA/////////////////
+///////////////////////////////////////////////
+
+rule "AGREGAR LINEAS IGUALES"
+salience -200
+agenda-group "rules" when
+	
+
+	FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA")
+	not(FactHierarchy(IDTO==idtoLinea,CLASSSUP=="LÍNEA_REGULARIZACIÓN"))
+	DatValue(IDTO==idtoLinea,PROPNAME=="clave_producto",key:VALOR,	idoLinea1:IDO, 			claseLinea:CLASSNAME)
+	DatValue(VALOR==key,PROPNAME=="clave_producto",IDTO==idtoLinea, idoLinea2:IDO!=idoLinea1)
+	
+	//en promociones nxm, unas unidades condicionanl otras que tienen descuento, y no se puede perder esa informacion
+	//ver regla  PRECIO LÍNEA EN VENTAS: VARIACION POR CANTIDAD
+	//not(DatValue(IDO==idoLinea1,PROPNAME=="tarifa_aplicada",VALOR!=null))
+	
+	ObjValue(idoDominio:IDO,	PROPNAME=="línea",IDOVALUE==idoLinea1)
+	ObjValue(IDO==idoDominio,	PROPNAME=="línea",IDOVALUE==idoLinea2)
+
+	Individual(IDO==idoLinea1,level1:LEVEL,STATE==Constants.INDIVIDUAL_STATE_READY)
+	Lock(IDO==idoLinea1,LOCKEDBYUSER==null||==false)
+	Individual(IDO==idoLinea2,level2:LEVEL,STATE==Constants.INDIVIDUAL_STATE_READY)
+	Lock(IDO==idoLinea2,LOCKEDBYUSER==null||==false)
+
+	//El siguiente forall afecta a todas las ObjPro producto documento almacén_origen almacén_destino iva lote color talla n._serie		
+	forall(	ObjValue(ido1:IDO==idoLinea1||==idoLinea2,propiedad:PROPNAME,detalle:VALOR!=null)
+			ObjValue(IDO!=ido1,IDO==idoLinea1||==idoLinea2,PROPNAME==propiedad,VALOR==detalle))
+	
+	forall(	DatValue(ido1:IDO==idoLinea1||==idoLinea2,propiedad:PROPNAME=="precio"||=="descuento"||=="concepto"||=="fecha_estimada_entrega"||=="coste",detalle:VALOR!=null)
+			DatValue(IDO!=ido1,IDO==idoLinea1||==idoLinea2,PROPNAME==propiedad,VALOR==detalle))			
+		
+	FactQ1:DatValue(IDO==idoLinea1,PROPNAME=="cantidad",cantidad1:DOUBLEVALUE!=null)
+	FactQ2:DatValue(IDO==idoLinea2,PROPNAME=="cantidad",cantidad2:DOUBLEVALUE!=null)
+	
+	forall(	ObjValue(idox:IDO==idoLinea1||==idoLinea2,PROPNAME=="documento",idoDoc:IDOVALUE!=null)	
+			Individual(IDO==idoDoc))//en acciones que solo carga un nivel, falla si elimina una linea sin su documento, porque no envia la desvinculacion 
+	not ((and 	ObjValue(IDO==idoLinea1,PROPNAME=="producto",idoProducto:IDOVALUE)
+				DatValue(IDO==idoProducto,PROPNAME=="descripción",VALOR=="VARIOS")))
+//	DatValue(IDO==idoLinea1,PROPNAME=="clave_producto",c1:VALOR!=null)
+//	DatValue(IDO==idoLinea2,PROPNAME=="clave_producto",c2:VALOR!=null)
+then
+	dma.printRule("\n\n===================AGREGAR LINEAS IGUALES (no varios): tipoLinea="+claseLinea+" cantidad1="+cantidad1+" cantidad2="+cantidad2+" idlinea1="+idoLinea1+" idlinea2="+idoLinea2);
+	//agregas en la linea que hemos llamado idlinea1 la cantidad de la segunda y borramos la segunda linea
+	Integer lineaToDelete=null;
+	Integer lineaQueAgrega=null;
+	DatValue FactQAgregado=null;
+	DatValue FactQToDelete=null;
+	
+	double d1=dma.getDoubleValue(new Domain(idoLinea1,idtoLinea),"descuento",true);
+	double d2=dma.getDoubleValue(new Domain(idoLinea2,idtoLinea),"descuento",true);
+	dma.printRule("DESCUENTOS "+d1+" "+d2);
+	if(level1==2)
+	{//Sabemos que level 2 es prototype y 3 es individual por tanto si uno de ellos es individual hay que eliminar el otro.
+		lineaToDelete=idoLinea1;
+		lineaQueAgrega=idoLinea2;
+		FactQAgregado=FactQ2;
+		FactQToDelete=FactQ1;
+	}else
+	{
+		lineaToDelete=idoLinea2;
+		lineaQueAgrega= idoLinea1 ;
+		FactQAgregado=FactQ1;	
+		FactQToDelete=FactQ2;
+	}
+	
+	dma.deleteObject(lineaToDelete,idtoLinea);//Importante que este el deleteObject antes que el setValue para que no se avise del cambio del setValue que puede dar algun problema
+	//dma.setValue(lineaToDelete,"cantidad","0");//Se pone a 0 la línea porque si no luego otra regla impide el borrado cuando acabe esta regla.
+	//FactQToDelete.consumirEventoCambio();
+	
+	dma.setValue(lineaQueAgrega,idtoLinea,"cantidad",new DoubleValue(cantidad1+cantidad2));
+	FactQAgregado.consumirEventoCambio();
+end
+
+rule "MOSTRAR ADVERTENCIAS DE CLIENTE"
+ salience -100
+ agenda-group "rules" when 
+   	
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	f1:ObjValue(CLASSNAME==nameDoc,idoDoc:IDO,idDoc:ID,PROPNAME=="cliente",idCliente:VALOR!=null,idtocliente:VALUECLS)
+	//quitamos individidual pq se dispara repetidamente con el mismo mensaje por culpa de los cambios del obj java individual
+	ObjValue(nametask:CLASSNAME,PROPNAME=="targetClass"||=="sourceClass", VALOR==idDoc)//para que cuando se realize una acción de paso de doc a otro no se dispare la regla dos veces (una por cada documento)
+	not(DatValue(ID==idDoc,PROPNAME=="emitido",VALOR=="true"))
+	f2:DatValue(ID==idCliente,PROPNAME=="advertencias",advertencias:VALOR!=null) 
+	eval(idoDoc<0)///PARA QUE SOLO MUESTRE ADVERTENCIAS EN CREACIONES DE DOCUMENTOS
+then
+	dma.printRule("\n\n  ========== RULE MOSTRAR ADVERTENCIAS DE CLIENTE Documento="+nameDoc+"   cliente="+idCliente+"   utask="+nametask);
+	String mensajeToUsuario=null;
+	String rdnccliente=dma.getValue(Integer.parseInt(idCliente),idtocliente,"rdn").getValue_s();
+	if(rdnccliente!=null){
+		mensajeToUsuario="Cliente ("+rdnccliente+"): ";
+		mensajeToUsuario+=advertencias;
+		dma.showMessage(mensajeToUsuario);
+	}
+end
+
+ 
+rule "RESERVA"
+salience -250
+ agenda-group "rules" when 
+   	DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="no_permitir_stock_negativos",BOOLEANVALOR==true)
+   	facts: ArrayList(size>0) from collect  (DatValue(CLASSNAME=="STOCK",PROPNAME=="cantidad",hasCHANGED==true,LEVEL==Constants.LEVEL_INDIVIDUAL,ido:IDO,idto:IDTO,prop:PROP))
+then
+	dma.printRule("\n\n========== RULE RESERVA "+facts);
+	
+	HashMap<Integer,HashMap<Integer,DatValue>> mapIdoPropFact = new HashMap<Integer,HashMap<Integer,DatValue>>();
+ 	LinkedHashMap<String,Reservation> reservationList=new LinkedHashMap<String,Reservation>();
+	for(DatValue f:(ArrayList<DatValue>)facts){
+		int ido=f.getIDO();
+		int idProp=f.getPROP();
+		double reservation=f.getINITIALDOUBLE()-f.getDOUBLEVALUE();
+		double available=f.getINITIALDOUBLE();
+		//Añadimos en la lista para reservar
+		reservationList.put(ido+""+idProp,new Reservation(ido, idProp, reservation, available));
+		
+		//Metemos en el mapa que nos servira luego para modificar el valor de ese fact
+		HashMap mapPropFact=null;
+	 	if(!mapIdoPropFact.containsKey(ido)){
+	     	mapPropFact=new HashMap();
+	 		mapIdoPropFact.put(ido,mapPropFact);
+	 	}else{
+	 		mapPropFact=(HashMap)mapIdoPropFact.get(new Integer(ido));
+	 	}
+	 	mapPropFact.put(idProp,f);
+	}
+	
+	HashMap<DomainProp,Double> mapDomainPropOffset=dma.reserve(reservationList);
+	//Recorremos el resultado modificando initialValor y valor del fact si hay algun offset(diferencia entre stock disponible conocido y stock disponible en bd menos reservas de otros usuarios) en el servidor para ese fact
+	Iterator<DomainProp> itr=mapDomainPropOffset.keySet().iterator();
+	while(itr.hasNext()){
+		DomainProp domainProp=itr.next();
+		DatValue f=mapIdoPropFact.get(domainProp.getIdo()).get(domainProp.getIdProp());
+		System.err.println("OffSet:"+mapDomainPropOffset.get(domainProp));
+		f.addInitialQ(mapDomainPropOffset.get(domainProp));
+		f.consumirEventoCambio();//Para evitar que se vuelva a disparar esta regla
+		System.err.println("DatValuee cambiado:"+f);
+	}
+	
+ end
+ 
+
+rule "EJEMPLO SELECCIONAR SOURCE PARA BATCH LISTENER"
+agenda-group "rules" when
+    
+     ObjValue(CLASSNAME=="Facturar_Albaranes_Venta_Automáticamente",idoUTask:IDO, PROPNAME=="sourceClass",tipoClientePotencial:RANGENAME!=null,idtoclientepotencial:VALUECLS,idClientePotencial:VALOR!=null)
+     ObjValue(IDO==idoUTask,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	 DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+then
+   	dma.printRule("\n\n=======================RULE  EJEMPLO SELECCIONAR SOURCE PARA BATCH LISTENER"); 
+   	ArrayList<HashMap<Integer,Integer>> sources=new ArrayList<HashMap<Integer,Integer>>();
+	/*HashMap<Integer,Integer> map=new HashMap<Integer, Integer>();
+	map.put(1164, 164);
+	map.put(2164, 164);
+	sources.add(map);
+	HashMap<Integer,Integer> map2=new HashMap<Integer, Integer>();
+	map2.put(3164, 164);
+	sources.add(map2);*/
+	dma.setSourceBatch(sources);
+end
+
+rule "FILTRADO DE SUBFAMILIA A PARTIR DE LA FAMILIA"
+ agenda-group "rules" when 
+  	
+    ObjValue(idoRoot:IDO,clsRoot:CLASSNAME,PROPNAME=="familia",idoFamilia:IDOVALUE,idfamilia:VALOR!=null,idtoFamilia:VALUECLS,ovfamilia:OBJECTVALUE)
+    Lock(IDO==idoRoot,LOCKEDBYUSER==true)
+    RangeFilter(IDO==idoRoot,PROPNAME=="subfamilia",filtroSubfamilia:VALUE!=null)
+  	//not(exists(FilterValue(ID==filtroSubfamilia,PROPNAME=="familia",VALOR==idfamilia)))
+  	Model(CLASSNAME==clsRoot,PROPNAME=="familia",OP==Constants.OP_CARDINALITY,qmax:QMAX)
+then
+	dma.printRule("\n\n-----------------FILTRADO DE SUBFAMILIA A PARTIR DE LA FAMILIA: familia: "+idfamilia+"  idoRoot:"+idoRoot+"  clsRoot:"+clsRoot);
+	if(qmax!=null && qmax.intValue()==1) 
+		dma.setFilterValue(filtroSubfamilia,"familia",ovfamilia);
+	else
+		dma.addFilterValue(filtroSubfamilia,"familia",ovfamilia);
+end
+
+rule "ASIGNACIÓN DE FAMILIA A PARTIR DE SUBFAMILIA"
+ agenda-group "rules" when
+  	FactHierarchy(idtoArt:IDTO,CLASSSUP=="ARTÍCULO")
+    ObjValue(IDTO==idtoArt,idoArt:IDO,PROPNAME=="subfamilia",idoSub:IDOVALUE!=null,hasCHANGED==true)
+    ObjValue(IDO==idoSub,PROPNAME=="familia",familia:VALOR!=null,ovfamilia:OBJECTVALUE)
+then
+	dma.printRule("\n\n-ASIGNACIÓN DE FAMILIA A PARTIR DE SUBFAMILIA");
+	dma.setValue(idoArt,idtoArt,"familia",ovfamilia);
+end
+
+rule "ASIGNACIÓN MEDIOS DE PAGO EN CAJA"
+ agenda-group "rules" when
+  	Individual(clsRoot:CLASSNAME=="CAJA",idoRoot:IDO,idtoRoot:IDTO,LEVEL==Constants.LEVEL_PROTOTYPE)
+  	not(exists(ObjValue(IDO==idoRoot,PROPNAME=="medio_de_pago",VALUE!=null)))  	
+  	idosidtos:HashMap(size>0)
+	from accumulate(
+	 	(and 	 	
+	 		DatValue(CLASSNAME=="TIPO_PAGO",PROPNAME=="rdn",ido:IDO,idto:IDTO)
+		),
+		init( HashMap<Integer,Integer> idosidtos2=new HashMap <Integer,Integer> (); ),									
+	  	action( idosidtos2.put(ido,idto);),
+		result(idosidtos2))	
+then
+	dma.printRule("\n\n-ASIGNACIÓN MEDIOS DE PAGO EN CAJA "+idosidtos);
+	for(Integer ido:((HashMap<Integer,Integer>)idosidtos).keySet()){
+		ObjectValue val=new ObjectValue(ido,(Integer)idosidtos.get(ido));
+		dma.addValue(idoRoot,idtoRoot,"medio_de_pago",val);	
+	}
+end
+
+rule "CONFIGURACION APLICACION NO SE PUEDE BORRAR"
+agenda-group "rules" when 
+	
+	FactHierarchy(CLASSSUP=="APLICACIÓN", namecls:CLASS)
+	Individual(CLASSNAME==namecls, id1:ID!=null,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+then
+	dma.printRule("\n\n ============= CONFIGURACION APLICACION NO SE PUEDE BORRAR");
+	throw new OperationNotPermitedException("NO ESTÁ PERMITIDO BORRAR LA CONFIGURACIÓN DE LA APLICACIÓN");
+end
+
+
+/*rule "TRAZA DOCUMENTO"
+agenda-group "bddrules" when 	
+	Model(PROPNAME=="traza_documento",OP==Constants.OP_INTERSECTION)
+	FactHierarchy(CLASSSUP=="LÍNEA",idtoLinea:IDTO)
+	Lock(IDTO==idtoLinea,idoLinea:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(idoDoc:IDO,idtoDoc:IDTO,PROPNAME=="línea",IDOVALUE==idoLinea)
+	ObjValue(IDO==idoLinea,PROPNAME=="documento",idoDocEvo:IDOVALUE!=null&&!=idoDoc,idtoDocEvo:VALUECLS)
+	FactHierarchy(claseDoc:CLASSSUP=="FACTURA"||=="ALBARÁN"||=="TICKET"||=="PEDIDO"||=="PRESUPUESTO"||=="PRODUCCIÓN",IDTO==idtoDocEvo)
+	DatValue(IDO==idoDocEvo,PROPNAME=="rdn",rdnDoc:VALOR!=null)
+	
+	not((and DatValue(IDO==idoDoc,PROPNAME=="traza_documento",traza:VALOR!=null)
+			eval(traza.contains(trazaDoc(claseDoc,rdnDoc)))))
+			
+then
+	dma.printRule("============= TRAZA DOCUMENTO "+rdnDoc+" "+idoLinea);
+	StringValue trazaSV=(StringValue)dma.getValue(idoDoc,idtoDoc,"traza_documento");
+	String traza=null;
+	if(trazaSV!=null) traza=trazaSV.getValue()+","+trazaDoc(claseDoc,rdnDoc);
+	else	traza=trazaDoc(claseDoc,rdnDoc);
+	
+	dma.setValue(idoDoc,idtoDoc,"traza_documento",new StringValue(traza)); 
+end
+
+rule "DOCUMENTO: ELIMINAR DOC SIN LINEAS"
+salience -10 //menos prioridad que traza
+agenda-group "bddrules" when 		
+	FactHierarchy(CLASSSUP=="TICKET",idtoDoc:IDTO)
+	Individual(IDTO==idtoDoc,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	not(ObjValue(IDO==idoDoc,PROPNAME=="línea", IDOVALUE!=null))
+then
+	dma.printRule("============= DOCUMENTO: ELIMINAR DOC SIN LINEAS");
+	dma.deleteObject(idoDoc,idtoDoc);
+end*/
+
+rule "TRAZA DOCUMENTO"
+//De acuerdo al patron de correlar a nivel de lineas salvo si estan bloqueadas, como en este caso es complejo porque abria que habilitar  
+//un patron contributivo a la traza, ya que un doc deja de estar en una traza cuando se elimina la ultima linea que lo apuntaba, lo hacemos
+// en el consecuente para que no consuma recursos de correlacion dinamicos
+
+agenda-group "rules" when 		
+	FactHierarchy(CLASSSUP=="DOCUMENTO"||=="ESCANDALLO",idtoDoc:IDTO)		
+	not(FactHierarchy(CLASSSUP=="REGULARIZACIÓN",IDTO==idtoDoc))	
+	Lock(IDTO==idtoDoc,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+	
+	//ObjValue(idoTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	//DatValue(ID==idEstado,PROPNAME=="rdn",st:VALOR==Constants.INDIVIDUAL_PREREALIZADO)
+		
+	Individual(IDO==idoDoc,estadoIndDoc:STATE)
+	
+	Model(IDTO==idtoDoc,propLinea:PROPNAME=="línea"||=="componente"||=="salida",OP==Constants.OP_INTERSECTION)
+	
+	//siguiente condición para que no correle con ticket incrustado, y no actue cuando no se carga completamente por ejemplo al cobrar
+	forall( ObjValue(IDO==idoDoc,PROPNAME==propLinea,idoLinea:IDOVALUE!=null)
+			Individual(IDO==idoLinea,STATE==Constants.INDIVIDUAL_STATE_READY))
+	
+ 	modeloEstadoLinea:ArrayList() from collect(Model(CLASSNAME=="LÍNEA",PROPNAME=="estado",OP==Constants.OP_INTERSECTION))		
+	modeloDocumento:ArrayList() from collect(Model(IDTO==idtoDoc,PROPNAME=="documentos",OP==Constants.OP_INTERSECTION)) 	
+ 	modeloServido:ArrayList() from collect(Model(IDTO==idtoDoc,PROPNAME=="servido",OP=="AND"))
+ 	modeloCompleto:ArrayList() from collect(Model(IDTO==idtoDoc,PROPNAME=="completo",OP=="AND"))
+ 	modeloAlbaran:ArrayList() from collect(Model(IDTO==idtoDoc,PROPNAME=="albaranado",OP=="AND"))
+ 	modeloFactura:ArrayList() from collect(Model(IDTO==idtoDoc,PROPNAME=="facturado",OP=="AND"))
+ 	modeloLineaAlbaran:ArrayList() from collect(Model(CLASSNAME=="LÍNEA_ARTÍCULOS",PROPNAME=="albaranado",OP=="AND"))
+ 	modeloDocLinea:ArrayList() from collect(Model(CLASSNAME=="LÍNEA_ARTÍCULOS",PROPNAME=="documentos",OP=="AND"))
+ 	modeloLineaServido:ArrayList() from collect(Model(CLASSNAME=="LÍNEA_MATERIA",PROPNAME=="servido",OP=="AND"))
+ 	modeloLineaReservado:ArrayList() from collect(Model(CLASSNAME=="LÍNEA_ARTÍCULOS_MATERIA",PROPNAME=="reservado",OP=="AND"))
+ 	
+ 	FactHierarchy(CLASSSUP=="LÍNEA_ARTÍCULOS",idtoSupLinArt:IDTOSUP,IDTO==idtoSupLinArt)
+ 	FactHierarchy(CLASSSUP=="FLUJO_ARTÍCULOS",idtoSupFlujo:IDTOSUP,IDTO==idtoSupFlujo)
+ 	FactHierarchy(CLASSSUP=="FACTURA",idtoSupFact:IDTOSUP,IDTO==idtoSupFact)
+ 	
+ 	estReservaPedido:ArrayList() from accumulate((and 	DatValue(CLASSNAME=="PARAMETRO_VERDADERO",idoParam:IDO,PROPNAME=="rdn",VALOR=="estado_reservan_pedidos")
+    													DatValue(IDO==idoParam,PROPNAME=="filtro",er:VALOR!=null)
+    													DatValue(IDO==idoParam,PROPNAME=="activo",VALOR=="true")   
+    													DatValue(CLASSNAME=="ESTADO",idoEst:IDO,PROPNAME=="rdn",rdnEst:VALOR!=null)
+    													eval(er.contains(rdnEst))						
+													),
+													init(ArrayList res=new ArrayList();),action(res.add(idoEst);),result(res))													
+													
+																										
+	DatValue(CLASSNAME=="ESTADO",idoEstAnulado:IDO,PROPNAME=="rdn",VALOR=="Anulado")
+then
+	dma.printRule("============= TRAZA DOCUMENTO "+idtoDoc+" "+modeloAlbaran.size()+" model linea:"+modeloLineaAlbaran.size()+" "+idtoSupFlujo+" mod serv lin:"+modeloLineaServido.size());
+	
+	ObjectValue estadoLinea=new ObjectValue(0,0);
+	boolean diversosEstadoLineas=false;
+	boolean flujoCompleto=true;
+	boolean flujoParcial=false;
+	boolean facturado=true;
+	
+	boolean rootEsFactura=dma.isSpecialized(idtoDoc,idtoSupFact);
+	boolean rootEsFlujo=estadoIndDoc==Constants.INDIVIDUAL_STATE_READY && dma.isSpecialized(idtoDoc,idtoSupFlujo);
+	TreeSet traza=new TreeSet();
+	//necesario para que siempre ordene igual los codigos en cada linea, de lo contrario el report las separa
+	HashSet<Integer> idosProcesados= new HashSet<Integer>();
+	
+	TreeMap numeros=new TreeMap();
+	
+	
+	LinkedList<Value>lv= (LinkedList<Value>)dma.getValues(idoDoc,idtoDoc,propLinea);	
+	for(int i=0;i<lv.size();i++){				
+		ObjectValue ovLinea=(ObjectValue)lv.get(i);
+		numeros.put(new Integer(ovLinea.getValue()),ovLinea);
+		//dma.printRule(" linea "+ovLinea.getValue());
+		if(modeloEstadoLinea.size()>0){
+			ObjectValue ovEstadoLinea=(ObjectValue)dma.getValue(ovLinea.getValue(),ovLinea.getValueCls(),"estado");
+		
+			if(ovEstadoLinea==null)
+				diversosEstadoLineas=true;
+			else{
+				if(!diversosEstadoLineas){
+					if( estadoLinea.getValue().intValue()==0)
+						estadoLinea=ovEstadoLinea;
+					else{
+						if(estadoLinea.getValue().intValue()!=ovEstadoLinea.getValue().intValue()) diversosEstadoLineas=true;
+					}
+				}				
+			}
+		}
+		
+		boolean existeDocFlujo=rootEsFlujo;//para esta linea
+		boolean existeDocFactura=rootEsFactura;
+		boolean estadoDocReserva=false;
+		TreeSet trazaLin=new TreeSet();
+		for(Value d: (LinkedList<Value>)dma.getValues(ovLinea.getValue(),ovLinea.getValueCls(),"documento")){
+			ObjectValue ovDocEvo=(ObjectValue)d;
+			String stDocEvo=dma.getIndividualState(ovDocEvo.getValue());
+			boolean docExistInMotor=dma.getDDM().existInMotor(ovDocEvo.getValue());
+			ObjectValue ovEstadoDoc=!docExistInMotor?null:(ObjectValue)dma.getValue(ovDocEvo.getValue(),ovDocEvo.getValueCls(),"estado");
+			estadoDocReserva= 	ovEstadoDoc!=null && 
+								!ovEstadoDoc.getValue().equals(idoEstAnulado) &&
+								(estReservaPedido.size()==0 || estReservaPedido.contains(ovEstadoDoc.getValue()));
+								
+			dma.isSpecialized(ovDocEvo.getValueCls(),idtoSupFlujo);
+			//si el doc no está en motor (estado nulo), suponemos es ready, pero igualmente debe actuar, de lo contrario se equivoca en estados
+			if(stDocEvo==null || stDocEvo.equals(Constants.INDIVIDUAL_STATE_READY)){							
+				//Procesado estado
+				if(!existeDocFlujo && dma.isSpecialized(ovDocEvo.getValueCls(),idtoSupFlujo)){														
+					existeDocFlujo=true;
+				}
+				if(!existeDocFactura &&	dma.isSpecialized(ovDocEvo.getValueCls(),idtoSupFact)){									
+					existeDocFactura=true;
+				}
+				if(stDocEvo!=null){
+					//Procesado traza							
+					StringValue s=(StringValue)dma.getValue(ovDocEvo.getValue(),ovDocEvo.getValueCls(),"rdn");		
+					String anexo=Constants.trazaDoc(dma.getClassName(ovDocEvo.getValueCls()),s.getValue());
+					
+					if(anexo!=null) trazaLin.add(anexo);
+			
+					if(!ovDocEvo.getValue().equals(idoDoc) && !idosProcesados.contains(ovDocEvo.getValue()) ){					
+						if(anexo!=null) traza.add(anexo);
+					}
+				}
+			}
+			idosProcesados.add(ovDocEvo.getValue());						
+		}
+		
+		//if(!lineaIncompleta){
+			if(trazaLin.size()>0 && modeloDocumento.size()>0){
+				if(modeloDocLinea.size()>0 && dma.isSpecialized(ovLinea.getValueCls(),idtoSupLinArt)){
+					String trazaLinStr="";
+					for (Iterator t = trazaLin.iterator(); t.hasNext(); ){
+						if(trazaLinStr.length()>0) trazaLinStr+=",";	
+						trazaLinStr+=(String)t.next();
+					}
+					dma.setValueNotLock(ovLinea.getValue(),ovLinea.getValueCls(),"documentos",new StringValue(trazaLinStr)); 
+				}
+				//if(traza.length()>0) traza+=",";
+				//traza+=trazaLin;
+			}
+			if(dma.isSpecialized(ovLinea.getValueCls(),dma.getIdClass("LÍNEA"))){				
+				if(modeloLineaAlbaran.size()>0&&dma.isSpecialized(ovLinea.getValueCls(),dma.getIdClass("LÍNEA_ARTÍCULOS"))){
+					dma.setValueNotLock(ovLinea.getValue(),ovLinea.getValueCls(),"albaranado",new BooleanValue(existeDocFlujo));
+					dma.setValueNotLock(ovLinea.getValue(),ovLinea.getValueCls(),"facturado",new BooleanValue(existeDocFactura));
+				}
+				if(modeloLineaServido.size()>0&&ovLinea.getValueCls()==dma.getIdClass("LÍNEA_MATERIA").intValue()){
+					DoubleValue cantidad=(DoubleValue)dma.getValue(ovLinea,"cantidad");
+					boolean servido=existeDocFlujo;
+					if(cantidad!=null && cantidad.getValue().equals(0.0)) servido=true;
+					 
+					dma.setValueNotLock(ovLinea.getValue(),ovLinea.getValueCls(),"servido",new BooleanValue(servido));
+				}
+				if(modeloLineaReservado.size()>0&&dma.isSpecialized(ovLinea.getValueCls(),dma.getIdClass("LÍNEA_MATERIA"))){				
+					//que sea reservado=true no impide que la regla de reserva exiga mas cosas, como ser o no origen de central
+					dma.setValueNotLock(ovLinea.getValue(),ovLinea.getValueCls(),"reservado",new BooleanValue(estadoDocReserva&&!existeDocFlujo));
+				}
+				
+			}
+		//}
+		
+		if(!existeDocFlujo ){//flujoCompleto parte de true, pero solo puede pasar a false y sin retorno
+			//dma.printRule(" FINAL ES NO ");
+			flujoCompleto=false;
+		}
+		if(!flujoParcial&&existeDocFlujo) flujoParcial=true;
+		
+		if(!existeDocFactura ){
+			//dma.printRule(" FINAL ES NO ");
+			facturado=false;
+		}
+	}
+	
+	double maxNum=0;
+	while(numeros.size()>0){
+		//se queda con la mas grande, que en las nuevas es la primera que se ha metido, o una nula ya existente. Todo ello contando que los idos negativos van decreciendo
+		Integer id=(Integer)numeros.lastKey();
+		ObjectValue ov=(ObjectValue)numeros.get(id);
+		DoubleValue currNum=(DoubleValue)dma.getValue(ov.getValue(),ov.getValueCls(),"número");	
+		if(currNum!=null) maxNum=Math.max(maxNum,currNum.getValue().doubleValue());
+				
+		if(currNum==null){
+			maxNum++;
+			dma.setValue(ov.getValue(),ov.getValueCls(),"número",new DoubleValue(maxNum));	
+		}
+		numeros.remove(id);
+	}
+		
+	
+	if(modeloDocumento.size()>0){
+		String trazaStr="";
+		for (Iterator i = traza.iterator(); i.hasNext(); ){
+			if(trazaStr.length()>0) trazaStr+=",";	
+			trazaStr+=(String)i.next();
+		}
+		if(trazaStr.length()>99) trazaStr=trazaStr.substring(0,99-2)+"..";
+		dma.setValueNotLock(idoDoc,idtoDoc,"documentos",new StringValue(trazaStr)); 
+	}
+	//EstadoLinea
+	if(modeloEstadoLinea.size()>0 && !diversosEstadoLineas && estadoLinea.getValue().intValue()!=0)	dma.setValueNotLock(idoDoc,idtoDoc,"estado",estadoLinea); 
+	
+	if(modeloAlbaran.size()>0){
+		dma.printRule(" RESULT ALB "+flujoCompleto);
+		dma.setValueNotLock(idoDoc,idtoDoc,"albaranado",new BooleanValue(flujoCompleto));
+	}
+	if(modeloCompleto.size()>0){
+		dma.printRule(" RESULT PED "+flujoCompleto);
+		dma.setValueNotLock(idoDoc,idtoDoc,"completo",new BooleanValue(flujoCompleto));
+	}
+	if(modeloServido.size()>0){
+		dma.printRule(" RESULT SERVIDO "+flujoParcial);
+		dma.setValueNotLock(idoDoc,idtoDoc,"servido",new BooleanValue(flujoParcial));
+	}
+	if(modeloFactura.size()>0){
+		dma.printRule(" RESULT FACT "+facturado);
+		dma.setValueNotLock(idoDoc,idtoDoc,"facturado",new BooleanValue(facturado));
+	} 
+end
+
+
+rule "TRAZA COBRO"
+//De acuerdo al patron de correlar a nivel de lineas salvo si estan bloqueadas, como en este caso es complejo porque abria que habilitar  
+//un patron contributivo a la traza, ya que un doc deja de estar en una traza cuando se elimina la ultima linea que lo apuntaba, lo hacemos
+// en el consecuente para que no consuma recursos de correlacion dinamicos
+agenda-group "rules" when 			
+	FactHierarchy(CLASSSUP=="COBRO"||=="PAGO",idtoCobro:IDTO)
+	Model(IDTO==idtoCobro,PROPNAME=="documentos",OP==Constants.OP_INTERSECTION)
+	Lock(IDTO==idtoCobro,idoCobro:IDO,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)							
+then
+	dma.printRule("============= TRAZA COBRO ");
+	String traza="";
+	HashSet<Integer> idosProcesados= new HashSet<Integer>();	
+	ListIterator<Value> asignacionVe=dma.getValues(idoCobro,idtoCobro,"vencimientos_asignados").listIterator();
+	while(asignacionVe.hasNext()){
+		ObjectValue ovAsignac=(ObjectValue)asignacionVe.next();
+		ObjectValue venc= (ObjectValue)dma.getValue(ovAsignac.getValue(),ovAsignac.getValueCls(),"vencimiento");
+		if( venc==null) continue;
+
+		ObjectValue ovFacura= (ObjectValue)dma.getValue(venc.getValue(),venc.getValueCls(),"factura");
+		if(!idosProcesados.contains(ovFacura.getValue())){
+			if(traza.length()>0) traza+=",";
+			StringValue s=(StringValue)dma.getValue(ovFacura.getValue(),ovFacura.getValueCls(),"rdn");				
+			traza+=Constants.trazaDoc(dma.getClassName(ovFacura.getValueCls()),s.getValue());
+			idosProcesados.add(ovFacura.getValue());
+		}					
+	}
+	
+	ListIterator<Value>  anticipos=dma.getValues(idoCobro,idtoCobro,"documento_anticipo").listIterator();
+	while(anticipos.hasNext()){
+		ObjectValue ovDoc=(ObjectValue)anticipos.next();		
+		if(traza.length()>0) traza+=",";
+		StringValue s=(StringValue)dma.getValue(ovDoc.getValue(),ovDoc.getValueCls(),"rdn");				
+		traza+=Constants.trazaDoc(dma.getClassName(ovDoc.getValueCls()),s.getValue());						
+	}
+	
+	if(traza.length()>99) traza=traza.substring(0,99-2)+"..";
+	if(traza!=null) dma.setValue(idoCobro,idtoCobro,"documentos",new StringValue(traza)); 
+	dma.printRule("============= END TRAZA COBRO ");
+end
+
+rule "SEND EMAIL"
+agenda-group "rules"	when   	
+	Individual(CLASSNAME=="NOTIFICACIÓN",idoNotificacion:IDO,idtoNotificacion:IDTO)
+	ObjValue(IDO==idoNotificacion,PROPNAME=="clase",idoClass:IDOVALUE!=null,idtoClass:VALUECLS)
+	DatValue(IDO==idoClass,IDTO==idtoClass,PROPNAME=="rdn",rdnClase:VALUE)
+	
+	FactHierarchy(CLASSSUP==rdnClase,idto:IDTO)
+	Individual(ido:IDO!=null, IDTO==idto, subject:CLASSNAME, state:STATE)
+	ObjValue(IDO==ido,PROPNAME=="mi_empresa",idoMiEmpresa:IDOVALUE!=null)
+	ObjValue(CLASSNAME=="APLICACIÓN",PROPNAME=="servidor_mail_saliente",idoServidor:IDOVALUE)
+	ObjValue(IDO==idoServidor,PROPNAME=="mi_empresa",IDOVALUE==idoMiEmpresa)
+	DatValue(IDO==idoServidor,PROPNAME=="activo",VALOR=="true")
+	
+	ObjValue(idoUTask:IDO, PROPNAME=="targetClass",IDOVALUE==ido)
+	ObjValue(IDO==idoUTask ,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado, PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+    ObjValue(IDO==idoNotificacion,PROPNAME=="evento",idoEvento:IDOVALUE!=null)
+    ObjValue(IDO==idoEvento,PROPNAME=="tipo_evento",idoTipoEvento:IDOVALUE!=null)
+    DatValue(IDO==idoTipoEvento,PROPNAME=="rdn",notificationType:VALUE)
+    eval(
+    	(notificationType.equals("ELIMINACIÓN") && state==Constants.INDIVIDUAL_STATE_DELETED) ||
+    	(notificationType.equals("CREACIÓN") && state==Constants.INDIVIDUAL_STATE_READY && Constants.isIDTemporal(ido)) ||
+		(notificationType.equals("MODIFICACIÓN") && state==Constants.INDIVIDUAL_STATE_READY && !Constants.isIDTemporal(ido))
+	)
+    //DatValue(IDO==idoEvento,PROPNAME=="mensaje",body:VALUE)
+    //NECESARIO PARA QUE NO INTENTE ENVIAR EMAILS A LOS CLIENTES QUE NO TIENE EMAIL NOTIFICACION
+    ObjValue(IDO==idoNotificacion,PROPNAME=="propiedad_hacia_email_notificación",idoProperty:IDOVALUE!=null)
+	DatValue(IDO==idoProperty,PROPNAME=="id",idProp:INTVALUE)
+	ObjValue(IDO==ido,PROP==idProp,idoHaciaEmail:IDOVALUE)
+	DatValue(IDO==idoHaciaEmail,PROPNAME=="email_notificaciones",email:VALUE)
+	
+then
+
+	/*
+	Nombre remitente: Dynagent
+	Email remitente: dynagent.gmail.com
+	Servidor smtp: smtp.gmail.com
+	password: dynaproyect
+	usuario: dynagent@gmail.com
+	puerto smtp: 587
+	Autenticar: true
+	Seguridad conexion: TLS
+	*/
+
+//TENER EN CUENTA QUE SI SE IMPORTA DE NUEVO HAY QUE PONER LA TILDE DE PROPIEDAD_HACIA....NOTIFICACIÓN
+	dma.printRule("======== SEND EMAIL");
+	/*
+	Integer reportIdto=null;
+	ObjectValue ov=(ObjectValue)dma.getValue(idoNotificacion,idtoNotificacion,"informe");
+	if(ov!=null && state==Constants.INDIVIDUAL_STATE_READY){
+		int idoInforme=ov.getIDOIndividual();
+		int idtoInforme=ov.getIDTOIndividual();
+	 	StringValue sv=(StringValue)dma.getValue(idoInforme,idtoInforme,"rdn");
+	 	String rdn=sv.getValue();
+	 	if(!rdn.contains("rp@")){
+			rdn="rp@"+rdn;
+	 	}
+	 	reportIdto=dma.getIdClass(rdn);
+	}
+ 	System.err.println("reportIdto:"+reportIdto);
+ 	
+	dma.requestEmail(ido,idto,reportIdto,email,subject,body,idoMiEmpresa,idoHaciaEmail);*/
+	
+	
+	dma.requestEmail(idoNotificacion,ido,idto,notificationType);	
+end
+
+
+rule "CARRITO COMPRA"
+agenda-group "rules" when 
+   	FactHierarchy(CLASSSUP=="Añadir_a_carrito",idtoAccion:IDTO)
+    ObjValue(IDTO==idtoAccion, idoUTask:IDO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+ 	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO) 	
+ 	source:ArrayList() from collect(ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",IDOVALUE!=null))
+ 	
+ 	not(ObjValue(IDO==idoUTask, PROPNAME=="targetClass",idoParams:IDOVALUE!=null,idtoParams:VALUECLS)) 	 	
+	
+then
+	dma.printRule("===========  CARRITO COMPRA ");
+
+	for(ObjValue ov:(ArrayList<ObjValue>)source){
+		Domain linea=dma.creaIndividualOfClass("LÍNEA_ARTÍCULOS_MATERIA");
+		dma.setValue(linea,"producto",ov.getOBJECTVALUE());
+		//dma.setValue(linea,"cantidad",new DoubleValue(1.0)); 		
+ 		dma.addValue(idoUTask,idtoAccion,"targetClass",new ObjectValue(linea));
+	}
+end 
+
+rule "TALLA COLOR: AGRUPACION: 0-PRECARGA SERIE TALLAS"
+salience -100 
+agenda-group "rules" when 	  		
+	ObjValue(PROPNAME=="serie_tallas",idoSerieTallas:IDOVALUE!=null,idtoSerieTallas:VALUECLS)	
+	not Individual(CLASSNAME=="serie_tallas")
+then
+	dma.printRule("================  SERIE TALLAS");		
+	instance  filer=dma.buildInstanceWith("SERIE_TALLAS",null,null,null,null);
+	HashSet<IDIndividual> idos=dma.loadIndividualsWithSatisficedFilter(filer);
+	dma.printRule("NUMERO ENCONTRADO "+idos.size());
+end	
+
+rule "TALLA COLOR: AGRUPACION: 1-INSTALACION"
+salience -100//Para que no se dispare antes que las reglas CODIGO BARRAS COMPUESTO que parten el codigo del producto al leer con pistola
+agenda-group "rules" when
+    jb:JBossEngine()
+    
+    FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO"||=="Añadir_a_carrito")
+    not FactHierarchy(CLASS==nameDoc,CLASSSUP=="TICKET")
+
+	ObjValue(CLASSNAME==nameDoc,idDoc:ID,PROPNAME=="línea"||=="targetClass",idLinea:VALOR!=null)
+	    
+    not Lock(ID==idDoc,LOCKEDBYUSER==false,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+     	
+	not ObjValue(ID==idLinea,PROPNAME=="talla",IDOVALUE!=null)
+	
+	Lock(ID==idLinea,IDO<0,LOCKEDBYUSER==true,STATE==Constants.INDIVIDUAL_STATE_LOCK)		
+	
+	DatValue(ID==idLinea,PROPNAME=="rdn",rdn:VALOR)
+	ObjValue(ID==idLinea,PROPNAME=="producto",idProducto:VALOR,clsProducto:RANGENAME!=null)
+	
+	Individual(ID==idProducto,idoProducto:IDO,idtoproducto:IDTO)
+	forall( FactHierarchy(CLASS==nameDoc,CLASSSUP=="DOCUMENTO_COMPRA")
+			DatValue(ID==idLinea,PROPNAME=="precio",precioLinea:DOUBLEVALUE!=null))
+			
+	ObjValue(ID==idProducto,PROPNAME=="serie_tallas",idoSerieTallas:IDOVALUE!=null,idtoSerieTallas:VALUECLS)
+	tallas: ArrayList(size>0) 
+		from accumulate(
+				(and 
+					ObjValue(IDO==idoSerieTallas,PROPNAME=="talla",idoTalla:IDOVALUE!=null)
+					d:DatValue(IDO==idoTalla, PROPNAME=="rdn", VALUE!=null)
+					//DatValue(IDO==idoTalla, PROPNAME=="descripción", descripcion:VALUE)
+				),
+			init( ArrayList<DatValue> tallas2 = new ArrayList<DatValue> (); ),
+			action( tallas2.add(d); ),                            
+			result( tallas2 )
+		)
+then
+   	dma.printRule("=======================RULE TALLA COLOR: AGRUPACION: INSTALACION"); 
+		
+   	IndividualValues data=new IndividualValues(dma.getIdClass("PARAMETROS_AGRUPACION_TALLA_COLOR"),null);
+   	data.addData(dma.getIdProperty("rdn"),(String)rdn);//Le ponemos el rdn de la linea para luego poder encontrar la linea en las siguientes reglas
+   	
+   	int numTallas=tallas.size();
+   	//Si existe la descripcion de la talla la mostramos, si no el rdn
+   	ArrayList<String> nameTallas=new ArrayList<String>();
+   	for(int i=0;i<numTallas;i++){
+   		dma.printRule("bucle talla "+i);
+   		DatValue datValue=(DatValue)tallas.get(i);
+   		String name=datValue.getVALUE();
+   		int ido=datValue.getIDO();
+   		int idto=datValue.getIDTO();
+   		Value value=dma.getValue(ido,idto,"descripción");
+   		if(value!=null){
+   			name=value.getValue_s();
+   		}
+   		nameTallas.add(name);
+   	}
+   	
+   	Collections.sort(nameTallas);
+   	HashMap<String,String> aliasMap=new HashMap<String,String>();
+   	for(int i=0;i<numTallas;i++){
+   		dma.printRule("bucle alias "+i);
+   		aliasMap.put("cantidad_"+(i+1),nameTallas.get(i));
+   	}
+   	//la llamada a question task desde consecuente, retorna sin ejecutarse y que queda la solicitud para despues. Question task crea individuo pero habra run antes de crear formulario,
+   	// por lo que da tiempo a lanzarse reglas que cambian permisos
+   	dma.questionRequest(Constants.TALLA_COLOR_QUESTION_TASK_RDN,data,aliasMap);
+end
+
+rule "TALLA COLOR: AGRUPACION: 2-CONFIGURACION"
+agenda-group "rules" when
+    jb:JBossEngine()
+
+    DatValue(idoQuestionTask:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.TALLA_COLOR_QUESTION_TASK_RDN)
+    not DatValue(IDO==idoQuestionTask,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    Individual(IDO==idoQuestionTask,IDTO==Constants.IDTO_QUESTION_TASK,STATE==Constants.INDIVIDUAL_STATE_READY)
+    
+    ObjValue(IDO==idoQuestionTask,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="sourceClass",idAgrupTallaColor:VALOR,idoAgrupTallaColor:IDOVALUE,idtoAgrupTallaColor:VALUECLS)
+	DatValue(ID==idAgrupTallaColor,CLASSNAME=="PARAMETROS_AGRUPACION_TALLA_COLOR", PROPNAME=="rdn", rdnParam:VALUE!=null)
+	 
+	DatValue(idLinea:ID, idoLinea:IDO<0, idtoLinea:IDTO, PROPNAME=="rdn", VALUE==rdnParam)
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO"||=="Añadir_a_carrito")
+	ObjValue(CLASSNAME==nameDoc,idoDoc:IDO,idDoc:ID,PROPNAME=="línea"||=="targetClass",VALOR==idLinea)
+		
+	not Lock(IDO==idoDoc,LOCKEDBYUSER==false,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	
+	ObjValue(ID==idLinea,PROPNAME=="producto",idProducto:VALOR,clsProducto:RANGENAME!=null)
+	Individual(ID==idProducto,idoProducto:IDO,idtoproducto:IDTO)
+	
+	forall( FactHierarchy(CLASS==nameDoc,CLASSSUP=="DOCUMENTO_COMPRA")
+			DatValue(ID==idLinea,PROPNAME=="precio",precioLinea:DOUBLEVALUE!=null))
+				
+	ObjValue(ID==idProducto,PROPNAME=="serie_tallas",idoSerieTallas:IDOVALUE!=null,idtoSerieTallas:VALUECLS)
+	
+	RangeFilter(ID==idAgrupTallaColor,PROPNAME=="talla_color",idoFilterTallaColor:VALUE!=null,idtoFilterTallaColor:VALUECLS)	
+	
+	
+	tallas: ArrayList(size>0) 
+		from accumulate(
+				(and 
+					ObjValue(IDO==idoSerieTallas,PROPNAME=="talla",idoTalla:IDOVALUE!=null)
+					d:DatValue(IDO==idoTalla, PROPNAME=="rdn", VALUE!=null)
+					//DatValue(IDO==idoTalla, PROPNAME=="descripción", descripcion:VALUE)
+				),
+			init( ArrayList<DatValue> tallas2 = new ArrayList<DatValue> (); ),
+			action( tallas2.add(d); ),                            
+			result( tallas2 )
+		)
+		
+	colores: ArrayList() from collect(ObjValue(ID==idProducto,PROPNAME=="color",IDOVALUE!=null))
+	
+	
+then
+   	dma.printRule("\n\n=======================RULE TALLA COLOR: AGRUPACION: CONFIGURACION "+idtoFilterTallaColor+" "+idoFilterTallaColor); 
+   	
+   	//Collections.sort(colores);
+   	int numColores=colores.size();
+   	for(int i=0;i<numColores;i++){
+   		Domain agrupacion= dma.creaIndividualOfClass("AGRUPACION_TALLA_COLOR");
+   		ObjValue objValue=(ObjValue)colores.get(i);
+   		dma.setValue(agrupacion,"color",new ObjectValue(objValue.getIDOVALUE(),objValue.getVALUECLS()));
+   		dma.addValue(idoAgrupTallaColor,idtoAgrupTallaColor,"talla_color",new ObjectValue(agrupacion.getIDOIndividual(),agrupacion.getIDTOIndividual()));
+   	}
+   	
+   	int numTallas=tallas.size();
+   	//Quitamos los permisos de las tallas que sobran para que no se vean
+   	for(int i=20;i>numTallas;i--){
+   		Integer idprop=dma.getIdProperty("cantidad_"+i);
+   		if(idprop!=null){
+   			FactAccess fa=new FactAccess(idtoFilterTallaColor,Integer.valueOf(idoFilterTallaColor),idprop,null,null,null,null,null,1,1,Constants.MAX_ACCESS_PRIORITY,dma.getDDM());
+			jb.insertFact(fa);
+		}
+   	}
+	
+end
+
+//Quita los permisos en los individuos de lineas de la tabla de agrupacion_talla_color para que al entrar al formulario de alguna de ellas no se vean las tallas que sobran.
+//la regla de configuracion quita permisos a nivel de filtro para quitar columnas de la tabla
+rule "TALLA COLOR: AGRUPACION: 3-PERMISOS POR AGRUPACION"
+agenda-group "rules" when
+    jb:JBossEngine()
+
+    DatValue(idoQuestionTask:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.TALLA_COLOR_QUESTION_TASK_RDN)
+    not DatValue(IDO==idoQuestionTask,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    Individual(IDO==idoQuestionTask,IDTO==Constants.IDTO_QUESTION_TASK,STATE==Constants.INDIVIDUAL_STATE_READY)
+    
+    ObjValue(IDO==idoQuestionTask,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="sourceClass",idAgrupTallaColor:VALOR,idoAgrupTallaColor:IDOVALUE,idtoAgrupTallaColor:VALUECLS)
+	DatValue(ID==idAgrupTallaColor,CLASSNAME=="PARAMETROS_AGRUPACION_TALLA_COLOR", PROPNAME=="rdn", rdnParam:VALUE!=null)
+	
+	ObjValue(ID==idAgrupTallaColor,PROPNAME=="talla_color",idoTallaColor:IDOVALUE!=null,idtoTallaColor:VALUECLS)
+	
+	DatValue(idLinea:ID, idoLinea:IDO<0, idtoLinea:IDTO, PROPNAME=="rdn", VALUE==rdnParam)
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO"||=="Añadir_a_carrito")
+	ObjValue(CLASSNAME==nameDoc,idDoc:ID,idoDoc:IDO,PROPNAME=="línea"||=="targetClass",VALOR==idLinea)
+	not Lock(IDO==idoDoc,LOCKEDBYUSER==false,STATE==Constants.INDIVIDUAL_STATE_LOCK) 
+		
+	ObjValue(ID==idLinea,PROPNAME=="producto",idoProducto:IDOVALUE)
+	ObjValue(IDO==idoProducto,PROPNAME=="serie_tallas",idoSerieTallas:IDOVALUE!=null)
+	
+	tallas: ArrayList(size>0) 
+		from accumulate(
+				(and 
+					ObjValue(IDO==idoSerieTallas,PROPNAME=="talla",idoTalla:IDOVALUE!=null)
+					d:DatValue(IDO==idoTalla, PROPNAME=="rdn", VALUE!=null)
+					//DatValue(IDO==idoTalla, PROPNAME=="descripción", descripcion:VALUE)
+				),
+			init( ArrayList<DatValue> tallas2 = new ArrayList<DatValue> (); ),
+			action( tallas2.add(d); ),                            
+			result( tallas2 )
+		)
+	
+then
+   	dma.printRule("\n\n=======================RULE TALLA COLOR: AGRUPACION: PERMISOS POR AGRUPACION "+idoTallaColor+" "+idtoTallaColor); 
+   	
+   	int numTallas=tallas.size();
+   	for(int j=20;j>numTallas;j--){
+   		Integer idprop=dma.getIdProperty("cantidad_"+j);
+   		if(idprop!=null){
+   			FactAccess fa=new FactAccess(idtoTallaColor,idoTallaColor,idprop,null,null,null,null,null,1,1,Constants.MAX_ACCESS_PRIORITY,dma.getDDM());
+			jb.insertFact(fa);
+		}
+   	}
+end
+
+rule "TALLA COLOR: AGRUPACION: 4-RELLENAR A CERO LO VACIO"
+agenda-group "rules" when
+	Lock(CLASSNAME=="AGRUPACION_TALLA_COLOR",LOCKEDBYUSER==true,STATE==Constants.INDIVIDUAL_STATE_END_LOCK,idoLineaAg:IDO,idtoLineaAg:IDTO)
+	
+	tallas: HashSet() 
+		from accumulate(
+				(and 
+					DatValue(IDO==idoLineaAg,propQ_Ag:PROPNAME,QMIN!=null&&!=0)
+					eval(propQ_Ag.startsWith("cantidad_"))
+				),
+			init( HashSet<String> tallas2 = new HashSet<String> (); ),
+			action( tallas2.add(propQ_Ag); ),                            
+			result( tallas2 )
+		)
+then
+   	dma.printRule("\n\n=======================RULE TALLA COLOR: AGRUPACION: RELLENAR A CERO LO VACIO "+idoLineaAg+" "+idtoLineaAg+"\n"+tallas); 
+   	
+   	//Las cantidad que no tienen valor las ponemos a cero
+   	for(int i=1;i<=20;i++){
+   		String propName="cantidad_"+i;
+   		Integer idprop=dma.getIdProperty(propName);
+   		if(idprop!=null&& !tallas.contains(propName)){
+   			dma.setValue(idoLineaAg,idtoLineaAg,propName,new IntValue(0));
+   		}
+   	}
+end
+
+rule "TALLA COLOR: AGRUPACION: 5-CLONACION"
+agenda-group "rules" when
+
+	jb:JBossEngine()
+
+	DatValue(idoQuestionTask:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.TALLA_COLOR_QUESTION_TASK_RDN)
+    DatValue(IDO==idoQuestionTask,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    Individual(IDO==idoQuestionTask,IDTO==Constants.IDTO_QUESTION_TASK,STATE==Constants.INDIVIDUAL_STATE_READY)
+    	
+    ObjValue(IDO==idoQuestionTask,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="sourceClass",idAgrupTallaColor:VALOR,idoAgrupTallaColor:IDOVALUE,idtoAgrupTallaColor:VALUECLS)
+	DatValue(ID==idAgrupTallaColor,CLASSNAME=="PARAMETROS_AGRUPACION_TALLA_COLOR", PROPNAME=="rdn", rdnParam:VALUE!=null)
+	 
+	DatValue(idLinea:ID, idoLinea:IDO<0, idtoLinea:IDTO, PROPNAME=="rdn", VALUE==rdnParam)
+	FactHierarchy(nameDoc:CLASS,nameClsSup:CLASSSUP=="DOCUMENTO"||=="Añadir_a_carrito")
+	ObjValue(CLASSNAME==nameDoc,idDoc:ID,idtoDoc:IDTO,idoDoc:IDO,propLinea:PROPNAME=="línea"||=="targetClass",VALOR==idLinea)
+	not Lock(IDO==idoDoc,LOCKEDBYUSER==false,STATE==Constants.INDIVIDUAL_STATE_LOCK) 	
+	
+	ObjValue(ID==idLinea,PROPNAME=="producto",idoProducto:IDOVALUE,ovProducto:OBJECTVALUE)
+	ObjValue(IDO==idoProducto,PROPNAME=="serie_tallas",idoSerieTallas:IDOVALUE!=null)
+	
+	
+	ObjValue(IDO==idoAgrupTallaColor,PROPNAME=="talla_color",idoLineaAg:IDOVALUE,idtoLineaAg:VALUECLS)		
+	DatValue(IDO==idoLineaAg,propQ_Ag:PROPNAME,cantidad:QMIN>0)
+	eval(propQ_Ag.startsWith("cantidad_"))	
+	colorAg:ArrayList() from collect(ObjValue(IDO==idoLineaAg,PROPNAME=="color",cAg:IDOVALUE!=null))
+	
+	tallas: TreeMap(size>0) 
+		from accumulate(
+				(and 					
+					ObjValue(IDO==idoSerieTallas,PROPNAME=="talla",idoTalla:IDOVALUE!=null,talla:OBJECTVALUE)
+					DatValue(IDO==idoTalla, PROPNAME=="rdn", rdnTalla:VALUE!=null)
+					//DatValue(IDO==idoTalla, PROPNAME=="descripción", descripcion:VALUE)
+				),
+			init(TreeMap res=new TreeMap(); ),
+			action( res.put(rdnTalla,talla); ),                            
+			result( res )
+		)
+	not_reuse_trigger_line:ArrayList() from collect(ObjValue(IDO==idoLinea,PROPNAME=="talla",IDOVALUE!=null))
+then
+   	dma.printRule("======================= RULE TALLA COLOR: AGRUPACION: CLONACION : tallas:"+tallas.size()); 
+   	
+   	String[] propQ_split=propQ_Ag.split("_");
+   	int num_cantidad_prop=Integer.parseInt(propQ_split[1]);
+   	Object[] mapaTallasQ=tallas.values().toArray();
+   	ObjectValue tallaOV=num_cantidad_prop<=tallas.size()?(ObjectValue)mapaTallasQ[num_cantidad_prop-1]:null;   	
+  	if(tallaOV!=null){	//no entrar si no es primera linea y cantidad es cero  
+  	
+   		Domain newLinea=new Domain(idoLinea,idtoLinea);   	   	
+
+   		//Solo reutilizamos una linea existente la primera vez, si es que hay linea ya creada sino tampoco
+   		if(not_reuse_trigger_line.size()>0){
+   			String excluproperties="cantidad#importe#número#talla#color";		
+			if(nameClsSup.contains("carrito")){
+				newLinea=dma.creaIndividualOfClass("LÍNEA_ARTÍCULOS_MATERIA");
+				dma.printRule("añadiendo linea a target class "+newLinea.getIdo());
+				dma.setValue(newLinea,"producto",ovProducto);
+				dma.addValue(idoDoc,idtoDoc,propLinea,new ObjectValue(newLinea));
+			}else{
+				newLinea=dma.cloneIndividual(idoLinea,idtoLinea, idtoLinea, excluproperties);
+			}		
+			System.err.println("Crea linea");
+		}								
+
+		if(colorAg.size()>0){
+			dma.setValue(newLinea,"color",((ObjValue)colorAg.get(0)).getOBJECTVALUE());
+		}
+		dma.setValue(newLinea,"talla",tallaOV);
+		dma.setValue(newLinea,"cantidad",new DoubleValue(Double.valueOf(cantidad)));
+		dma.setDoubleValue(new Domain(idoLineaAg,idtoLineaAg),propQ_Ag,-1.0);//para no se dispare otra vez
+	}     	   		
+end
+
+/*
+rule "TALLA COLOR: AGRUPACION: 5.2-SINCRONIZAR"
+agenda-group "rules" when
+  
+	DatValue(idoQuestionTask:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.TALLA_COLOR_QUESTION_TASK_RDN)
+  	
+    not DatValue(IDO==idoQuestionTask,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+      
+    Individual(IDO==idoQuestionTask,IDTO==Constants.IDTO_QUESTION_TASK,STATE==Constants.INDIVIDUAL_STATE_READY)
+    	
+    ObjValue(IDO==idoQuestionTask,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="sourceClass",idAgrupTallaColor:VALOR,idoAgrupTallaColor:IDOVALUE,idtoAgrupTallaColor:VALUECLS)
+	DatValue(ID==idAgrupTallaColor,CLASSNAME=="PARAMETROS_AGRUPACION_TALLA_COLOR", PROPNAME=="rdn", rdnParam:VALUE!=null)
+	 
+	FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA")
+	DatValue(idoLinea:IDO<0, IDTO==idtoLinea, PROPNAME=="rdn", VALUE==rdnParam)
+	
+	ObjValue(IDO==idoLinea,PROPNAME=="producto", idoProducto:IDOVALUE)		
+	DatValue(IDO==idoProducto,PROPNAME=="rdn", rdnProducto:VALOR)
+	ObjValue(IDO==idoProducto,PROPNAME=="serie_tallas",idoSerieTallas:IDOVALUE!=null)
+	
+	
+	ObjValue(IDO==idoAgrupTallaColor,PROPNAME=="talla_color",idoLineaAg:IDOVALUE,idtoLineaAg:VALUECLS)	
+
+	tallas: TreeMap(size>0) 
+		from accumulate(
+				(and 					
+					ObjValue(IDO==idoSerieTallas,PROPNAME=="talla",idoTalla:IDOVALUE!=null)		
+					DatValue(IDO==idoTalla, PROPNAME=="rdn", rdnTalla:VALUE!=null)			
+				),
+			init(TreeMap res=new TreeMap(); ),
+			action( res.put(rdnTalla,idoTalla); ),                            
+			result( res )
+		)
+		
+	ObjValue(IDO==idoLinea,PROPNAME=="talla", idoTalla:IDOVALUE!=null)				
+	DatValue(IDO==idoLineaAg,propQ_Ag:PROPNAME=="cantidad_1"||=="cantidad_2"||=="cantidad_3"||=="cantidad_4"||=="cantidad_5"||=="cantidad_6"||=="cantidad_7"||=="cantidad_8"||=="cantidad_9"||=="cantidad_10",cantidad:QMIN>=0)
+	eval(Integer.parseInt(propQ_Ag.split("_")[1])<=tallas.size()&&tallas.values().toArray()[Integer.parseInt(propQ_Ag.split("_")[1])-1].equals(idoTalla))	
+	
+	forall(	ObjValue(IDO==idoLinea,PROPNAME=="color",cAg:IDOVALUE!=null)
+			ObjValue(IDO==idoLineaAg,PROPNAME=="color",IDOVALUE==cAg))	
+	
+	DatValue(IDO==idoLinea,PROPNAME=="cantidad", qLin:DOUBLEVALUE)
+		
+then
+   	dma.printRule("======================= TALLA COLOR: AGRUPACION: 5.2-SINCRONIZAR : tallas:"+tallas.size()); 
+	dma.setDoubleValue(new Domain(idoLineaAg,idtoLineaAg),propQ_Ag,qLin);
+end*/
+
+
+rule "TALLA COLOR: AGRUPACION: 6-DESINSTALACION"
+salience -10//Menos prioridad que TALLA COLOR: AGRUPACION: CLONACION
+agenda-group "rules" when
+	jb:JBossEngine()
+	DatValue(idoQuestionTask:IDO,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="rdn",VALUE==Constants.TALLA_COLOR_QUESTION_TASK_RDN)
+    DatValue(IDO==idoQuestionTask,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="finished",BOOLEANVALOR==true)
+    Individual(IDO==idoQuestionTask,IDTO==Constants.IDTO_QUESTION_TASK,STATE==Constants.INDIVIDUAL_STATE_READY)
+    
+    ObjValue(IDO==idoQuestionTask,IDTO==Constants.IDTO_QUESTION_TASK,PROPNAME=="sourceClass",idoAgrupTallaColor:IDOVALUE)
+	DatValue(IDO==idoAgrupTallaColor,CLASSNAME=="PARAMETROS_AGRUPACION_TALLA_COLOR", PROPNAME=="rdn", rdnParam:VALUE!=null)
+	
+    RangeFilter(IDO==idoAgrupTallaColor,PROPNAME=="talla_color",idoFilterTallaColor:IDOVALUE!=null,idtoFilterTallaColor:VALUECLS)
+	factAccess:ArrayList() from collect(FactAccess(IDTO==idtoFilterTallaColor,IDO!=null))//Borramos tanto permisos para el filtro de la tabla como para los individuos de la tabla
+then
+	dma.printRule("\n\n=======================RULE TALLA COLOR: AGRUPACION: DESINSTALACION idoQuestionTask:"+idoQuestionTask+" factAccess:"+factAccess.size()); 
+	
+	//System.err.println(factAccess);
+   	/*Random r=new Random();
+   	if(r.nextBoolean()){
+   		dma.printRule("RAMDOM");
+   		int i=1/0;
+   	}*/
+	for(int i=0;i<factAccess.size();i++){
+		jb.retractFactAccess((FactAccess)factAccess.get(i));
+   	}
+   	
+	dma.deleteObject(idoQuestionTask,Constants.IDTO_QUESTION_TASK);	
+end
+
+rule "ELIMINAR REFERENCIAS"
+salience -10
+agenda-group "rules" when   
+    articulos:ArrayList(size>0) from collect(ObjValue(CLASSNAME=="Eliminar_referencia",idoAction:IDO,PROPNAME=="sourceClass",VALOR!=null))
+then
+	dma.printRule("=======================ELIMINAR REFERENCIAS");
+	String tableIds="";
+		
+	for(ObjValue ov:(ArrayList<ObjValue>)articulos){
+		tableIds+=(tableIds.length()>0?",":"")+QueryConstants.getTableId(ov.getIDOVALUE());
+	}	
+	
+	Query.executeQuery(dma.getDDM(),"delete from stock where producto in("+tableIds+");",true);
+	Query.executeQuery(dma.getDDM(),"delete from \"género#catálogo\" where \"géneroId\" in("+tableIds+");",true);
+	Query.executeQuery(dma.getDDM(),"update \"género\" set rdn='$OFF:'||rdn where \"tableId\" in("+tableIds+");",true);
+	
+end
+
+rule "LINEA ARTICULOS DEBE TENER INFORMADO EL PRODUCTO O EL CONCEPTO"
+agenda-group "rules" when
+	
+	FactHierarchy(nameLinea:CLASS,CLASSSUP=="LÍNEA")
+	Lock(CLASSNAME==nameLinea,idoLinea:IDO<0,idtoLinea:IDTO,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+	not(DatValue(IDO==idoLinea,PROPNAME=="concepto",VALOR!=null))
+	not(ObjValue(IDO==idoLinea,PROPNAME=="producto",VALOR!=null))
+then 
+	dma.printRule("===========LINEAS DEBE TENER INFORMADO EL PRODUCTO O EL CONCEPTO  classlinea="+nameLinea+"  idlinea="+idoLinea);
+	dma.deleteObject(idoLinea,idtoLinea);
+	dma.showMessage("Una linea corrupta ha sido limpiada, de clase "+nameLinea);
+end 
+
+rule "LINEA AGRUPACION DEBE TENER INFORMADO CANTIDAD"
+agenda-group "rules" when	
+	Lock(CLASSNAME=="AGRUPACION_TALLA_COLOR",idoLinea:IDO,idtoLinea:IDTO,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)	
+	not((and DatValue(IDO==idoLinea,pcant:PROPNAME,VALOR!=null)
+			 eval(pcant.startsWith("cantidad"))))
+then 
+	dma.printRule("===========LINEA AGRUPACION DEBE TENER INFORMADO CANTIDAD  idlinea="+idoLinea);
+	dma.deleteObject(idoLinea,idtoLinea);
+	dma.showMessage("Una linea de talla color corrupta ha sido limpiada");
+end 

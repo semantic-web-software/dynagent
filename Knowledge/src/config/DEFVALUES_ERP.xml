@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+
+<CONFIG>
+	<DEFVALUES>
+		<DV  CLASS="APLICACIÓN"                PROP="n._dígitos_en_precio"   VALUE="8" VALUECLS="int"/>		
+		<DV  CLASS="APLICACIÓN"                PROP="n._dígitos_en_importe_linea"   VALUE="8" VALUECLS="int"/>
+		<DV  CLASS="APLICACIÓN"                PROP="asignar_stocks_consumo"   VALUE="true" VALUECLS="boolean"/>
+		<DV  CLASS="APLICACIÓN"                PROP="asignar_stocks_entradas"   VALUE="true" VALUECLS="boolean"/>
+		<DV  CLASS="APLICACIÓN"                PROP="asignar_stocks_salidas"   VALUE="true" VALUECLS="boolean"/>
+		<DV  CLASS="APLICACIÓN"                PROP="stock_negativo_permitido"   VALUE="true" VALUECLS="boolean"/>
+		
+		<DV  CLASS="TRASPASO_ALMACENES"                PROP="stock_requiere_recepcion_en_destino"   VALUE="false" VALUECLS="boolean"/>		
+						
+		<DV  CLASS="ARTÍCULO"                PROP="iva"   VALUE="General21" VALUECLS="TIPO_IVA"/>
+		<DV  CLASS="GÉNERO"                PROP="requiere_lote"   VALUE="false" VALUECLS="boolean"/>
+		<DV  CLASS="GÉNERO"                PROP="requiere_talla"   VALUE="false" VALUECLS="boolean"/>
+		<DV  CLASS="GÉNERO"                PROP="requiere_color"   VALUE="false" VALUECLS="boolean"/>
+						
+		<DV  CLASS="ALBARÁN_COMERCIAL"                PROP="facturado"   VALUE="false" VALUECLS="boolean"/>
+		<DV  CLASS="PROVINCIA"                PROP="país"   VALUE="ESPAÑA" VALUECLS="PAÍS"/>	
+		<DV  CLASS="COMISIÓN"                PROP="iva"   VALUE="General" VALUECLS="TIPO_IVA"/>
+		
+		<DV  CLASS="CLIENTE"                PROP="porcentaje_exclusividad_defecto"   VALUE="100" VALUECLS="double"/>				
+				
+		<DV  CLASS="FORMA_PAGO"   PROP="medio_de_pago"   VALUE="Metálico" VALUECLS="TIPO_PAGO"/>		
+		<DV  CLASS="COBRO"   PROP="medio_de_pago"   VALUE="Metálico" VALUECLS="TIPO_PAGO"/>
+		<DV  CLASS="PAGO"   PROP="medio_de_pago"   VALUE="Metálico" VALUECLS="TIPO_PAGO"/>		
+		<DV  CLASS="APLAZAMIENTO"   PROP="número_meses"   VALUE="0" VALUECLS="int"/>
+				
+		<DV  CLASS="INFORMACIÓN_CONTACTO" 					PROP="régimen_iva"   VALUE="Regimen_General" VALUECLS="RÉGIMEN_IVA"/>
+		<DV  CLASS="VENCIMIENTO"  PROP="emitido"               VALUE="false" VALUECLS="boolean"/>
+		<DV  CLASS="ÍNDICE"                PROP="sufijo_global"   VALUE="false" VALUECLS="boolean"/>
+		<DV  CLASS="SUJETO_COMERCIAL"   PROP="régimen_iva"   VALUE="Regimen_General" VALUECLS="RÉGIMEN_IVA"/>
+		<DV  CLASS="INDICAR_SI_ACTIVO"                PROP="activo"   VALUE="true" VALUECLS="boolean"/>		
+		<DV  CLASS="DOCUMENTO_COMERCIAL"   PROP="emitido"   VALUE="false" VALUECLS="boolean"/>
+		<DV  CLASS="PARÁMETROS_PLANIFICAR"                PROP="crear_trabajos"   VALUE="false" VALUECLS="boolean"/>
+		<DV  CLASS="PARÁMETROS_FACTURAR"                PROP="generar_una_factura_por_albarán"   VALUE="false" VALUECLS="boolean"/>
+		<DV  CLASS="PARÁMETROS_FACTURAR_CLIENTE"                PROP="generar_una_factura_por_albarán"   VALUE="false" VALUECLS="boolean"/>
+		<DV  CLASS="PERIODO_FACTURACION"                PROP="generar_una_factura_por_cada_dia"   VALUE="false" VALUECLS="boolean"/>		
+		<DV  CLASS="FACTURA_RECTIFICATIVA_COMPRAS"                PROP="serie"   VALUE="R" VALUECLS="string"/>
+		<DV  CLASS="FACTURA_RECTIFICATIVA_VENTAS"                PROP="serie"   VALUE="R" VALUECLS="string"/>
+		<DV  CLASS="FACTURA_A_CLIENTE"                PROP="rectificada"   VALUE="false" VALUECLS="boolean"/>
+		<DV  CLASS="FACTURA_PROVEEDOR"                PROP="rectificada"   VALUE="false" VALUECLS="boolean"/>			
+		<DV  CLASS="CALENDARIO_HÁBIL"	PROP="total_horas" VALUE="0" VALUECLS="double" />		
+		<DV  CLASS="CONFIG_LOTE"        PROP="prioridad"   VALUE="00_Mínima" VALUECLS="PRIORIDAD"/>
+		<DV  CLASS="CONFIG_LOTE"        PROP="separador"   VALUE="/" VALUECLS="string"/>
+		<DV  CLASS="TAREA"        PROP="prioridad"   VALUE="00_Mínima" VALUECLS="PRIORIDAD"/>
+		<DV  CLASS="SUBTAREA"        PROP="prioridad"   VALUE="00_Mínima" VALUECLS="PRIORIDAD"/>
+		
+		<DV  CLASS="CONFIGURACIÓN_REMESAS"        PROP="sufijo_ordenante"   VALUE="000" VALUECLS="string"/>
+		<DV  CLASS="CONFIGURACIÓN_REMESAS"        PROP="sufijo_presentador"   VALUE="000" VALUECLS="string"/>
+		
+		<DV  CLASS="LÍNEA_SERVICIO"        PROP="porcentaje_dedicación"   VALUE="100" VALUECLS="double"/>
+		<DV  CLASS="LÍNEA_SERVICIO"        PROP="porcentaje_realización"   VALUE="0" VALUECLS="double"/>				
+		<DV  CLASS="PORCIENTO_FUNCIÓN_MARGEN"        PROP="margen_mínimo"   VALUE="0" VALUECLS="double"/>
+		<DV  CLASS="PORCIENTO_FUNCIÓN_MARGEN"        PROP="margen_máximo"   VALUE="100" VALUECLS="double"/>
+		<DV  CLASS="SUBTAREA" PROP="peso_prioridad"   VALUE="0" VALUECLS="double"/>
+		<DV  CLASS="TAREA" PROP="revisión"   VALUE="1" VALUECLS="int"/>
+		<DV  CLASS="PROYECTO" PROP="revisión"   VALUE="1" VALUECLS="int"/>
+		<DV  CLASS="PRODUCCIÓN_CADENA"        PROP="estado"   VALUE="Propuesta" VALUECLS="ESTADO"/>
+		<DV  CLASS="PRODUCCIÓN_MATERIAL"        PROP="estado"   VALUE="Propuesta" VALUECLS="ESTADO"/>
+		<DV  CLASS="TAREA"        PROP="estado"   VALUE="Propuesta" VALUECLS="ESTADO"/>
+		<DV  CLASS="TRASPASO_ALMACENES"                PROP="recibido"   VALUE="true" VALUECLS="boolean"/>
+		<DV  CLASS="TRASPASO_ALMACENES"                PROP="reenviado"   VALUE="false" VALUECLS="boolean"/>
+		<DV  CLASS="ENTRADA_PRODUCTOS_ALMACÉN"         PROP="reenviado"   VALUE="false" VALUECLS="boolean"/>
+		<DV  CLASS="PEDIDO_TRASPASO_ALMACENES"         PROP="servido"   VALUE="false" VALUECLS="boolean"/>
+		<DV  CLASS="PEDIDO_TRASPASO_ALMACENES"         PROP="completo"   VALUE="false" VALUECLS="boolean"/>						
+		
+		<DV  CLASS="EMAIL_SMTP"        PROP="autenticar"   VALUE="true" VALUECLS="boolean"/>
+		<DV  CLASS="EMAIL_SMTP"        PROP="activo"   VALUE="true" VALUECLS="boolean"/>
+		<DV  CLASS="EMAIL_SMTP"        PROP="puerto_SMTP"   VALUE="587" VALUECLS="int"/>
+		<DV  CLASS="EMAIL_SMTP"        PROP="seguridad_conexion"   VALUE="TLS" VALUECLS="PROTOCOLO_SEGURIDAD"/> 
+		
+		<DV  CLASS="MENSAJE"        PROP="leido"   VALUE="false" VALUECLS="boolean"/>
+		
+		<DV  CLASS="CONFIGURACIÓN_CONTABLE"        PROP="concepto_cobro"   VALUE="Cobro" VALUECLS="string"/>
+		<DV  CLASS="CONFIGURACIÓN_CONTABLE"        PROP="concepto_pago"   VALUE="Pago" VALUECLS="string"/>
+		<DV  CLASS="CONFIGURACIÓN_CONTABLE"        PROP="dígitos_cuentas"   VALUE="8" VALUECLS="int"/>
+		
+		<DV  CLASS="CONFIGURACIÓN_CONTABLE"        PROP="concepto_asiento_factura_ventas"   VALUE="Factura" VALUECLS="string"/>
+		<DV  CLASS="CONFIGURACIÓN_CONTABLE"        PROP="concepto_asiento_factura_compras"   VALUE="Factura" VALUECLS="string"/>
+		<DV  CLASS="CONFIGURACIÓN_CONTABLE"        PROP="carpeta"   VALUE="C:\DYNAGENT" VALUECLS="string"/>
+		
+		<DV  CLASS="TICKET_VENTA"        PROP="cliente"   VALUE="0" VALUECLS="CLIENTE_VARIOS"/>			
+	</DEFVALUES>
+</CONFIG>

@@ -1,0 +1,28 @@
+<html>
+
+<head></head>
+
+<body bgcolor="#FFFFFF">
+
+<!-- COMENTARIO DEL PAQUETE INTRODUCIDO MANUALMENTE -->
+<p>
+Este paquete tiene la función principal de ordenar los campos y los grupos en el formulario, según el XML leído, y generar la interfaz final a mostrar. 
+Generará numerosas combinaciones posibles para mostrar los campos en el formulario, 
+puntuará todas las combinaciones, y se quedará con la combinación mejor puntuada, que será la que mostrará. 
+En la puntuación, se valorará la proporción de espacio ocupado y relación del formulario final obtenido 
+con respecto a las dimensiones predefinidas del formulario.
+
+<br>En este paquete también se llevará a cabo una mejora de la alineación y los tamaños de los campos 
+predefinidos en el XML. Se obtiene una primera aproximación del formulario a mostrar, y sobre éste, 
+se analizan los bordes, tamaños y posiciones de los campos y se intentan optimizar para que estén todos 
+ellos alineados lo mejor posible, y por tanto el usuario perciba una interfaz más organizada y bonita.
+
+<br>La clase principal que lleva a cabo la colocación de todos los grupos y campos en sus posiciones 
+es {@link gdev.gbalancer.GViewBalancer}, 
+y la posterior mejora de estas alineaciones y posiciones {@link gdev.gbalancer.GGrpColumn}.
+</p>
+<!-- FIN DEL COMENTARIO DEL PAQUETE INTRODUCIDO MANUALMENTE -->
+
+</body>
+
+</html>

@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<CONFIG>
+<GROUPS>
+   <GROUP NAME="DATOS_CONTACTO" ORDER="1">
+      <GP PROP="código_postal"/>
+      <GP PROP="dirección"/>
+      <GP PROP="nombre_comercial"/>
+      <GP PROP="persona_contacto"/>
+      <GP PROP="email"/>
+      <GP PROP="email_facturacion"/>
+      <GP PROP="fax"/>
+      <GP PROP="localidad"/>
+      <GP PROP="móvil"/>
+      <GP PROP="NIF-CIF-VAT"/>
+      <GP PROP="nombre"/>
+      <GP PROP="país"/>
+      <GP PROP="provincia"/>
+      <GP PROP="primer_apellido"/>
+      <GP PROP="segundo_apellido"/>
+      <GP PROP="teléfono"/>
+      <GP PROP="teléfono2"/>
+      <GP PROP="página_web"/>
+   </GROUP> 
+   <GROUP NAME="ESTIMACION_STOCK" ORDER="5">
+      <GP PROP="coste_almacenar_anual"/>
+	  <GP PROP="coste_ordenar_aprovisionar"/>
+      <GP PROP="nivel_servicio_stock"/>
+      <GP PROP="numero_dias_estimacion_demanda"/>
+   </GROUP>
+   
+   <GROUP NAME="DATOS_PAGOS" ORDER="2">
+      <GP PROP="deuda"/>
+	  <GP PROP="entregado_metálico"/>
+      <GP PROP="entregado_tarjeta"/>
+      <GP PROP="devuelto_metálico"/>
+      <GP PROP="devuelto_tarjeta"/>
+      <GP PROP="máximo_riesgo"/>
+      <GP PROP="vencimientos"/>
+   </GROUP>
+   <GROUP NAME="STOCK" CLASS="GÉNERO" ORDER="2">
+      <GP PROP="stock_total"/>
+      <GP PROP="stock_disponible"/>
+      <GP PROP="stock_pendiente_aprovisionar"/>
+      <GP PROP="stock_reservado"/>
+	  <GP PROP="horas_entrega"/>
+	  <GP PROP="ubicacion1"/>     
+	  <GP PROP="ubicacion2"/>     
+	  <GP PROP="ubicacion3"/>           	  	  
+   </GROUP>
+   <GROUP NAME="PRECIOS_VENTA" ORDER="3">
+      <GP PROP="pvp_iva_incluido"/>
+      <GP PROP="tarifas_venta"/>
+      <GP PROP="pvp"/>
+      <GP PROP="tarifa_precio"/>
+      <GP PROP="precio_especial"/>
+      <GP PROP="tarifa_condicionada"/>
+   </GROUP>
+   <GROUP NAME="PRECIOS_COMPRA" ORDER="4">
+      <GP PROP="precios_compra"/>
+   </GROUP>
+   
+   <GROUP NAME="DATOS_TRAZA" ORDER="5">
+      <GP PROP="agregados_empresa"/>      
+      <GP PROP="coste_actual"/>
+      <GP PROP="coste"/>
+	  <GP PROP="coste_incurrido"/>
+	  <GP PROP="coste_planificado"/>	        
+      <GP PROP="coste_unitario"/>
+      <GP PROP="coste_actual_previo"/>
+	  <GP PROP="fecha_última_compra"/>
+	  <GP PROP="fecha_última_venta"/>
+	  <GP PROP="dias_entrega_proveedor"/>	 	 
+	  <GP PROP="fecha_estimada_aprovisionamiento"/>	   
+	  <GP PROP="fecha_alta"/>	  
+      <GP PROP="coste_incurrido"/>      
+      <GP PROP="importe_total_aprovisionado"/>
+      <GP PROP="importe_total_vendido"/>
+      <GP PROP="precio_medio_venta"/>
+      <GP PROP="total_aprovisionado"/>
+      <GP PROP="total_vendido"/>            
+      <GP PROP="porcentaje_stock_malogrado"/>
+      <GP PROP="porcentaje_stock_recuperado"/>
+      <GP PROP="stock_malogrado_acumulado"/>
+      <GP PROP="stock_recuperado_acumulado"/>
+   </GROUP>
+      
+	<GROUP NAME="DATOS_COMERCIALES" ORDER="6">
+      <GP PROP="catálogo"/>
+      <GP PROP="pedido_mínimo"/>
+      <GP PROP="promocionado"/>      
+   </GROUP>
+         
+   <GROUP NAME="DATOS_FACTURACIÓN" ORDER="7">
+      <GP PROP="aplica_retención"/>
+      <GP PROP="base"/>
+	  <GP PROP="base_programada"/>      
+      <GP PROP="cuenta_bancaria"/>
+      <GP PROP="cobro_anticipo"/>
+      <GP PROP="cargos"/>
+	  <GP PROP="concepto_contable"/>      
+      <GP PROP="descuento"/>      
+      <GP PROP="descuentos_globales"/>
+      <GP PROP="desglose_iva"/>
+	  <GP PROP="forma_pago"/>      
+      <GP PROP="importe"/>
+	  <GP PROP="importe_programado"/>    
+	  <GP PROP="importe_con_iva"/>      
+      <GP PROP="iva"/>
+      <GP PROP="rectifica_a"/>
+      <GP PROP="periocidad_facturación"/>
+      <GP PROP="porcentaje_iva"/>
+      <GP PROP="porcentaje_retención"/>
+      <GP PROP="punto_verde"/>
+      <GP PROP="régimen_iva"/>
+      <GP PROP="recargo"/>
+      <GP PROP="retención"/>
+      <GP PROP="total_iva"/>
+   </GROUP>
+   
+   
+   <GROUP NAME="DATOS_FACTURACION" CLASS="DOCUMENTO_COMERCIAL" ORDER="7">
+      <GP PROP="mi_empresa"/>
+   </GROUP>
+
+   <GROUP NAME="DATOS_LOGÍSTICA" ORDER="8">
+      <GP PROP="cantidad_total"/>
+      <GP PROP="control_transporte"/>
+       <!-- 
+      <GP PROP="destino_posterior"/>
+       -->
+      <GP PROP="fecha_min_entrega"/>
+      <GP PROP="fecha_max_entrega"/>
+      <GP PROP="fecha_estimada_entrega"/>
+	  <GP PROP="dirección_envío"/>      
+      <GP PROP="distribuidor"/>
+      <GP PROP="direcciones_de_envío"/>
+      <GP PROP="demanda_emitida"/>      
+ 	  <GP PROP="tipo_embalado"/>      
+ 	  <GP PROP="unidad"/> 	  
+ 	  <GP PROP="peso_neto_gramos"/> 	  
+ 	  <GP PROP="peso_bruto_gramos"/> 	  
+	  <GP PROP="cubica"/> 	  
+      <GP PROP="pedir_todo_stock"/>
+      <GP PROP="portes_pagados"/>
+      <GP PROP="n._palets"/>
+      <GP PROP="recibido"/>
+      <GP PROP="total_kg"/>
+      <GP PROP="total_cantidad_envase1"/>
+      <GP PROP="transportista"/>
+        <!-- 
+      <GP PROP="reenviado"/>
+      -->
+   </GROUP>
+            
+   <GROUP NAME="CONTABILIDAD">
+      <GP PROP="asiento"/>
+      <GP PROP="cuenta_contable"/>
+   </GROUP>
+   
+   <GROUP NAME="COMPRAS_CONTABILIDAD">
+      <GP PROP="codigo_cuenta_RE_IVA_compras"/>           
+      <GP PROP="concepto_asiento_factura_compras"/>            
+      <GP PROP="cuenta_compra_mercaderias"/>
+      <GP PROP="cuenta_compra_servicios"/>      
+      <GP PROP="cuenta_proveedores_mercaderias"/>
+      <GP PROP="cuenta_proveedores_servicios"/>      
+      <GP PROP="cuenta_retenciones_compras"/>      
+      <GP PROP="concepto_pago"/>                
+   </GROUP>
+   
+   <GROUP NAME="VENTAS_CONTABILIDAD">
+      <GP PROP="codigo_cuenta_RE_IVA_ventas"/>
+      <GP PROP="codigo_cuenta_recargo_equivalencia_ventas"/>
+      <GP PROP="concepto_asiento_factura_ventas"/>   
+      <GP PROP="cuenta_retenciones_ventas"/>            
+      <GP PROP="cuenta_ventas_mercaderias"/>
+      <GP PROP="cuenta_ventas_rectificativa_mercaderias"/>
+      <GP PROP="serie_factura_rectificativa_ventas"/>
+      <GP PROP="cuenta_ventas_servicios"/>             
+      <GP PROP="concepto_cobro"/>
+      <GP PROP="concepto_clientes"/>
+      <GP PROP="cuenta_clientes"/>             
+   </GROUP>
+   
+     <GROUP NAME="PERIODO">
+      <GP PROP="fecha_inicio"/>   
+      <GP PROP="fecha_fin"/>
+      <GP PROP="fecha_alta_producto_minima"/>
+      <GP PROP="fecha_alta_producto_maxima"/>  
+   </GROUP>  
+
+   <GROUP NAME="DATOS_CONFIGURACIÓN">
+      <GP PROP="activo"/>
+      <GP PROP="filtrar_solo_los_activos"/>
+      <GP PROP="valor_por_defecto_recibido_en_destino"/>
+      <GP PROP="n._días_permite_abono_dinero"/>
+      <GP PROP="n._dígitos_en_importe_linea"/>
+      <GP PROP="días_min_almacén_no_central_para_rotar"/>
+   </GROUP>
+   <GROUP NAME="DATOS_CONFIGURACIÓN" CLASS="MI_EMPRESA">
+      <GP PROP="numero_dias_estimacion_demanda"/>
+      <GP PROP="solo_permitir_rotaciones_centralizadas"/>
+      <GP PROP="estimar_ventas_localmente"/>
+   </GROUP>
+
+   <GROUP NAME="DATOS_FILTRO">
+      <GP PROP="campo_filtro"/>
+      <GP PROP="valor_filtro"/>
+   </GROUP>
+
+   <GROUP NAME="DATOS_TAREA">
+      <GP PROP="propietario"/>
+      <GP PROP="rol"/>
+      <GP PROP="estadoRealizacion"/>
+      <GP PROP="porcentaje_realización"/>
+   </GROUP>
+   <GROUP NAME="ESTADO_DOCUMENTO">
+      <GP PROP="emitido"/>
+      <GP PROP="facturado"/>
+      <GP PROP="albaranado"/>
+      <GP PROP="aceptado"/>
+      <GP PROP="pedido"/>
+      <!--       
+      <GP PROP="reenviado"/>
+       -->
+      <GP PROP="rectificada"/>
+      <GP PROP="estado"/>
+      <GP PROP="estado_presupuesto"/>
+      <GP PROP="pagado"/>  
+   </GROUP>
+   <GROUP NAME="OBSERVACIONES">
+      <GP PROP="observaciones"/>
+      <GP PROP="observaciones_a_imprimir"/>
+      <GP PROP="observaciones_internas"/>
+      <GP PROP="su_referencia"/>
+      <GP PROP="advertencias"/>
+      <GP PROP="archivos"/>
+   </GROUP>  
+   
+   <!--  se cambia el nombre del grupo poniendo "_"pq el importador no soporta definir un grupo en más de un ambito por usar rdn como nombre grupo y server no permitir mas de un valor igual en rdn -->
+   
+   <GROUP NAME="ÁMBITO_ARTÍCULO_MARGEN" CLASS="MARGEN_TARIFA_COSTE">
+      <GP PROP="familia"/>
+      <GP PROP="subfamilia"/>
+      <GP PROP="marca"/>
+      <GP PROP="producto"/>
+      <GP PROP="categoria_articulo"/>
+   </GROUP>
+   
+     <GROUP NAME="ÁMBITO_ARTÍCULO_MARGEN_" CLASS="MARGEN_BENEFICIO_PVP_SOBRE_COSTE">
+      <GP PROP="familia"/>
+      <GP PROP="subfamilia"/>
+      <GP PROP="marca"/>
+      <GP PROP="producto"/>
+	  <GP PROP="categoria_articulo"/>      
+   </GROUP>
+   
+   
+   <GROUP NAME="ÁMBITO_ARTÍCULO" CLASS="CONDICIÓN_ESPECIAL_VENTA_PRECIO_FIJO">
+      <GP PROP="familia"/>
+      <GP PROP="subfamilia"/>
+      <GP PROP="marca"/>
+      <GP PROP="producto"/>
+      <GP PROP="categoria_articulo"/>
+   </GROUP>
+   
+   <GROUP NAME="ÁMBITO_ARTÍCULO_" CLASS="CONDICIÓN_ESPECIAL_VENTA_PORCENTUAL">
+      <GP PROP="familia"/>
+      <GP PROP="subfamilia"/>
+      <GP PROP="marca"/>
+      <GP PROP="producto"/>
+      <GP PROP="categoria_articulo"/>
+   </GROUP>
+   <GROUP NAME="ÁMBITO_CLIENTE" CLASS="CONDICIÓN_ESPECIAL_VENTA_PRECIO_FIJO">
+      <GP PROP="cliente"/>
+      <GP PROP="grupo_cliente"/>
+   </GROUP>
+   <GROUP NAME="ÁMBITO_CLIENTE_" CLASS="CONDICIÓN_ESPECIAL_VENTA_PORCENTUAL">
+      <GP PROP="cliente"/>
+      <GP PROP="grupo_cliente"/>
+   </GROUP>
+   <GROUP NAME="ÁMBITO_AGENTE_COMERCIAL" CLASS="COMISIÓN_FIJA">
+      <GP PROP="agente_comercial"/>
+      <GP PROP="grupo_agente_comercial"/>
+   </GROUP>
+   <GROUP NAME="ÁMBITO_AGENTE_COMERCIAL_" CLASS="COMISIÓN_PORCENTUAL">
+      <GP PROP="agente_comercial"/>
+      <GP PROP="grupo_agente_comercial"/>
+   </GROUP>
+
+   
+   
+	
+</GROUPS>
+</CONFIG>

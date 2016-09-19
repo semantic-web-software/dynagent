@@ -1,0 +1,2986 @@
+//created on: 01-dic-2008
+
+package dynagent.ruleengine.src.ruler.ERPrules
+
+import dynagent.ruleengine.src.ruler.*;
+import dynagent.ruleengine.src.ruler.ERPrules.datarules.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import dynagent.common.properties.values.*;
+import dynagent.common.basicobjects.*;
+import dynagent.common.utils.QueryConstants;
+
+global DataModelAdapter dma;
+
+rule "VENTAS EXENTO EN EMPRESA EXENTA"
+salience -100
+agenda-group "rules" when 
+	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	not(FactHierarchy(IDTO==idtoDoc,CLASSSUP=="TICKET_VENTA"))
+	Lock(clsDoc:CLASSNAME,IDTO==idtoDoc,idoDoc:IDO)	
+	
+	ObjValue(IDO==idoDoc,p:PROPNAME=="línea"||=="cargos",idoLinea:IDOVALUE!=null,idtoLinea:VALUECLS)//si pongo has changed no funciona al facturar
+	Individual(IDO==idoLinea,STATE==Constants.INDIVIDUAL_STATE_READY)
+	ObjValue(IDO==idoDoc,PROPNAME=="mi_empresa",idoEmpresa:IDOVALUE)
+	
+	//no puedo tirar de estado facturado y albaranado porque se gestionan en end lock
+	linFact:Long() from accumulate((and 	ObjValue(IDO==idoLinea,PROPNAME=="documento",idtoF:VALUECLS)
+											FactHierarchy(IDTO==idtoF,CLASSSUP=="FACTURA")),count(idtoF))
+	
+	linAlb:Long() from accumulate((and 	ObjValue(IDO==idoLinea,PROPNAME=="documento",idtoF:VALUECLS)
+										FactHierarchy(IDTO==idtoF,CLASSSUP=="ALBARÁN")),count(idtoF))
+	
+	eval(	!( linFact>0 && !dma.isSpecialized(clsDoc,"FACTURA")) &&
+			!( linAlb>0 && linFact==0 && !dma.isSpecialized(clsDoc,"FACTURA") && !dma.isSpecialized(clsDoc,"ALBARÁN")) ) 
+	
+	ObjValue(IDO==idoEmpresa,PROPNAME=="régimen_iva",idoRegimen:IDOVALUE)
+	DatValue(IDO==idoRegimen,PROPNAME=="rdn",VALOR=="Exentos")
+	//idivaexento
+	DatValue(CLASSNAME=="TIPO_IVA",idoIvaExento:IDO,idtoIvaExento:IDTO,PROPNAME=="rdn",VALOR=="Exento")
+	not(ObjValue(IDO==idoLinea,PROPNAME=="iva",IDOVALUE==idoIvaExento))
+then
+	dma.printRule("====== VENTAS EXENTO EN EMPRESA EXENTA");
+	dma.setValue(idoLinea,idtoLinea,"iva", new ObjectValue(idoIvaExento,idtoIvaExento));
+end
+
+rule "PARTIR DOCUMENTO SEGUN PORCENTAJE INDICADO EN SERIE: CREACION"
+salience -100 //menos prioridad que instalacion factura, 
+agenda-group "rules" when
+
+ 	ObjValue(PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR!=Constants.INDIVIDUAL_INFORMADO)
+   
+  	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	DatValue(CLASSNAME==nameDoc,idtoDoc:IDTO,idDoc:ID, idoDoc:IDO, PROPNAME=="fecha",fechaAlb:DATE!=null)
+	Individual(IDO==idoDoc,STATE==Constants.INDIVIDUAL_STATE_READY)
+	DatValue(IDO==idoDoc,PROPNAME=="serie", nombreEmpresaYporcentaje:VALOR!=null,prevalorSerie:PREVALOR)
+	
+	eval(nombreEmpresaYporcentaje.matches(".+[0-9]{2}"))//cualquier nombreMIEmpresa+dosNumeros(porcentaje)
+	
+	//tiene que existir miEmpresa con ese nombre: 
+	DatValue(CLASSNAME=="MI_EMPRESA",PROPNAME=="rdn",nombreEmpresa:VALOR!=null,idoMiEmpresaQ:IDO!=null,idtoMiEmpresaQ:IDTO)
+	eval(nombreEmpresaYporcentaje.startsWith(nombreEmpresa)&&nombreEmpresaYporcentaje.length()==nombreEmpresa.length()+2)			
+	
+	//Que no parta si ya este doc es de la empresa destino
+	ObjValue(IDO==idoDoc,PROPNAME=="mi_empresa",IDOVALUE!=idoMiEmpresaQ)	
+	
+	//tiene que haber más de una unidad para que tenga sentido partir
+	totalUnidades: Double() 
+	from accumulate(
+		(and 
+			ObjValue(ID==idDoc,PROPNAME=="línea",idlinea:VALOR!=null)
+			DatValue(ID==idlinea,PROPNAME=="cantidad",cantidad:DOUBLEVALUE!=null)),
+		sum(cantidad)
+	)
+	
+	eval(Math.abs(totalUnidades)>=2)
+
+	factTargetClass:ArrayList() from collect( ObjValue(PROPNAME=="targetClass",IDOVALUE==idoDoc))
+then
+		dma.printRule("\n\n ====================  PARTIR DOCUMENTO SEGÚN PORCENTAJE INDICADO EN SERIE: FACTURA:"+idDoc+"  nombreEmpresaYporcentaje:"+nombreEmpresaYporcentaje);	
+		String nombreEmpresa=nombreEmpresaYporcentaje.substring(0, nombreEmpresaYporcentaje.length()-2);
+	   	String sporcentaje=nombreEmpresaYporcentaje.substring(nombreEmpresaYporcentaje.length()-2,nombreEmpresaYporcentaje.length());
+	   	//muy importante hay que borrarle al doc original la serie pq contiene el porcentaje lo que la hace recursiva
+		dma.delValue(idoDoc,idtoDoc,"serie",new StringValue(nombreEmpresaYporcentaje));
+	    //si existia prevalor en serie esa era la serie original del doc
+	    if(prevalorSerie!=null){
+	   			dma.setDataValue(idoDoc,idtoDoc,"serie",prevalorSerie);//se pone la serie previa al documento
+		}			
+		Double.valueOf(sporcentaje);//es el porcentaje que se quiere conseguir en el documento B
+	   	Domain domDocB =dma.cloneIndividual(idoDoc, idtoDoc,idtoDoc, "desglose_iva#base#línea#cargos#vencimientos#asiento#serie#su_referencia",true);//importante no clonar serie con el porcentaje sino es recursivo domDocB =dma.cloneIndividual(idoDoc, idtoDoc,idtoDoc, "línea#cargos#vencimientos#asiento#serie");//importante no clonar serie con el porcentaje sino es recursivo
+	   	dma.setValue(domDocB,"mi_empresa",new ObjectValue(idoMiEmpresaQ,idtoMiEmpresaQ));
+	   	//Consumo las condiciones que disparan reglas de valores por defecto de precios y descuentos, ya que debe respetarse los valores acordados en el documento fuente
+		dma.consumirEventoCambio(domDocB.getIdo(),"mi_empresa");
+	   	//campo su_referencia guardamos el porcentaje, para tenerlo accesible y para casar los dos docs
+	   	dma.setDataValue(domDocB,"su_referencia",idDoc+"#"+sporcentaje);
+	   	dma.setValue(domDocB,"base",new DoubleValue(0.0));
+	   	
+	   	dma.setDataValue(idoDoc,idtoDoc,"su_referencia",idDoc+"#"+sporcentaje);
+	   	
+	   	if(factTargetClass.size()>0){//se asocia a la misma utask la factura (es algo temporar mientras se mejora la regla calculovencimientos que ahora depende de utask realizado)
+			 ObjValue ovtarget=(ObjValue)factTargetClass.get(0);
+			 dma.addValue(ovtarget.getIDO(),ovtarget.getIDTO(),"targetClass",new ObjectValue(domDocB));
+			 System.err.println("\n........debug el documentoB se enlaza a la misma utask que docA");
+		}		
+end
+
+rule "PARTIR DOCUMENTO SEGUN PORCENTAJE INDICADO EN SERIE:APROXIMACION"
+salience 200//impte tiene que dispararse primero todas las otras reglas de calculo de totales
+agenda-group "rules" when
+    ddm:DataModelAdapter()
+  	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	DatValue(CLASSNAME==nameDoc,idtoDoc:IDTO,idDoc:ID, PROPNAME=="fecha",idoDoc:IDO,fecha:VALOR!=null)
+	Individual(IDO==idoDoc,STATE==Constants.INDIVIDUAL_STATE_READY)
+	DatValue(idtoDoc2:IDTO,idDoc2:ID, PROPNAME=="fecha",idoDoc2:IDO!=idoDoc,VALOR==fecha)
+	Individual(IDO==idoDoc2,STATE==Constants.INDIVIDUAL_STATE_READY)
+	DatValue(ID==idDoc, PROPNAME=="su_referencia",codePorcentaje:VALOR!=null)
+	
+	eval(idoDoc2<idoDoc)//doc 2 es el ultimo( es negativo)
+	not(ObjValue(ID==idDoc2,PROPNAME=="línea",VALOR!=null))
+	
+	DatValue(ID==idDoc2, PROPNAME=="su_referencia",VALOR==codePorcentaje,dvsureferencia:DATAVALUE)
+	DatValue(ID==idDoc,PROPNAME=="base",base1:DOUBLEVALUE!=null)
+	DatValue(ID==idDoc2,PROPNAME=="base",base2:DOUBLEVALUE!=null)
+	
+	lineas:ArrayList(size>1) from accumulate((and 	ObjValue(ID==idDoc,PROPNAME=="línea",idLinea:VALOR!=null,idoLinea:IDOVALUE,idtoLinea:VALUECLS)						
+													f:DatValue(ID==idLinea,PROPNAME=="cantidad",cantidadLinea:DOUBLEVALUE!=0)
+													eval(base1.doubleValue()*cantidadLinea.doubleValue()>0)), //la base y la cantidad son de mismo signo
+													init(ArrayList res=new ArrayList();),
+													action( res.add(f);),
+													result(res))		
+	DatValue(IDO==idoDoc,PROPNAME=="factor_descuento_global",desGlobal:DOUBLEVALUE!=null)																							
+then
+	dma.printRule("==================== PARTIR DOCUMENTO SEGÚN PORCENTAJE INDICADO EN SERIE:APROXIMACION:"+(base1+base2)+" b1:"+base1+" "+base2+" "+codePorcentaje);
+	int signo= base1>=0? 1:-1;	
+	Double porcentajeObtenido=null;
+	
+	for(int f=0;f<lineas.size();f++){
+		DatValue fQ=(DatValue)lineas.get(f);
+		double cantidadLinea=fQ.getDOUBLEVALUE();
+		Integer idoLinea=fQ.getIDO();
+		Integer idtoLinea=fQ.getIDTO();
+		Domain domLinea=new Domain(idoLinea,idtoLinea);
+		Double precioLinea=dma.getDoubleValue(domLinea,"precio",true);
+				
+		double porcentajeD=porcentaje(codePorcentaje);			
+		double base2tope= (base1+base2)*porcentajeD/100;
+		double incremento=base2tope-base2;
+		
+		double cantidadIncrementoAbs= Math.min(Math.abs(cantidadLinea),Math.abs(Math.floor(incremento/precioLinea)));
+		dma.printRule("INCREMENTOS porcent:"+porcentajeD+" base2 tope:"+base2tope+" q lin:"+cantidadLinea+" qinc:"+cantidadIncrementoAbs+" importInc:"+incremento);
+		if(cantidadIncrementoAbs==0.0) cantidadIncrementoAbs=1;
+		
+		boolean mejora=Math.abs(base2tope-base2-cantidadIncrementoAbs*precioLinea)<Math.abs(base2tope-base2);
+		
+		if(mejora && Math.abs(cantidadLinea)>0 && cantidadIncrementoAbs>0){
+			Domain domLineaB=dma.cloneIndividual(idoLinea, idtoLinea,idtoLinea, "importe#cantidad#documento",true);
+			dma.setValue(idoLinea,idtoLinea,"cantidad",new DoubleValue(signo*(Math.abs(cantidadLinea)-cantidadIncrementoAbs)));			
+			//consumo para que no parta ciclo
+			dma.consumirEventoCambio(idoLinea,"cantidad");
+	
+			dma.setValue(domLineaB,"cantidad",new DoubleValue(signo*cantidadIncrementoAbs));
+			//consumo para que no parta ciclo
+			dma.consumirEventoCambio(domLineaB.getIdo(),"cantidad");
+	
+			dma.printRule(" DBGX "+domLineaB.getIdo());
+			dma.addValue(idoDoc2,idtoDoc2,"línea",new ObjectValue(domLineaB));
+			
+			LinkedList documentosDeLaLinea=dma.getValues(domLinea,"documento");
+
+			for(int i=0;i<documentosDeLaLinea.size();i++){
+				ObjectValue docDeEnlace= (ObjectValue)documentosDeLaLinea.get(i);
+				dma.printRule("doc"+docDeEnlace);
+				if(!idoDoc.equals(docDeEnlace.getValue())){		
+					dma.addValue(domLineaB,"documento",docDeEnlace);
+					//Consumo producto para que reglas por defecto no pongan descuento o precios por defecto
+        			dma.consumirEventoCambio(docDeEnlace.getValue(),"línea",domLineaB.getIdo(),domLineaB.getIdto());
+        		}
+			}
+	
+			//Consumo las condiciones que disparan reglas de valores por defecto de precios y descuentos, ya que debe respetarse los valores acordados en el documento fuente
+			dma.consumirEventoCambio(idoDoc2,"línea",domLineaB.getIdo(),domLineaB.getIdto());
+	
+			//CRITERIO DE PARADA: QUE SE HAYA CONSEGUIDO EL PORCENTAJE DESEADO
+			base2=base2+signo*cantidadIncrementoAbs*precioLinea*(1-desGlobal.doubleValue());
+			base1=base1-signo*cantidadIncrementoAbs*precioLinea*(1-desGlobal.doubleValue());
+			porcentajeObtenido=100.0d*(base2/(base1+base2));
+			dma.setValue(idoDoc,idtoDoc,"base",new DoubleValue(base1));
+			dma.setValue(idoDoc2,idtoDoc2,"base",new DoubleValue(base2));
+		}
+		if( cantidadIncrementoAbs<0 || porcentajeObtenido!=null && porcentajeObtenido>=porcentajeD){
+			dma.delValue(idoDoc,idtoDoc,"su_referencia",dvsureferencia);
+			dma.delValue(idoDoc2,idtoDoc2,"su_referencia",dvsureferencia);
+			dma.printRule("...!FIN APROXIMACIÓN!! SE HA LEGADO EL PORCENTAJE DESEADO: base 2: "+porcentajeObtenido);
+			break;
+		}else{
+			dma.printRule("...aun no se ha alcanzado el porcentajeDeseado: "+porcentajeObtenido);
+		}
+	}	
+end
+
+
+function double porcentaje(String valor){
+	String [] res=valor.split("#");
+	return new Double(res[1]);
+}
+
+
+function boolean calculaPrecioConIvaAPartirSinIva(DataModelAdapter dma,int idoRoot,int idtoRoot,String propiedadPrecioConIva,Double precioSinIva,Double porc,int digitosRedondeo){
+	DataValue dprecioConIvaActual=(DataValue)dma.getValue(idoRoot,idtoRoot,propiedadPrecioConIva);
+	Double precioConIvaActual=null;
+	boolean stop=false;
+	if(dprecioConIvaActual!=null){
+		precioConIvaActual=dprecioConIvaActual.getNumericValue();
+		Double precioSinIvaAux=precioConIvaActual/(1.0D+0.01D*porc);
+		precioSinIvaAux=Auxiliar.redondea(precioSinIvaAux,digitosRedondeo);
+		stop=precioSinIva!=null&&precioSinIvaAux.doubleValue()==precioSinIva.doubleValue();
+		//dma.printRule("....debug precioConIvaActual haciendo get:"+precioConIvaActual+"  precioSinIvaAux q correspondería a ese valor:"+precioSinIvaAux+" precioSinIva:"+precioSinIva+" stop="+stop);
+	}
+	if(!stop){
+		if(precioSinIva!=null){
+			Double precioConIva=precioSinIva*(1.0D+0.01D*porc);
+			dma.setValue(idoRoot,idtoRoot,propiedadPrecioConIva,new DoubleValue(Auxiliar.redondea(precioConIva,digitosRedondeo)));
+		}else{
+			dma.delValues(idoRoot,idtoRoot,propiedadPrecioConIva);
+		}
+	}
+	return !stop;
+}
+
+function boolean calculaPrecioSinIvaAPartirConIva(DataModelAdapter dma,int idoRoot,int idtoRoot,String propiedadPrecioSinIva,Double precioConIva,Double porc,int digitosRedondeo){
+	DataValue dprecioSinIvaActual=(DataValue)dma.getValue(idoRoot,idtoRoot,propiedadPrecioSinIva);
+	boolean stop=false;
+	if(dprecioSinIvaActual!=null){
+		Double precioSinIvaActual=dprecioSinIvaActual.getNumericValue();
+		Double precioConIvaAux=Auxiliar.redondea(precioSinIvaActual*(1.0D+0.01D*porc),digitosRedondeo);
+		stop=precioConIva!=null&&precioConIvaAux.doubleValue()==precioConIva.doubleValue();
+		//dma.printRule("....debug precioSinIvaActual haciendo get:(porc "+porc+") "+ precioSinIvaActual+"  precioConIvaAux q correspondería a ese valor:"+precioConIvaAux+" precioConIva:"+precioConIva+" stop="+stop);
+	}
+	if(!stop){
+		if(precioConIva!=null){
+			Double precioSinIva=precioConIva/(1.0D+0.01D*porc);
+			dma.setValue(idoRoot,idtoRoot,propiedadPrecioSinIva,new DoubleValue(Auxiliar.redondea(precioSinIva,digitosRedondeo)));
+		}else{
+			dma.delValues(idoRoot,idtoRoot,propiedadPrecioSinIva);
+		}
+	}
+	return !stop;
+}
+
+function HashMap reparteLineasParaAproximarPorcentaje(DataModelAdapter dma,HashMap VporcentajesCantidadesXlinea2,Double porcentajeObjetivo){
+	//clave mapa: linea
+	//valor mapa: Vector:
+	//V[0]---porcentajePrecioProducto
+	//v[1]---cantidmaLineaOriginal
+	//v[2]---cantidadLineaReparto                   
+	HashMap<String,Vector<Double>> VporcentajesCantidadesXlinea=(HashMap<String,Vector<Double>>)VporcentajesCantidadesXlinea2;    
+	dma.printRule("\n.... inicio funcion   reparteLineasParaAproximarPorcentaje: porcentajeObjetivo:"+porcentajeObjetivo+"--->"+ VporcentajesCantidadesXlinea);
+	
+	Iterator it=VporcentajesCantidadesXlinea.keySet().iterator();//RECORREMOS PARA QUEDARNOS CON VALOR ABSOLUTO DE CANTIDAD Y PARA COMPROBAR QUE NO HAY MEZCLADAS LINEA CON CANTIDADES NEGATIVAS Y POSITIVAS.
+		boolean todasCantidadesPositivas=true;
+		boolean todasCantidadesNegativas=true;
+		Double cantidad=0.0;
+		while (it.hasNext()){
+			String linea=(String)it.next();
+				Vector<Double> vector=(Vector<Double>)VporcentajesCantidadesXlinea.get(linea);
+				cantidad=vector.get(1);
+				if(cantidad<0.0){
+					todasCantidadesPositivas=false;				
+					//el algoritmo trabajara con los valores absolutos
+					VporcentajesCantidadesXlinea.get(linea).set(1,(-1.0*VporcentajesCantidadesXlinea.get(linea).get(1)));
+				}
+				else if(cantidad>0.0){
+					todasCantidadesNegativas=false;			
+				}
+		}
+	//CONTROL DE QUE TODAS LAS LINEAS SON POSITIVAS O TODAS SON NEGATIVAS, POR REQUISITOS NO SE MEZCLAN. Y SI SE MEZCLAN HABRÍA QUE MODIFICAR EL ALGORTIMO DE APROX. AL PORCENTAJE		
+	if(!todasCantidadesPositivas&&!todasCantidadesNegativas){
+		dma.printRule("\n IMPTE: NO TODAS LAS CANTIDADES TIENEN EL MISMO SIGNO");
+		dma.showMessage("No se permite en este contexto mezclar líneas positivas y negativas");
+	}else if (todasCantidadesNegativas){
+		dma.printRule("\n\nA info: SE TRATA DE UN ABONO PQ TODAS LAS CANTIDADES SON NEGATIVAS: VporcentajesCantidadesXlinea2 una vez tomados valores absolutos:\n"+VporcentajesCantidadesXlinea2);
+	}
+	
+	double porcentaje=0.0;//se debería inicializar a la suma de la cantidadApxo inicial de cada linea por el porcentaje con el que contribuye (con aprox actual de 0 por linea es 0)
+	while(porcentaje<porcentajeObjetivo){//se busca el porcentaje mayor que sumado al actual no sobrepase el objetivo
+			Double porcentajeRestante=porcentajeObjetivo-porcentaje;
+			Double porcentajeMayorQueNoSupera=null;
+			Double porcentajeMenorQueSupera=null;
+			String lineaConPorcentajeMayorQueNosupera=null;
+			String lineaConPorcentajeMenorQueSupera=null;
+
+			it=VporcentajesCantidadesXlinea.keySet().iterator();
+			while (it.hasNext()){
+				String linea=(String)it.next();
+				Vector<Double> vector=(Vector<Double>) VporcentajesCantidadesXlinea.get(linea);
+				boolean disponibleElementoLinea_i=(vector.get(1)>vector.get(2));
+				if(disponibleElementoLinea_i){
+					Double porcentajeProducto_i=vector.get(0);
+					if(porcentajeProducto_i<porcentajeRestante){
+						if(porcentajeMayorQueNoSupera==null||porcentajeMayorQueNoSupera<porcentajeProducto_i){
+							porcentajeMayorQueNoSupera=porcentajeProducto_i;
+							lineaConPorcentajeMayorQueNosupera=linea;
+						}
+					}
+					else if(porcentajeProducto_i>porcentajeRestante){
+						if(porcentajeMenorQueSupera==null||porcentajeMenorQueSupera>porcentajeProducto_i){
+							porcentajeMenorQueSupera=porcentajeProducto_i;
+							lineaConPorcentajeMenorQueSupera=linea;
+						}
+					}
+				}
+			}
+			//prioridad mayor porcentaje que no se pasa, no no lo hay se toma el menor que se pasa
+			if(porcentajeMayorQueNoSupera!=null){
+				porcentaje=porcentaje+porcentajeMayorQueNoSupera;
+				VporcentajesCantidadesXlinea.get(lineaConPorcentajeMayorQueNosupera).set(2,1+VporcentajesCantidadesXlinea.get(lineaConPorcentajeMayorQueNosupera).get(2));
+			}
+			else if(porcentajeMenorQueSupera!=null){
+				porcentaje=porcentaje+porcentajeMenorQueSupera;
+				VporcentajesCantidadesXlinea.get(lineaConPorcentajeMenorQueSupera).set(2,1+VporcentajesCantidadesXlinea.get(lineaConPorcentajeMenorQueSupera).get(2));
+			}
+			else{
+				dma.printRule("..break iteracion, no se puede añadir mas porcentaje");
+				break;
+			}
+			dma.printRule("......Iteracion: porcentaje="+porcentaje);
+		}
+		dma.printRule("\n.....---> PORCENTAJE FINAL CONSEGUIDO ="+porcentaje+" <-------------\n");
+		dma.printRule("........... vectorXlinea="+VporcentajesCantidadesXlinea);
+		return VporcentajesCantidadesXlinea;
+}
+/*
+rule "FACTURADO TRUE SI TODAS SUS LINEAS ESTAN FACTURADAS"//solo vamos a considerar dos estados de facturacion(booleano).todo facturado=true, algo pendiente=false
+ agenda-group "rules" when 
+   	
+	FactHierarchy(nameAlbaran:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	exists(Model(CLASSNAME==nameAlbaran,PROPNAME=="facturado"))
+	Individual(CLASSNAME==nameAlbaran,idoAlbaranComercial:IDO,idtoAlbaranComercial:IDTO,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+
+	not(DatValue(IDO==idoAlbaranComercial,PROPNAME=="facturado",BOOLEANVALOR==true))
+	exists(ObjValue(IDO==idoAlbaranComercial,PROPNAME=="línea",VALOR!=null))
+ 	
+ 	forall( ObjValue(IDO==idoAlbaranComercial, PROPNAME=="línea",linea:VALOR!=null)
+ 			FactHierarchy(typefactura:CLASS,CLASSSUP=="FACTURA")
+            ObjValue(ID==linea, PROPNAME=="documento",factura:VALOR!=null,RANGENAME==typefactura))                         
+  
+then
+	String rdnAlba=dma.getValue(idoAlbaranComercial,idtoAlbaranComercial,"rdn").getValue_s();
+	dma.printRule("\n\n========= FACTURADO  TRUE SI TODAS SUS LINEAS ESTAN FACTURADAS "+idoAlbaranComercial);
+	dma.setValue(idoAlbaranComercial,idtoAlbaranComercial,"facturado",new BooleanValue(true));
+end	
+
+
+rule "FACTURADO FALSE SI ALGUNA DE SUS LINEAS NO ESTA FACTURADA"//solo vamos a considerar dos estados de facturacion(booleano).todo facturado=true, algo pendiente=false
+ agenda-group "rules" when 
+   	//TODO PERFORMANCE: añadir regla adicional que diga que un documento que no tiene asociado un evolucion docuemnto factura, no esta facturado. Necesaria para el caso en el que se elimina la factura
+   	// lo cual no bloquea las lineas. 
+   	
+	FactHierarchy(nameAlbaran:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	exists(Model(CLASSNAME==nameAlbaran,PROPNAME=="facturado"))
+	//No puedo exigir bloqueado albaran porque a lo mejor se ha eliminado la factura
+	Individual(CLASSNAME==nameAlbaran,idAlbaranComercial:ID,idoAlbaranComercial:IDO,idtoAlbaranComercial:IDTO,state:STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+	not(DatValue(ID==idAlbaranComercial,PROPNAME=="facturado",BOOLEANVALOR==false))
+	
+	ObjValue(ID==idAlbaranComercial, PROPNAME=="línea",idoLinea:IDOVALUE)
+	Individual(IDO==idoLinea,STATE!=Constants.INDIVIDUAL_STATE_DELETED) //Necesario para estar seguro razona con lineas cargadas en motor
+	not((and 	ObjValue(IDO==idoLinea, PROPNAME=="documento",VALOR!=null,typefactura:RANGENAME)
+    			FactHierarchy(CLASS==typefactura,CLASSSUP=="FACTURA")))
+    	        				
+then
+	dma.printRule("\n\n============= FACTURADO FALSE SI ALGUNA DE SUS LINEAS NO ESTA FACTURADA "+idoAlbaranComercial);
+	dma.setValue(idoAlbaranComercial,idtoAlbaranComercial,"facturado",new BooleanValue(false));
+end*/
+
+/*
+rule "FACTURAR ALBARANES INDIVIDUALMENTE"
+agenda-group "rules" when
+    FactHierarchy(CLASSSUP=="Facturar_Documentos_Venta"||=="Facturar_Documentos_Compra",clsAccion:CLASS)
+    ObjValue(CLASSNAME==clsAccion,idoUTask:IDO,idtoUTask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+   	ObjValue(IDO==idoUTask, PROPNAME=="params",idparams:VALUE!=null)
+	DatValue(ID==idparams, PROPNAME=="generar_una_factura_por_albarán",BOOLEANVALOR==true)
+   	sources: ArrayList(size>0) from collect (ObjValue(IDO==idoUTask, PROPNAME=="sourceClass", VALOR!=null))
+then
+ 	dma.printRule("\n\n=================>>DISPARO RULE FACTURAR ALBARANES INDIVIDUALMENTE");
+ 	for(int i=0;i<sources.size();i++){
+ 		ObjectValue albaran=((ObjValue)sources.get(i)).getOBJECTVALUE();
+ 		String typealbaran=dma.getClassName(albaran.getValueCls());
+		String typefactura=typefactura=null;
+	if(clsAccion.equals("Pasar_a_Albarán-Factura_Venta")){
+		typefactura="ALBARÁN-FACTURA_CLIENTE";
+	}
+	else if(clsAccion.equals("Pasar_a_Albarán-Factura_Compra")){
+	typefactura="ALBARÁN-FACTURA_PROVEEDOR";
+	}
+	else if(clsAccion.equals("Facturar_Documentos_Venta")){
+		typefactura="FACTURA_A_CLIENTE";
+	}
+	else if(clsAccion.equals("Facturar_Documentos_Compra")){
+		typefactura="FACTURA_PROVEEDOR";
+	
+	}
+	else{System.err.println("////////////////////////WARNING!!: RULE FACTURAR UN ALBARÁN CON TIPO ALBARÁN  NO CONTEMPLADO clsAccion:"+clsAccion);
+	
+	}
+	String excluproperties="línea#fecha#emitido#cobro_anticipo#archivos";
+	int idtoFactura=dma.getIdClass(typefactura);
+		
+	Domain domFactura=dma.cloneIndividual(albaran.getValue(),albaran.getValueCls(),idtoFactura, excluproperties);
+		//HAY QUE AÑADIRLE AL ALBARÁN TODAS LAS LÍNEAS NO DAS DE LOS albaranes SELECCIONADOS
+		Iterator<Value> lineas=dma.getValues(albaran.getValue(),albaran.getValueCls(),"línea").iterator();
+		while(lineas.hasNext()){
+			ObjectValue linea=(ObjectValue)lineas.next();
+			dma.addValue(domFactura,"línea", linea);
+		 }
+		 //POR ULTIMO ENLAZAMOS EL ALBARÁN CREADO CON LA ACCIÓN
+		dma.addValue(idoUTask,idtoUTask,"targetClass",new ObjectValue(domFactura));
+	}
+end*/
+	
+//12:47	
+	
+	
+ //=======================================================================================================
+ //========================================LINEA DOCUMENTOS===============================================
+ //=======================================================================================================
+//12:33
+rule "PRECIO LINEA EN DOCUMENTO COMPRAS"
+salience 200
+ agenda-group "rules" when 
+  	
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMPRA")
+	ObjValue(CLASSNAME==nameDoc,idDoc:ID,PROPNAME=="proveedor",idProveedor:VALOR!=null,changedProveedor:hasCHANGED) 	
+	ObjValue(ID==idDoc,PROPNAME=="línea",idLinea:VALOR!=null,idtolinea:VALUECLS,changedLinea:hasCHANGED) 
+	ObjValue(ID==idLinea,idoLinea:IDO,PROPNAME=="producto",idProducto:VALOR,changedProducto:hasCHANGED) 
+	ObjValue(ID==idProducto,idoProducto:IDO,PROPNAME=="precios_compra",precioProv:VALOR!=null,changedPreciosCompra:hasCHANGED) 
+	ObjValue(ID==precioProv,idoPrecProv:IDO,PROPNAME=="proveedor",VALOR==idProveedor,changedProveedorEnpreciosCompra:hasCHANGED) 
+	DatValue(ID==precioProv,PROPNAME=="precio",precio:DATAVALUE!=null,changedPrecio:hasCHANGED) 
+	eval(changedProveedor||changedLinea||changedProducto||changedPreciosCompra||changedProveedorEnpreciosCompra||changedPrecio)
+then
+	dma.printRule("\n\n====== PRECIO LINEA EN DOCUMENTO COMPRAS. nameDoc"+nameDoc+" precio="+precio+" proveedor="+idProveedor+" idlinea="+idLinea);
+	dma.setValue(idLinea,idtolinea,"precio",precio);	
+	//si en la misma compra hay mas de una linea distinto precio para mismo producto, hay ambiguedad, solo el primero debe registrarse y consumirse evento para no volver a retroalimentar
+	dma.consumirEventoCambio(idoPrecProv,"proveedor");
+	dma.consumirEventoCambio(idoPrecProv,"precio");
+	dma.consumirEventoCambio(idoProducto,"precios_compra");
+end
+
+rule "PRECARGA GRUPO"
+salience 100
+agenda-group "rules" when 
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_VENTA")
+	Lock(CLASSNAME==nameDoc,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	not(DatValue(IDO==idoDoc,PROPNAME=="emitido",VALOR=="true"))
+	ObjValue(IDO==idoDoc,PROPNAME=="cliente",idoCliente:IDOVALUE)
+	ObjValue(IDO==idoCliente,PROPNAME=="grupo_cliente",idoGrupo:IDOVALUE!=null,idtoGrupo:VALUECLS)
+	not( Individual(IDO==idoGrupo) )
+  then
+	dma.printRule("\n\n  >>>=================== PRECARGA GRUPO "+idoGrupo);
+	dma.loadIndividualIfNotExists(idoGrupo, idtoGrupo);
+end
+
+
+
+//esta regla no puede usar individual lock para que funcione el patron de evoluci. propi. depe sujeto
+
+rule "DESCUENTO LÍNEA_ARTICULOS ES POR DEFECTO EL DESCUENTO COMERCIAL DEL SUJETO"
+agenda-group "rules" when 
+	
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	ObjValue(CLASSNAME==nameDoc,idDoc:ID,PROPNAME=="cliente"||PROPNAME=="proveedor",sujeto:VALOR,changedSujeto:hasCHANGED)
+	not(DatValue(ID==idDoc,PROPNAME=="emitido",VALOR=="true"))
+	DatValue(ID==sujeto,PROPNAME=="descuento",descuentoComer:DATAVALUE,changedDescuentoSujeto:hasCHANGED)
+	ObjValue(ID==idDoc,PROPNAME=="línea",idLinea:VALOR!=null,idtoLinea:VALUECLS,changedLinea:hasCHANGED)
+	eval(changedSujeto||changedDescuentoSujeto||changedLinea)
+then
+	dma.printRule("\n================RULE DESCUENTO LÍNEA_ARTICULOS ES POR DEFECTO EL DESCUENTO COMERCIAL DEL SUJETO");
+	dma.setValue(Integer.parseInt(idLinea),idtoLinea,"descuento",descuentoComer);
+end
+
+
+rule "IVA LINEA ES EL DEL PRODUCTO/CARGO SI REGIMEN IVA SUJETO ES GENERAL O DE RECARGO"
+salience 100
+agenda-group "rules" when 
+	
+	FH:FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL"||=="LIQUIDACIÓN_POR_CAMBIO_PRECIO")
+	//Lock(CLASSNAME==nameDoc,idDoc:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK)//patron que sustitye a systemvalue no funcina si atienda a bloqueo
+	
+	ObjValue(CLASSNAME==nameDoc,idDoc:ID,ID==idDoc,PROPNAME=="línea"||=="cargos"||=="productos_y_precios",idoLinea:IDOVALUE,idLinea:VALOR!=null,idtoLinea:VALUECLS,changedLinea:hasCHANGED,tipoLinea:RANGENAME)
+
+	not(DatValue(ID==idDoc,PROPNAME=="emitido",VALOR=="true"))
+
+	ObjValue(ID== idLinea, PROPNAME=="producto"||=="tipo_cargo", idProducto:VALOR!=null,changedProducto:hasCHANGED)
+	
+	ObjValue(ID== idProducto, PROPNAME=="iva", sidIva:VALOR!=null,iva:OBJECTVALUE,changedIvaProducto:hasCHANGED)
+	
+	DatValue(ID==sidIva,PROPNAME=="rdn", ivaproducto:VALOR!=null)
+	ObjValue(ID==idDoc,propsujeto:PROPNAME=="cliente"||PROPNAME=="proveedor",sujeto:VALOR,changedSujeto:hasCHANGED)
+	
+	ObjValue(ID==sujeto,PROPNAME=="régimen_iva",idRegIva:VALOR!=null,changedRegimenIvaSujeto:hasCHANGED)
+	
+	DatValue(ID==idRegIva,PROPNAME=="rdn", regIva:VALOR!=null)
+		
+	(or eval(changedLinea||changedProducto||changedIvaProducto||changedSujeto||changedRegimenIvaSujeto)
+		not(ObjValue(ID== idLinea,PROPNAME=="iva", VALOR!=null)))
+
+	eval(regIva.equals("Recargo_Equivalencia")||regIva.equals("Regimen_General"))	
+then
+		dma.printRule("================= IVA LINEA ES EL DEL PRODUCTO/CARGO SI REGIMEN IVA SUJETO ES GENERAL O DE RECARGO: tipoLinea:"+tipoLinea+" idlinea="+idLinea+" "+propsujeto+"="+sujeto+"  regimeIvaSujeto="+regIva+" ivaProducto/Cargo="+ivaproducto);
+		
+		dma.printRule("================= "+changedLinea+" "+changedProducto+" "+changedIvaProducto+" "+changedSujeto+" "+changedRegimenIvaSujeto);
+		dma.setValue(idLinea,idtoLinea,"iva", iva);
+end
+
+rule "IVA LINEA ARTICULOS ES EXENTO SI EL SUJETO TIENE UN REGIMEN IVA ESPECIAL"
+agenda-group "rules" when 
+	
+	FH:FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL"||=="LIQUIDACIÓN_POR_CAMBIO_PRECIO")
+	//Lock(CLASSNAME==nameDoc,idDoc:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK)//patron que sustitye a systemvalue no funcina si atienda a bloqueo 
+	ObjValue(CLASSNAME==nameDoc,idDoc:ID,ID==idDoc,PROPNAME=="línea"||=="cargos"||=="productos_y_precios",idLinea:VALOR!=null)
+	not(DatValue(ID==idDoc,PROPNAME=="emitido",VALOR=="true"))
+	ObjValue(ID== idLinea, idoLinea:IDO,idtoLinea:IDTO,PROPNAME=="producto"||=="tipo_cargo", idProducto:VALOR!=null,changedProducto:hasCHANGED)
+	chIvaProducto:ArrayList() from collect(ObjValue(ID== idProducto, PROPNAME=="iva", sidIva:VALOR!=null,hasCHANGED==true))
+
+	ObjValue(ID==idDoc,propsujeto:PROPNAME=="cliente"||PROPNAME=="proveedor",sujeto:VALOR,changedSujeto:hasCHANGED)
+	ObjValue(ID==sujeto,PROPNAME=="régimen_iva",idRegIva:VALOR!=null,changedRegimenIva:hasCHANGED)
+	DatValue(ID==idRegIva,PROPNAME=="rdn", regIva:VALOR!=null)	
+	eval(regIva.equals("Exentos")||regIva.equals("Exportaciones")||regIva.equals("Intracomunitario"))
+	eval(changedProducto||chIvaProducto.size()>0||changedSujeto||changedRegimenIva)
+	serieDoc: ArrayList() from collect(DatValue(ID==idDoc,PROPNAME=="serie"))//para que se vuelva a disparar ante cambios serie pq hay reglas esepcif	
+	//idivaexento
+	DatValue(CLASSNAME=="TIPO_IVA",PROPNAME=="rdn",VALOR=="Exento",idoivaexento:IDO!=null,idivaexento:ID,idtotipoIva:IDTO)
+	exentoIntr:Domain() from accumulate(DatValue(CLASSNAME=="TIPO_IVA",PROPNAME=="rdn",VALOR=="Exento_Intracomunitario",ido:IDO,idto:IDTO),
+										init(Domain res=new Domain(0,0);),action(res=new Domain(ido,idto);),result(res))
+then
+		dma.printRule("\n\n ====== RULE  IVA LINEA ARTICULOS ES EXENTO SI EL SUJETO TIENE UN REGIMEN IVA ESPECIAL: idlinea="+idLinea+" "+propsujeto+"="+sujeto+"  regimeIvaSujeto="+regIva);
+		
+		if(regIva.contains("ntracomunitario")&&exentoIntr.getIdo()!=0){
+			dma.setValue(idoLinea,idtoLinea,"iva", new ObjectValue(exentoIntr));
+		}else{
+			dma.setValue(idoLinea,idtoLinea,"iva", new ObjectValue(idoivaexento,idtotipoIva));
+		}
+end
+
+rule "APLICA RETENCIÓN LINEA ARTICULOS POR DEFECTO LO QUE INDIQUE EL PRODUCTO"
+agenda-group "rules" when 
+	
+	FactHierarchy(CLASSSUP=="LÍNEA_SERVICIO",claseLinea:CLASS)
+	ObjValue(CLASSNAME==claseLinea,idoLinea:IDO!=null,idtoLinea:IDTO, PROPNAME=="producto", idProducto:VALOR!=null,changedProducto:hasCHANGED)
+	DatValue(ID== idProducto, PROPNAME=="aplica_retención", saplicaRet:VALOR,aplicaRet:DATAVALUE,changedAplicaRet:hasCHANGED)
+	eval(changedProducto||changedAplicaRet)
+then
+	dma.printRule("\n\n========= APLICA RETENCIÓN LINEA ARTICULOS POR DEFECTO ES EL LO QUE INDIQUE EL PRODUCTO. aplicaRet="+saplicaRet);
+	dma.setValue(idoLinea,idtoLinea,"aplica_retención", aplicaRet); 
+end
+
+ 
+rule "IMPORTE LINEA ARTICULOS"
+salience 100
+	agenda-group "rules" when 
+	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	Individual(IDTO==idtoDoc,idoDoc:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	ObjValue(IDO==idoDoc,PROPNAME=="línea",idoLinea:IDOVALUE,idtoLinea:VALUECLS)
+	DatValue(IDO==idoLinea,PROPNAME=="cantidad",cantidad:QMIN!=null)
+	
+	refer_II:ArrayList() from collect(DatValue(IDO==idoLinea,PROPNAME=="referencia_iva_incluido",BOOLEANVALOR==true))
+	esTicket:ArrayList() from collect(FactHierarchy(IDTO==idtoDoc,CLASSSUP=="TICKET_VENTA"))										
+	
+	Model(CLASSNAME=="LÍNEA_ARTÍCULOS",pPrecio:PROPNAME=="precio_iva_incluido"||=="precio",OP==Constants.OP_INTERSECTION)
+	eval(!((refer_II.size()>0||esTicket.size()>0)&&pPrecio.equals("precio"))&&!(refer_II.size()==0&&esTicket.size()==0&&pPrecio.equals("precio_iva_incluido")))
+	
+	DatValue(IDO==idoLinea,PROPNAME==pPrecio,precio:QMIN!=null)
+	
+	descuentoLinF:ArrayList() from collect(DatValue(IDO==idoLinea,PROPNAME=="descuento", d:QMIN!=null))
+
+	DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="n._dígitos_en_importe_linea", idigitos:INTVALUE!=null)		
+
+	ObjValue(IDO==idoLinea,PROPNAME=="iva",idoIva:IDOVALUE!=null)
+	DatValue(IDO==idoIva,PROPNAME=="porcentaje_iva",porcIva:DOUBLEVALUE!=null)	
+		
+	not(FactHierarchy(IDTO==idtoLinea,CLASSSUP=="LÍNEA_COMISIÓN"))
+	
+then
+
+	Double importe=0.0;
+	double factorDescuentoGlobal=0.0;
+	double descuentoLin=(descuentoLinF.size()==0)?0.0:((DatValue)descuentoLinF.get(0)).getQMIN();
+	//Factor global aqui en ticket se discontinua, ver o no el importe con descuento global debe ser una opcion del report de ticket
+	
+	importe=Auxiliar.redondea(precio*cantidad*(1.0d-descuentoLin/100.0d),idigitos.intValue());//el iva no afecta al descuento tanto sea ref ii (que se compensa) o no
+	//el importe de referencia (II o no) es el que se redondea, y el otro se obtiene de este pero no se redondea
+	if(refer_II.size()>0||esTicket.size()>0){					
+		dma.setValue(idoLinea,idtoLinea,"importe_con_iva", new DoubleValue(importe));		
+		dma.setValue(idoLinea,idtoLinea,"importe", new DoubleValue(importe/(1+porcIva/100)));
+	}else{
+		dma.setValue(idoLinea,idtoLinea,"importe", new DoubleValue(importe));
+		dma.setValue(idoLinea,idtoLinea,"importe_con_iva", new DoubleValue(importe*(1+porcIva/100)));				
+	}
+	
+	dma.printRule("=================IMPORTE LINEA ARTICULOS.  cantidad="+cantidad+ "descuento="+descuentoLin+"  precio="+precio+"  importecalculado="+importe);
+end
+
+
+rule "CALCULO FACTOR_DESCUENTO_GLOBAL DE DOCUMENTO COMERCIAL"
+salience 10
+agenda-group "rules" when 
+	
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	Lock(CLASSNAME==nameDoc,idDoc:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK,idtoDoc:IDTO)
+
+	not(DatValue(ID==idDoc,PROPNAME=="emitido",VALOR=="true"))
+
+	forall( ObjValue(ID==idDoc, PROPNAME=="línea"||=="descuentos_globales", ido:IDOVALUE!=null)
+			Individual(IDO==ido,STATE==Constants.INDIVIDUAL_STATE_READY))
+			
+  	descuentoGlobalResultante: Double() 
+            	from accumulate(
+            				 (and 
+             					  ObjValue(ID==idDoc,PROPNAME=="descuentos_globales", idDescuento:VALOR!=null)
+             				  	  DatValue(ID==idDescuento,PROPNAME=="porcentaje" , porcentajeDescuento:DOUBLEVALUE!=null)
+             				  ),
+                              init	( Double sumaDescGlobales = new Double(0);),
+                              action( sumaDescGlobales+=(1-sumaDescGlobales)*(porcentajeDescuento/100);),                            
+                              result(sumaDescGlobales))
+
+then
+    descuentoGlobalResultante=Auxiliar.redondea(descuentoGlobalResultante,6);
+	dma.printRule("   ================DISPARO RULE CALCULO  FACTOR_DESCUENTO_GLOBAL DE DOCUMENTO COMERCIAL. f="+descuentoGlobalResultante);
+	dma.setValue(idDoc,idtoDoc,"factor_descuento_global",new DoubleValue(descuentoGlobalResultante));                  
+end  
+      										
+     											
+rule "CALCULO DESGLOSE DE IVA DE UN DOCUMENTO COMERCIAL"
+salience 10
+agenda-group "rules" when 
+	
+	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	Lock(IDTO==idtoDoc,nameDoc:CLASSNAME,idDoc:ID!=null,st:STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	
+	not(DatValue(ID==idDoc,PROPNAME=="emitido",VALOR=="true"))
+	
+	forall( ObjValue(ID==idDoc, PROPNAME=="línea"||=="cargos"||=="desglose_iva", ido:IDOVALUE!=null)
+			Individual(IDO==ido,STATE==Constants.INDIVIDUAL_STATE_READY))
+	
+	ObjValue(ID==idDoc,idoDoc:IDO,PROPNAME=="cliente"||PROPNAME=="proveedor",sujeto:VALOR, sujetoChanged:hasCHANGED)
+	
+	ObjValue(ID==sujeto,PROPNAME=="régimen_iva",idRegIva:VALOR!=null)	
+	DatValue(ID==idRegIva,	PROPNAME=="rdn",regimenIva:VALOR!=null)
+	
+	serieDoc: ArrayList() from collect(DatValue(ID==idDoc,PROPNAME=="serie"))//para que se vuelva a disparar ante cambios serie pq hay reglas esepcif
+		
+	factor:DoubleChanged() from accumulate (DatValue(ID==idDoc,PROPNAME=="factor_descuento_global",factor2:DOUBLEVALUE!=null,ch:hasCHANGED),
+                              		init( 	DoubleChanged res = new DoubleChanged(0.0,false);),
+                              		action( res=new DoubleChanged(factor2,ch);),                            
+                              		result(	res))
+                              		
+	DatValue(ID==idDoc,PROPNAME=="base",baseChanged:hasCHANGED)
+	
+	DatValue(CLASSNAME=="TIPO_IVA", idoIva:IDO>0, PROPNAME=="porcentaje_recargo" ,porcentajeRecargo:QMAX!=null)
+	DatValue(IDO==idoIva,PROPNAME=="rdn",rdnIva:VALOR)
+	
+	DatValue(IDO==idoIva, idtoiva:IDTO,PROPNAME=="porcentaje_iva" ,porcentajeIVA:QMAX!=null)
+	ObjValue(IDO==idoDoc,PROPNAME=="mi_empresa",idoEmpDoc:IDOVALUE!=null)		    
+    	
+    //no puedo exigir size>0, no estaria exiguiendo que la factura tenga lineas, si no que tenga lineas de este iva en cuestion, y podria haber un cargo de este iva sin lineas con dicho iva
+ 	lineasMap: HashMap() from accumulate((and  	ObjValue(IDO==idoDoc, PROPNAME=="línea", idoLinea:IDOVALUE!=null,idtoLinea:VALUECLS)
+ 												ObjValue(IDO==idoLinea, PROPNAME=="iva" ,IDOVALUE==idoIva)
+             				  	  				DatValue(IDO==idoLinea,PROPNAME=="importe" ,imp:DOUBLEVALUE!=null)             				               				  	  	
+             				  	  				DatValue(IDO==idoLinea,PROPNAME=="importe_con_iva" ,imp2:DOUBLEVALUE!=null)
+             				  	  				ObjValue(IDO==idoLinea,PROPNAME=="mi_empresa" ,idoEmpresa:IDOVALUE!=null)
+             				  	  	),
+ 									init( HashMap res=new HashMap();),
+             				  	  	action( 
+             				  	  			ArrayList datos=(ArrayList)res.get(idoEmpresa);
+             				  	  			if(datos==null){
+             				  	  				datos=new ArrayList();
+             				  	  				datos.add(new Double(0.0));
+             				  	  				datos.add(new Double(0.0));
+             				  	  				res.put(idoEmpresa,datos);
+             				  	  			}
+             				  	  			             				  	  			
+             				  	  			datos.set(0,imp+(Double)datos.get(0));
+             				  	  			datos.set(1,imp2+(Double)datos.get(1));
+             				  	  	),
+             				  	  	///No puede tener reverse porque acumula cuando linea todavia no tiene empresa, y cuando la tiene llama a reverse con dato de empresa distinta
+             				  	  		reverse(             				  	  			            				  	  			
+             				  	  			ArrayList datos=(ArrayList)res.get(idoEmpresa);             				  	  			
+             				  	  			datos.set(0,(Double)datos.get(0)-imp);
+             				  	  			datos.set(1,(Double)datos.get(1)-imp2);             				  	  			
+             				  	  	),
+                              		result(res))                                                     		
+    
+    cargos: Double() from accumulate((and	ObjValue(IDO==idoDoc, 	PROPNAME=="cargos", idoLinea:IDOVALUE!=null)
+           		  				  	  		DatValue(IDO==idoLinea,	PROPNAME=="importe" ,imp:DOUBLEVALUE!=null)             				  
+             				  	  			ObjValue(IDO==idoLinea,	PROPNAME=="iva" ,IDOVALUE==idoIva)	),
+                              				init(Double res=new Double(0);),action(res+=imp;),result(res)) 
+                              				                          
+    DatValue(CLASSNAME=="APLICACIÓN", idoApp:IDO,PROPNAME=="n._dígitos_en_importe_linea",digitosRedondeo:INTVALUE>0)
+   
+    
+    desgloseMap:HashMap() from accumulate((and 	ObjValue(IDO==idoDoc, PROPNAME=="desglose_iva", idoDesg:IDOVALUE!=null,idtoDesg:VALUECLS,ov:OBJECTVALUE)
+     											ObjValue(IDO==idoDesg, PROPNAME=="iva" ,IDOVALUE==idoIva)
+     											ObjValue(IDO==idoDesg,PROPNAME=="mi_empresa" ,idoEmpresa:IDOVALUE!=null)),
+     										init(HashMap res=new HashMap();),
+     										action(     	
+     											LinkedList ds=(LinkedList)res.get(idoEmpresa);		
+     											if(ds==null){
+     												ds=new LinkedList();    
+     												res.put(idoEmpresa,ds);	 												
+     											}							
+     											ds.add(ov);             				  	  				
+             				  	  			),
+     										result(res))
+     
+        
+     //(or eval(sujetoChanged || factor.isChanged() || baseChanged)
+     //	 exists((and ObjValue(IDO==idoDoc, PROPNAME=="línea"||=="cargos", idoLinea:IDOVALUE!=null)
+ 	//				 ObjValue(IDO==idoLinea,PROPNAME=="iva",hasCHANGED==true)))
+ 	//	not(ObjValue(IDO==idoDoc, PROPNAME=="desglose_iva", IDOVALUE!=null)))
+ 		
+ 		
+     
+then
+
+	dma.printRule("\n\n=============== CALCULO DESGLOSE DE IVA DE UN DOCUMENTO COMERCIAL cargos "+cargos+" lineas.size:"+lineasMap.size()+" "+desgloseMap.size()+" "+idDoc+" idIva="+rdnIva+"   PORCENTAJE IVA="+porcentajeIVA+" dig redondeo "+digitosRedondeo );
+		
+	
+	Integer idtoMiEmpresa=dma.getIdClass("MI_EMPRESA");
+	ArrayList keys=new ArrayList();
+	keys.addAll(lineasMap.keySet());
+	if(desgloseMap.size()>0) keys.addAll(desgloseMap.keySet());
+	
+	if(cargos.doubleValue()!=0.0 ){//&& keys.size()==0){
+		keys.add(idoEmpDoc);
+	}
+	
+	Iterator itrEmpresas=keys.iterator();	
+	while(itrEmpresas.hasNext()){
+		Integer IdoMiEmpresa=(Integer)itrEmpresas.next();		
+		
+		ArrayList lineas=(ArrayList)lineasMap.get(IdoMiEmpresa);		
+		dma.printRule("empresa "+IdoMiEmpresa);
+		
+		if(lineas==null){			
+			dma.printRule("empresa sin ventas "+IdoMiEmpresa);
+			lineas=new ArrayList();
+			lineas.add(new Double(0.0));
+			lineas.add(new Double(0.0));			
+		}
+			
+		Double baselineas=(Double)lineas.get(0);
+		Double baselineasMasIva=(Double)lineas.get(1);
+		dma.printRule(" base iva (empresa "+IdoMiEmpresa+") ="+baselineas+ ", con iva="+baselineasMasIva);
+	
+		//el cargo siempre lo imputamos a la empresa del documento. En caso de una franquicia, podria pasar que todas las lineas sean de otra empresa, y sin embargo el cargo es de la franquicia
+		//para ese caso deberia definirse un producto que represente el cargo
+		double cargosEstaEmpresa=IdoMiEmpresa.equals(idoEmpDoc)?cargos:0;
+		Double cuota=Auxiliar.redondea(cargosEstaEmpresa*porcentajeIVA/100+(baselineasMasIva-baselineas)*(1-factor.getValor()),digitosRedondeo);
+		boolean baseDespreciable= Math.abs(baselineas.doubleValue()+cargosEstaEmpresa)<0.01;
+	
+		LinkedList desgloses=(LinkedList)desgloseMap.get(IdoMiEmpresa);
+		if(baseDespreciable){
+			
+			if(desgloses!=null&&desgloses.size()>0){
+				for(int d=0;d<desgloses.size();d++){
+					dma.printRule(" eliminando desglose");
+					dma.delValue(idoDoc,idtoDoc,"desglose_iva",(ObjectValue)desgloses.get(d));
+				}
+			}
+		}else{				
+			Domain idDesglose=null;
+			if(desgloses==null||desgloses.size()==0){
+				dma.printRule("creando desglose "); 
+				idDesglose=dma.creaIndividualOfClass("DESGLOSE_IVA");
+				dma.setValue(idDesglose,"iva",new ObjectValue(idoIva,idtoiva));
+				dma.addValue(idoDoc,idtoDoc,"desglose_iva",new ObjectValue(idDesglose));
+				if(IdoMiEmpresa.intValue()!=0) dma.setValue(idDesglose,"mi_empresa",new ObjectValue(IdoMiEmpresa,idtoMiEmpresa));
+			}else{
+				if(desgloses.size()>1){
+					for(int d=1;d<desgloses.size();d++){
+						dma.delValue(idoDoc,idtoDoc,"desglose_iva",(ObjectValue)desgloses.get(d));
+					}
+				}				
+				dma.printRule("actualizar desglose ");
+				idDesglose=new Domain((ObjectValue)desgloses.get(0));
+			}
+				
+			dma.printRule("cuota "+cuota);
+			dma.setDataValue(idDesglose,"cuota_iva",cuota.toString());
+	
+			double recargo= regimenIva.equals("Recargo_Equivalencia") ? Auxiliar.redondea(porcentajeRecargo/100*(baselineas*(1-factor.getValor())+cargosEstaEmpresa),digitosRedondeo):0;
+			dma.setDataValue(idDesglose,"cuota_recargo",""+recargo);
+	
+			dma.setDataValue(idDesglose,"base",Auxiliar.redondea(cargosEstaEmpresa+ baselineas*(1-factor.getValor()),digitosRedondeo).toString());	
+		}
+	}
+end
+
+
+rule "DOCUMENTO COMERCIAL: BASE"
+salience 10
+agenda-group "rules" when 
+	
+	fh:FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	Lock(CLASSNAME==nameDoc,idDoc:ID,idoDoc:IDO,idtoDoc:IDTO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	not(DatValue(ID==idDoc,PROPNAME=="emitido",VALOR=="true"))
+	DatValue(ID==idDoc,PROPNAME=="factor_descuento_global",descuentoGlobalResultante:DOUBLEVALUE!=null)
+	
+	//Para asegurarnos las lineas estan cargadas. SObraria con el nuevo patron de performance
+	forall( ObjValue(ID==idDoc, PROPNAME=="línea"||=="cargos", ido:IDOVALUE!=null)
+			Individual(IDO==ido,STATE==Constants.INDIVIDUAL_STATE_READY))
+			
+	sumaimporteslineas : Double() 
+             from accumulate(
+             				 (and 
+             					  ObjValue(ID==idDoc, PROPNAME=="línea", idLinea:VALOR)
+             				  	  DatValue(ID==idLinea,idoLinea:IDO ,PROPNAME=="importe" ,imp:QMAX!=null)             
+             				  ),
+                              
+                              sum(imp))
+     sumacargos : Double()                 
+                from accumulate((and 
+             					  ObjValue(ID==idDoc, PROPNAME=="cargos",idCargo:VALOR)
+             				  	  DatValue(ID==idCargo,idoLinea:IDO ,PROPNAME=="importe" ,impCargo:QMAX!=null)            				  	  		
+             				  	),sum(impCargo))
+
+    DatValue(CLASSNAME=="MI_EMPRESA"||=="APLICACIÓN",PROPNAME=="n._dígitos_en_importe_linea", idigitos:INTVALUE!=null)
+    not(
+    	(and
+    		DatValue(ID==idDoc,PROPNAME=="base",baseDoc:DOUBLEVALUE!=null)
+    		eval(Auxiliar.redondea((sumaimporteslineas*(1-descuentoGlobalResultante)+sumacargos),idigitos)==baseDoc)
+    	)
+    )    
+    
+then
+	Double base=sumaimporteslineas*(1-descuentoGlobalResultante )+sumacargos;
+	dma.printRule("-------------- DOCUMENTO COMERCIAL: BASE  "+base+ " sumaimporteslineas="+sumaimporteslineas+"  sumacargos="+sumacargos+"  factorDescGlobalResultante="+descuentoGlobalResultante);
+	
+	dma.setValue(idoDoc,idtoDoc,"base",new DoubleValue(Auxiliar.redondea(base,idigitos)));
+end
+
+rule "CALCULO BASE DE UN LIQUIDACION COMISION"
+salience 10
+agenda-group "rules" when 
+	
+	fh:FactHierarchy(nameDoc:CLASS,CLASSSUP=="LIQUIDACIÓN_COMISIÓN")
+	Lock(CLASSNAME==nameDoc,idDoc:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK,idoDoc:IDO,idtoDoc:IDTO)
+	sumaimporteslineas : Double() 
+             from accumulate(
+             				 (and 
+             					  ObjValue(ID==idDoc, PROPNAME=="línea", idLinea:VALOR)
+             				  	  DatValue(ID==idLinea,idoLinea:IDO ,PROPNAME=="importe" ,imp:DOUBLEVALUE!=null)             
+             				  ),
+                              sum(imp))
+   
+    not(DatValue(ID==idDoc,PROPNAME=="base",DOUBLEVALUE==(Auxiliar.redondea(sumaimporteslineas,3))))
+then
+	dma.printRule("\n\n-------------- CALCULO BASE DE UN LIQUIDACION COMISIONL  sumaimporteslineas="+sumaimporteslineas);
+	dma.setDataValue(idoDoc,idtoDoc,"base",Auxiliar.redondea(sumaimporteslineas,3).toString());
+end
+
+rule "CALCULO TOTAL IVA DE UN DOCUMENTO COMERCIAL"
+//Mas prioridad que calculo importe total para que no sea incorrecto (Ya se exige que los deslgoses esten cargados)
+salience 100
+agenda-group "rules" when 
+	
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	Lock(CLASSNAME==nameDoc,idDoc:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK,idoDoc:IDO,idtoDoc:IDTO)
+	not(DatValue(ID==idDoc,PROPNAME=="emitido",VALOR=="true"))
+	//si no exigimo exista un desglose, comienza con iva cero, y calcula importe erroneo sin IVA. 
+	//Y despues la inicializacion de importe de forma de pago se equivoca ya que tira solo de la base. Mas tarde el porcentaje de la forma de pago pilla el importe correcto
+	// pero se equi
+	
+	//Para asegurarnos desglose estan cargados
+	forall( ObjValue(ID==idDoc, PROPNAME=="desglose_iva", ido:IDOVALUE!=null)
+			Individual(IDO==ido,STATE==Constants.INDIVIDUAL_STATE_READY))
+				
+	sumaivas : Double() 
+             from accumulate(
+             				 (and 
+             					  ObjValue(ID==idDoc, PROPNAME=="desglose_iva", idoDesglose:IDOVALUE!=null)
+             					  Individual(IDO==idoDesglose,STATE==Constants.INDIVIDUAL_STATE_READY)
+             				  	  DatValue(IDO==idoDesglose,PROPNAME=="cuota_iva" ,imp:DOUBLEVALUE!=null)
+             				  ),
+                              
+                              init(Double res=new Double(0);),action(res+=imp;),result(res))                       
+    
+then
+	dma.printRule("\n\n-------------- CALCULO TOTAL IVA DE UN DOCUMENTO COMERCIAL "+sumaivas);
+	dma.setValue(idoDoc,idtoDoc,"total_iva",new DoubleValue(Auxiliar.redondea(sumaivas,3)));
+end
+
+rule "CALCULO TOTAL RECARGO DE UN DOCUMENTO COMERCIAL"
+agenda-group "rules" when 
+	
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	Lock(CLASSNAME==nameDoc,idDoc:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK,idoDoc:IDO,idtoDoc:IDTO)
+	not(DatValue(ID==idDoc,PROPNAME=="emitido",VALOR=="true"))
+	
+	//Para asegurarnos desglose estan cargados
+	forall( ObjValue(ID==idDoc, PROPNAME=="desglose_iva", ido:IDOVALUE!=null)
+			Individual(IDO==ido,STATE==Constants.INDIVIDUAL_STATE_READY))
+				
+	sumarecargos : Double() 
+             from accumulate(
+             				 (and 
+             					  ObjValue(ID==idDoc, PROPNAME=="desglose_iva", idDesglose:VALOR!=null)
+             				  	  DatValue(ID==idDesglose,PROPNAME=="cuota_recargo" ,imp:DOUBLEVALUE!=null)
+             				  ),
+                              
+                              init(Double res=new Double(0);),action(res+=imp;),result(res))
+                              
+    (or
+    	 not( exists(DatValue(ID==idDoc, PROPNAME=="recargo",DOUBLEVALUE!=null)))
+		  exists(DatValue(ID==idDoc, PROPNAME=="recargo",DOUBLEVALUE!=sumarecargos))
+	)
+    
+then
+	dma.printRule("\n\n-------------- CALCULO TOTAL RECARGO DE UN DOCUMENTO COMERCIAL");
+	dma.setValue(idoDoc,idtoDoc,"recargo",new DoubleValue(Auxiliar.redondea(sumarecargos,3)));
+end
+
+rule "CALCULO DE TOTAL RETENCIÓN"
+salience 10
+agenda-group "rules" when 
+	
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL"||=="LIQUIDACIÓN_COMISIÓN")
+	Lock(CLASSNAME==nameDoc,idDoc:ID,STATE==Constants.INDIVIDUAL_STATE_LOCK,idoDoc:IDO,idtoDoc:IDTO)
+	//NUEVA CONDICIÓN QUE NO ESTE EMITIDO	
+	not(DatValue(ID==idDoc,PROPNAME=="emitido",VALOR=="true"))
+	
+	forall( ObjValue(ID==idDoc, PROPNAME=="línea", ido:IDOVALUE!=null)
+			Individual(IDO==ido,STATE==Constants.INDIVIDUAL_STATE_READY))
+		
+	DatValue(CLASSNAME==nameDoc,ID==idDoc, PROPNAME=="porcentaje_retención",porcRet:DOUBLEVALUE!=null)
+	DatValue(ID==idDoc,PROPNAME=="base",baseChanged:hasCHANGED)
+	
+	descuentoGlobalResultante: DoubleChanged() 
+            	from accumulate(
+            				 (and 
+             					 DatValue(ID==idDoc,PROPNAME=="factor_descuento_global",descuentoGlobal:DOUBLEVALUE!=null, ch:hasCHANGED)
+             				  ),
+                              init	( DoubleChanged descuentoGlobal2 = new DoubleChanged(0.0,false);),
+                              action( descuentoGlobal2=new DoubleChanged(descuentoGlobal,ch);),                            
+                              result(descuentoGlobal2))
+	retenciones : Double()
+	 from accumulate(
+    					(and 
+             					  ObjValue(ID==idDoc, PROPNAME=="línea", idLinea:VALOR)
+             				  	  DatValue(ID==idLinea,PROPNAME=="importe" ,imp:QMAX!=null)
+             				  	  DatValue(ID==idLinea, PROPNAME=="aplica_retención",BOOLEANVALOR==true)
+         				 ),
+         				 sum(imp*porcRet/100))
+                         
+                              
+     ObjValue(ID==idDoc,PROPNAME=="cliente"||=="proveedor",sujetoChanged:hasCHANGED)
+     //eval(baseChanged || sujetoChanged || descuentoGlobalResultante.isChanged() )
+     	 
+
+then
+	dma.printRule("\n      ================= CALCULO DE TOTAL RETENCIÓN: porcRet"+porcRet+" factordescuentoGlobal="+descuentoGlobalResultante+" retencionesSinTenerEnCuentaDescuentoglobal="+retenciones );
+	Double	totalretencion=retenciones*(1-descuentoGlobalResultante.getValor());
+	//dma.printRule(".....debug totalretencion:"+totalretencion);
+	dma.setValue(idoDoc,idtoDoc,"retención",new DoubleValue(Auxiliar.redondea(totalretencion,3)));
+	//dma.printRule("      final regla tras hacer set valor: "+dma.getValue(idoDoc,idtoDoc,"retención"));
+end
+
+
+rule "TOTAL RETENCION ES CERO SI NO HAY PORCENTAJE RETENCION DISTINTO DE CERO EN EL DOCUMENTO"
+agenda-group "rules" when 
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL"||=="LIQUIDACIÓN_COMISIÓN")
+	DatValue(CLASSNAME==nameDoc, idDoc:ID,PROPNAME=="retención",retencion:DOUBLEVALUE!=0,idoDoc:IDO,idtoDoc:IDTO)
+	DatValue(ID==idDoc,PROPNAME=="porcentaje_retención",VALOR==null)	
+then
+	dma.printRule("\n\n\n =======  TOTAL RETENCION ES CERO SI NO HAY PORCENTAJE RETENCION DISTINTO DE CERO EN EL DOCUMENTO idDoc:"+idDoc+"  nameDoc:"+nameDoc);
+	dma.setValue(idoDoc,idtoDoc,"retención",new DoubleValue(0.0d));
+end
+
+rule "CALCULO IMPORTE TOTAL"
+salience -10 //Menos prioridad que calculo de desglose de iva y de base documento, de lo contrario se calcula un total en base a un iva erroneo
+agenda-group "rules" when 
+	
+	FactHierarchy(nameDoc:CLASS,clsSup:CLASSSUP=="DOCUMENTO_COMERCIAL"||=="LIQUIDACIÓN_COMISIÓN"||=="DESGLOSE_IVA")
+	Model(CLASSNAME==nameDoc,PROPNAME=="importe",OP==Constants.OP_INTERSECTION)
+	Individual(CLASSNAME==nameDoc,idDoc:ID,idoDoc:IDO,idtoDoc:IDTO)
+	DatValue(ID==idDoc, PROPNAME=="base",base:DOUBLEVALUE!=null)
+	
+	totalIva:Double() from accumulate (DatValue(ID==idDoc, PROPNAME=="total_iva"||=="cuota_iva",iva:DOUBLEVALUE!=null),sum(iva))
+	
+	forall( FactHierarchy(CLASS==nameDoc,CLASSSUP=="DOCUMENTO_COMERCIAL")
+			DatValue(ID==idDoc, PROPNAME=="total_iva",DOUBLEVALUE!=null))
+    
+	totalRecargo: Double() from accumulate(DatValue(ID==idDoc, PROPNAME=="recargo"||=="cuota_recargo",recargo:DOUBLEVALUE!=null)
+					init(Double res=new Double(0);),action(res+=recargo;),result(res))
+					
+                              
+    totalRetencion: Double() from accumulate(DatValue(ID==idDoc, PROPNAME=="retención",retencion:DOUBLEVALUE!=null)
+    			init(Double res=new Double(0);),action(res+=retencion;),result(res))
+ 
+                              
+	//not(DatValue(ID==idDoc, PROPNAME=="importe",DOUBLEVALUE==(Auxiliar.redondea((base+totalIva+totalRecargo-totalRetencion),2))))
+then
+	dma.printRule("\n\n======== CALCULO IMPORTE TOTAL  nameDoc="+nameDoc+"  base="+base+"  totalRecargo="+totalRecargo+" totalRetencion="+totalRetencion+" totalIva="+totalIva );
+	double totalSuma=base+totalIva+totalRecargo-totalRetencion;
+	double valorAbsoluto=Math.abs(totalSuma);
+	
+	//si es desglose de iva no redondeo, para que el importe del asiento contable cuadre con base e iva
+	if(!clsSup.equals("DESGLOSE_IVA")) valorAbsoluto= Auxiliar.redondea(valorAbsoluto,2);
+	
+	//de esta manera los nº negativos son redondeados simetricamente que los positivos en facturas rectificativas
+	if(totalSuma<0) valorAbsoluto=-valorAbsoluto;
+	
+	dma.setValue(idoDoc,idtoDoc,"importe",new DoubleValue(valorAbsoluto));
+end
+
+
+//==================================FACTURAS RECTIFICATIVAS================================================
+
+
+rule "RECTIFICAR UNA FACTURA"  
+agenda-group "rules" when
+    
+   	ObjValue(typetask:CLASSNAME=="Rectificar_Factura_Compra"||=="Rectificar_Factura_Venta", idtoUtask:IDTO,idoUTask:IDO ,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",typefactura:RANGENAME,factura:OBJECTVALUE!=null,idtofactura:VALUECLS,idoFactura:IDOVALUE)
+    DatValue(IDO==idoFactura,PROPNAME=="rdn",rdnFactura:VALOR!=null)	
+	causa:ArrayList() from collect(DatValue(IDO==idoFactura, PROPNAME=="causa_rectificación",causarectificacion:VALOR!=null))
+	modeloNuevo:ArrayList() from collect(Model(CLASSNAME=="FACTURA_RECTIFICATIVA_VENTAS",PROPNAME=="rectifica_a",OP==Constants.OP_INTERSECTION))
+then
+	//NOVEDAD 8/3/12: si el usuario en la causa no ha incluido el rdn de la factura rectificada, la regla comleta
+	//la causa añadiendo el rdn de la factura
+	String causarectificacion="";
+	if( causa.size()>0 ){
+		DatValue dv=(DatValue)causa.get(0);
+		causarectificacion=dv.getVALOR();
+	}
+	if(!causarectificacion.contains(rdnFactura)){
+		if(causarectificacion.length()>0)
+			causarectificacion+=","+rdnFactura;
+		else 
+			causarectificacion+=" Rectifica a fact: "+rdnFactura;
+	}
+	String propRectficaA=modeloNuevo.size()>0 ?"rectifica_a":"factura_que_rectifica";
+	
+   dma.printRule("\n\n ============  ACTION RULE======== RECTIFICAR UNA FACTURA. factura="+factura); 
+   String typeFrectificativa=null;
+    String typeCobro=null;
+   if(typefactura.equals("FACTURA_A_CLIENTE")||typefactura.equals("FACTURA_RECTIFICATIVA_VENTAS")||typefactura.equals("ALBARÁN-FACTURA_CLIENTE")){
+	   	typeFrectificativa="FACTURA_RECTIFICATIVA_VENTAS";
+	   	typeCobro="COBRO_VENCIMIENTO";
+   	}
+   else  if(typefactura.equals("FACTURA_PROVEEDOR")||typefactura.equals("FACTURA_RECTIFICATIVA_COMPRAS")||typefactura.equals("AUTOFACTURA_COMISIÓN")||typefactura.equals("ALBARÁN-FACTURA_PROVEEDOR")){
+   		typeFrectificativa="FACTURA_RECTIFICATIVA_COMPRAS";
+   		typeCobro="PAGO";
+   	}else{
+   		dma.printRule("\n\n ...WARNING: CASO NO CONTEMPLADO EN RULE: RECTIFICAR UNA FACTURA para (typefactura:"+typefactura);
+   	}
+	//primero se copian los datos que interesa copiar
+    int idtofactRect=dma.getIdClass(typeFrectificativa);
+    String nocopiar ="rectifica_a#factura_que_rectifica#fecha#serie#causa#emitido#vencimientos#línea#asiento#archivos";
+    Domain domfactRect=dma.cloneIndividual(factura.getValue(),factura.getValueCls(),idtofactRect,nocopiar);
+    dma.setValue(domfactRect,"causa_rectificación",new StringValue(causarectificacion));//luego se le marca a que factura rectifica
+    dma.addValue(domfactRect,propRectficaA,factura);  
+    
+    dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(domfactRect));
+    System.err.println(".... fin regla rectificar factura.----------------------------------------- "+propRectficaA);
+    
+end
+
+
+rule "CAMBIO DE ESTADO EMISIÓN DE UN DOCUMENTO"
+salience 100
+agenda-group "rules" when 
+	
+	ObjValue(CLASSNAME=="Cambiar_estado_emisión",idotask:IDO,idtoTask:IDTO,PROPNAME=="sourceClass",typedoc:RANGENAME,doc:OBJECTVALUE!=null,idtodoc:VALUECLS)
+	ObjValue(IDO==idotask,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+then
+	BooleanValue valor=(BooleanValue)dma.getValue(doc.getValue(),doc.getValueCls(),"emitido");
+	dma.printRule("===========RULE CAMBIO DE ESTADO EMISIÓN DE UN DOCUMENTO. valor actual emitido="+valor);
+	BooleanValue nuevovalor=valor!=null?new BooleanValue(!valor.getBvalue()):null;
+	
+	if(nuevovalor!=null){
+		dma.setValue(doc.getValue(),idtodoc,"emitido",nuevovalor);
+		dma.addValue(idotask,idtoTask,"targetClass",doc);
+	}else{
+		System.err.println("No se puede cambiar estado emisión documento porque no tiene valor en emitido");
+		throw new OperationNotPermitedException("Operación cancelada: No se puede cambiar estado emisión documento porque no tiene valor en emitido"); 
+	}
+end
+
+rule "UN DOCUMENTO EMITIDO NO SE PUEDE BORRAR"
+ //regla hereditaria
+ salience 100
+ agenda-group "rules" when 
+  	
+	FactHierarchy(nameFactura:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	Individual(CLASSNAME==nameFactura,idto:IDTO,idoFactura:IDO,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+	Model(IDTO==idto,PROPNAME=="emitido",OP==Constants.OP_INTERSECTION)
+then
+ 	dma.printRule("=================>>UN  DOCUMENTO COMERCIAL EMITIDO NO SE PUEDE BORRAR");
+ 	BooleanValue valorEmitido=(BooleanValue)dma.serverGetValue(idoFactura,idto,"emitido");
+ 	if(valorEmitido!=null&&valorEmitido.getBvalue()){
+ 		throw new OperationNotPermitedException("No se pueda borrar el documento porque esta marcado como emitido");
+ 	}
+end
+
+
+rule "NO SE PUEDE ELIMINAR UN DOCUMENTO FACTURADO"
+salience 100
+agenda-group "rules" when
+	
+	FactHierarchy(albaran:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+	not(FactHierarchy(CLASS==albaran,CLASSSUP=="FACTURA"))	
+	Individual(idAlb:ID,CLASSNAME==albaran,STATE==Constants.INDIVIDUAL_STATE_DELETED)
+	DatValue(ID==idAlb,CLASSNAME==albaran,PROPNAME=="facturado",facturado:VALOR=="true")
+then
+	dma.printRule("\n\n ========== NO SE PUEDE ELIMINAR UN DOCUMENTO YA FACTURADO");
+	throw new OperationNotPermitedException("No se puede eliminar un documento ya facturado");
+end
+
+
+rule "RECTIFICADA NO ES MODIFICABLE"
+ salience 100
+ agenda-group "rules" when 
+  	
+ 	FactHierarchy(nameFactura:CLASS,CLASSSUP=="FACTURA")
+	IndividualState(CLASSNAME==nameFactura,idFactura:ID,st:STATE==Constants.INDIVIDUAL_STATE_LOCK||==Constants.INDIVIDUAL_STATE_DELETED)
+	not(Lock(CLASSNAME==nameFactura,ID==idFactura,LOCKEDBYUSER==false,STATE==Constants.INDIVIDUAL_STATE_LOCK))
+	DatValue(ID==idFactura,PROPNAME=="rectificada",VALOR=="true")
+then
+ 	dma.printRule("\n\n =============== RECTIFICADA NO ES MODIFICABLE");
+ 	throw new OperationNotPermitedException("No se puede modificar un documento rectificado");
+end
+
+
+rule "NO SE PUEDEN AGRUPAR DOCUMENTOS CON DISTINTOS DESCUENTOS GLOBALES"
+agenda-group "rules" when
+
+    
+    FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMERCIAL")
+    ObjValue(nameAction:CLASSNAME, idUTask:ID,PROPNAME=="sourceClass",RANGENAME==nameDoc,doc1:VALOR!=null)
+    FactHierarchy(CLASS==nameAction,CLASSSUP=="Albaranar_Documentos_Compra"||=="Albaranar_Documentos_Venta"||=="Facturar_Documentos_Venta"||=="Facturar_Documentos_Compra"||=="Pasar_a_Pedido_Compra"||=="Pasar_a_Pedido_Venta")
+	DatValue(ID==doc1,PROPNAME=="factor_descuento_global",fdg1:DOUBLEVALUE!=null)
+	ObjValue(ID==doc1,idoDoc1:IDO,idtoDoc:IDTO,PROPNAME=="cliente"||PROPNAME=="proveedor",sujeto:VALOR!=null)
+    ObjValue(ID==idUTask,PROPNAME=="sourceClass",RANGENAME==nameDoc,doc2:VALOR!=doc1)
+	DatValue(ID==doc2,idoDoc2:IDO,PROPNAME=="factor_descuento_global",fdg2:DOUBLEVALUE!=fdg1)
+	ObjValue(ID==doc2,PROPNAME=="cliente"||PROPNAME=="proveedor",VALOR==sujeto)//
+    ObjValue(idtotask:IDTO,ID==idUTask,OP==null,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",STRINGVALUE==Constants.INDIVIDUAL_PREVALIDANDO)
+	//IMPORTANTE: NO SE PERMITE EN ACCIONES QUE CREAN DOCUMENTOS COMERCIALES AGRUPANDO DOC COMERCIALES (EN OTRAS COMO A PARTIR DE ALBARANES PROVEEDOR CREAR TRASPASO ALMACENES SI ES LICITO)
+	//para expresarlo ponemos condicion de que sean acciones en las que se crean documentos comerciales
+	eval(!nameAction.equals("SALIDA_A_SIGUIENTE_DESTINO"))
+	eval(!nameAction.equals("SALIDA_A_SIGUIENTE_DESTINO"))	
+	not((and
+		   	ObjValue(ID==idUTask, PROPNAME=="params",idparams:VALUE!=null)
+			DatValue(ID==idparams, PROPNAME=="generar_una_factura_por_albarán",BOOLEANVALOR==true)
+		))
+then
+	 dma.printRule("\n\n=====================> RULE NO SE PUEDEN AGRUPAR DOCUMENTOS CON DISTINTOS DESCUENTOS GLOBALES");
+	 Double porc1=100*fdg1;
+	 Double porc2=100*fdg2;
+	 //LOS REDONDEAMOS PARA QUE NO SALGA UN MENSAJE MUY LARGO PARA EL USUARIO
+	 porc1=Auxiliar.redondea(porc1,3);
+	 porc2=Auxiliar.redondea(porc2,3);
+	 throw new OperationNotPermitedException("No se pueden agrupar "+dma.getDDM().getAliasOfClass(nameDoc)+" '"+dma.getValue(idoDoc1,idtoDoc,"rdn").getValue_s() +"' y '"+dma.getValue(idoDoc2,idtoDoc,"rdn").getValue_s() +"' porque sus descuentos globales resultantes son distintos: "+porc1+"%  "+porc2+"%  respectivamente");
+end 
+
+rule "UNA LINEA DEBE TENER INFORMADO EL PRODUCTO O EL CONCEPTO"
+agenda-group "rules" when
+	
+	FactHierarchy(nameLinea:CLASS,CLASSSUP=="LÍNEA")
+	Lock(CLASSNAME==nameLinea,idLinea:ID,STATE==Constants.INDIVIDUAL_STATE_END_LOCK)
+	not(DatValue(ID==idLinea,PROPNAME=="concepto",VALOR!=null))
+	not(ObjValue(ID==idLinea,PROPNAME=="producto",VALOR!=null))
+then 
+	dma.printRule("\n\n  ===========DISPARO RULE :  UNA LINEA DEBE TENER INFORMADO EL PRODUCTO O EL CONCEPTO  classlinea="+nameLinea+"  idlinea="+idLinea);
+	throw new OperationNotPermitedException("La línea debe tener el concepto o el producto informado");
+end 
+
+//limitación impuesta desde el principio para obtener una versión muy rapida de esta lógica: 
+//no antiende a eliminaciones, ediciones, para que los soporte tendría que ser una regla contributiva
+rule "INSTALAR PRECIO DE COMPRA DE UN ARTÍCULO"
+ agenda-group "rules" when 
+  	
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMPRA")
+	Individual(CLASSNAME==nameDoc,idDoc:ID,STATE==Constants.INDIVIDUAL_STATE_READY)
+	ObjValue(CLASSNAME==nameDoc,ID==idDoc,PROPNAME=="proveedor",proveedor:OBJECTVALUE!=null,idProveedor:VALUE) 
+	ObjValue(ID==idDoc,PROPNAME=="línea",idLinea:VALOR!=null)
+	ObjValue(ID==idLinea,PROPNAME=="producto",idProducto:VALOR,clsProducto:RANGENAME!=null)
+	
+	Model(CLASSNAME==clsProducto,PROPNAME=="precios_compra",OP!=null)//impte que le corresponda la propiedad a instalar por modelo
+	Individual(ID==idProducto,idoProducto:IDO,idtoproducto:IDTO)
+	DatValue(ID==idLinea,PROPNAME=="precio",precioLinea:DOUBLEVALUE!=null)
+	not((and
+			ObjValue(ID==idProducto,PROPNAME=="precios_compra",idPrecioCompra:VALOR!=null)
+			ObjValue(ID==idPrecioCompra,PROPNAME=="proveedor",VALOR==idProveedor)
+		))
+	//QUE NO HAYA ESTABLECIDAD UNA POLITICA DE ESTABLECIMIENTO DE PRECIOS EN BASE A MARGENES A PARTIR PVP VENTA Y MARGEN BENEFICIO CON ESE PROVEEDOR
+	//TODO MEJORAR CD TENGAMOS UN BUEN MODELO DE MAGRGENES BENEFICIO Y SEA CONFIGURABLE QUE SE ACTUALIZA EN FUNCION DE Q (SI EL PVP EN FUNCION PRECIO COMPRA O VICEVERSA)
+	//eval(dma.preload(idProveedor))
+	not(DatValue(ID==idProveedor,PROPNAME=="margen_beneficio",VALOR!=null))
+			
+then
+	Domain domPrecioRegistrado=dma.creaIndividualOfClass("PRECIO_PROVEEDOR");
+ 	dma.printRule("\n\n=================>>RULE INSTALAR PRECIO DE COMPRA DE UN ARTÍCULO "+precioLinea+" "+domPrecioRegistrado+","+idProducto);
+ 	dma.setValue(domPrecioRegistrado,"proveedor",proveedor); 	
+	dma.setValue(domPrecioRegistrado,"precio",new DoubleValue(Auxiliar.redondea(precioLinea,3)));		
+	
+	dma.addValueNotLock(Integer.parseInt(idProducto),idtoproducto, dma.getIdProperty("precios_compra"), new ObjectValue(domPrecioRegistrado));  	
+end
+
+//limitación impuesta desde el principio para obtener una versión muy rapida de esta lógica: 
+//no antiende a eliminaciones, ediciones, para que los soporte tendría que ser una regla contributiva
+rule "ACTUALIZAR PRECIO DE COMPRA DE UN ARTÍCULO"
+ agenda-group "rules" when 
+  	
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_COMPRA")
+	//los presupuestos no se usan pq pueden no ser aceptados
+	not(FactHierarchy(CLASS==nameDoc,CLASSSUP=="PRESUPUESTO"))
+	Individual(CLASSNAME==nameDoc,idDoc:ID,STATE==Constants.INDIVIDUAL_STATE_READY)
+	ObjValue(CLASSNAME==nameDoc,ID==idDoc,PROPNAME=="proveedor",idProveedor:VALOR!=null)
+	DatValue(ID==idDoc,PROPNAME=="fecha",fechaDoc:DATE!=null, fSc:QMIN)
+	
+	//QUE NO HAYA ESTABLECIDAD UNA POLITICA DE ESTABLECIMIENTO DE PRECIOS EN BASE A MARGENES A PARTIR PVP VENTA Y MARGEN BENEFICIO CON ESE PROVEEDOR
+	//TODO MEJORAR CD TENGAMOS UN BUEN MODELO DE MAGRGENES BENEFICIO Y SEA CONFIGURABLE QUE SE ACTUALIZA EN FUNCION DE Q (SI EL PVP EN FUNCION PRECIO COMPRA O VICEVERSA)
+	//eval(dma.preload(idProveedor))
+	not(DatValue(ID==idProveedor,PROPNAME=="margen_beneficio",VALOR!=null))
+
+	ObjValue(idProducto:ID!=null,PROPNAME=="precios_compra",idPrecioCompra:VALOR!=null,idtoPrecioCompra:VALUECLS)
+	//eval(dma.preload(idPrecioCompra))
+	ObjValue(ID==idPrecioCompra,idoPrecio:IDO,PROPNAME=="proveedor",VALOR==idProveedor)
+	f:DatValue(ID==idPrecioCompra,PROPNAME=="precio",precioCompraPrevio:DOUBLEVALUE!=null)
+		//QUe no exista  más de un precio con el mismo proveedor, seria ambiguo
+	not( (and 	ObjValue(ID==idProducto,PROPNAME=="precios_compra",idPrecioCompra2:VALOR!=idPrecioCompra)
+				ObjValue(ID==idPrecioCompra2,PROPNAME=="proveedor",VALOR==idProveedor)))	
+	
+	not(DatValue(ID==idProducto,PROPNAME=="fecha_última_compra",DATE>fechaDoc))//para asegurar que es el doc mas reciente que actua sobre el precio compra del articulo
+	precioMaxLineas: Double(doubleValue>0) 
+	    from accumulate(
+		    				 (and
+		    				 	ObjValue(idLinea2:ID,PROPNAME=="producto",VALOR==idProducto)
+			    				 ObjValue(ID==idDoc,PROPNAME=="línea",VALOR==idLinea2)
+			    				 DatValue(ID==idLinea2,PROPNAME=="cantidad",cantidad:DOUBLEVALUE>=0)			    				 
+								 DatValue(ID==idLinea2,PROPNAME=="precio",precioLinea:DOUBLEVALUE>=0)
+		     				  ),
+		                     max(precioLinea)
+	        		) 
+			
+		
+	eval(precioMaxLineas>0.000001)//pq drools con la funcion max siempre devuelve algo aunque no encuentre valores	
+	
+	fdigitosPrecio: ArrayList() from collect(DatValue(CLASSNAME=="APLICACIÓN", IDO!=null,PROPNAME=="n._dígitos_en_precio",INTVALUE>0))				
+then
+	//Double precioMedio=sumaPrecioCompraXcantidad_eseDoc/cantidadTotal;
+ 	dma.printRule("\n\n=====ACTUALIZAR PRECIO DE COMPRA DE UN ARTÍCULO proveedor="+idProveedor+" precioMaxLineas="+precioMaxLineas+" idDoc="+idDoc+" tipo="+nameDoc);
+	int digitosRedondeo=3;//por defecto 3
+	if(fdigitosPrecio.size()==1){
+		digitosRedondeo=((DatValue)fdigitosPrecio.get(0)).getINTVALUE();
+	}
+	
+	dma.setValue(idoPrecio,idtoPrecioCompra,"precio",new DoubleValue(Auxiliar.redondea(precioMaxLineas,digitosRedondeo)));		
+	f.consumirEventoCambio();
+	dma.setValueNotLock(idoPrecio,idtoPrecioCompra,"fecha_última_compra",new TimeValue(fSc.longValue()));
+end
+
+
+rule "PRECIOS COMPRA PROVEEDOR: ELIMINAR DUPLICADOS"
+salience 100
+agenda-group "rules" when 
+	
+	FactHierarchy(clasearticulo:CLASS,CLASSSUP=="ARTÍCULO")
+	Lock(CLASSNAME=="ARTÍCULO"||==clasearticulo, idarticulo:ID!=null,STATE==Constants.INDIVIDUAL_STATE_END_LOCK,idoArt:IDO,idtoArt:IDTO)
+	ObjValue(ID==idarticulo,PROPNAME=="precios_compra",idoprecioCompra1:IDOVALUE!=null)
+	ObjValue(ID==idarticulo,PROPNAME=="precios_compra",idoprecioCompra2:IDOVALUE!=null&&!=idoprecioCompra1)
+	ObjValue(IDO==idoprecioCompra1,idtoPrecioCompra:IDTO,PROPNAME=="proveedor",proveedor1:VALOR!=null)
+	ObjValue(IDO==idoprecioCompra2,PROPNAME=="proveedor",VALOR==proveedor1)
+then
+	String rdnarticulo=dma.getValue(idoArt,idtoArt,Constants.PROP_RDN).getValue_s();
+ 	dma.printRule("\n\n================PRECIOS COMPRA PROVEEDOR: ELIMINAR DUPLICADOS. rdnarticulo="+rdnarticulo+"  idarticulo="+idarticulo);
+ 	int idoTarget= Math.min(idoprecioCompra1,idoprecioCompra2);
+ 	if(idoprecioCompra1<0) idoTarget=idoprecioCompra1;
+ 	if(idoprecioCompra2<0) idoTarget=idoprecioCompra2;
+ 	dma.deleteObject(idoTarget,idtoPrecioCompra);
+end
+
+rule "NO SE PUEDEN ASIGNAR A UN MISMO ARTÍCULO DOS PRECIOS DE LA MISMA TARIFA"
+salience 100
+agenda-group "rules" when 
+	
+	FactHierarchy(clasearticulo:CLASS,CLASSSUP=="ARTÍCULO")
+	Lock(CLASSNAME=="ARTÍCULO"||==clasearticulo, idarticulo:ID!=null,STATE==Constants.INDIVIDUAL_STATE_END_LOCK,idoArt:IDO,idtoArt:IDTO)
+	ObjValue(ID==idarticulo,PROPNAME=="tarifas_venta",idpreciotarifa1:VALOR!=null)
+	ObjValue(ID==idarticulo,PROPNAME=="tarifas_venta",idpreciotarifa2:VALOR!=null&&!=idpreciotarifa1)
+	forall(IndividualValue(ID==idpreciotarifa1,p:PROPNAME=="tarifa_precio"||=="talla"||=="color"||=="fecha_inicio",detalle:VALOR!=null)
+		   IndividualValue(ID==idpreciotarifa2,PROPNAME==p,VALOR==detalle))
+	forall(IndividualValue(ID==idpreciotarifa2,p:PROPNAME=="tarifa_precio"||=="talla"||=="color"||=="fecha_inicio",detalle:VALOR!=null)
+		   IndividualValue(ID==idpreciotarifa1,PROPNAME==p,VALOR==detalle))		   
+then
+	String rdnarticulo=dma.getValue(idoArt,idtoArt,Constants.PROP_RDN).getValue_s();
+ 	dma.printRule("\n\n================ RULE NO SE PUEDEN ASIGNAR A UN MISMO ARTÍCULO DOS PRECIOS DE LA LA MISMA TARIFA rdnarticulo="+rdnarticulo+"  idarticulo="+idarticulo);
+ 	if(rdnarticulo!=null)
+	 	throw new OperationNotPermitedException("No se puede asignar dos precios venta de "+dma.getDDM().getAliasOfClass(clasearticulo)+" '"+rdnarticulo+"' con la misma tarifa");
+	else
+	 	throw new OperationNotPermitedException("No se puede asignar dos precios venta de "+dma.getDDM().getAliasOfClass(clasearticulo)+"  con la misma tarifa");
+end
+
+
+rule "NO SE PUEDE ASIGNAR DOS DESCUENTOS GLOBALES DEL MISMO TIPO"
+ agenda-group "rules" when 
+  	
+  	Lock(idRoot:ID!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+  	ObjValue(ID==idRoot,PROPNAME=="descuentos_globales",des1:VALOR!=null)
+	ObjValue(ID==des1,PROPNAME=="tipo_descuento_global",tipoDesc1:VALOR!=null)
+	DatValue(ID==tipoDesc1,PROPNAME==Constants.PROP_RDN,rdntipoDesc1:VALOR!=null)
+	ObjValue(ID==idRoot,PROPNAME=="descuentos_globales",des2:VALOR!=des1)	
+	Lock(ID==des2,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(ID==des2,PROPNAME=="tipo_descuento_global",tipoDesc2:VALOR!=null)
+	DatValue(ID==tipoDesc2,PROPNAME==Constants.PROP_RDN,rdntipoDesc2:VALOR==rdntipoDesc1)
+then
+ 	dma.printRule("\n\n=================NO SE PUEDE ASIGNAR DOS DESCUENTOS GLOBALES DEL MISMO TIPO:  tipoDesc1="+tipoDesc1+"  rdntipoDesc1="+rdntipoDesc1+" tipoDesc2="+tipoDesc2+"  rdntipoDesc2="+rdntipoDesc2);
+ 	throw new OperationNotPermitedException(" NO SE PUEDE ASIGNAR DOS DESCUENTOS GLOBALES DEL MISMO TIPO");
+ end
+
+
+rule "NO SE PUEDE CAMBIAR DE SUJETO EN UNA FACTURA RECTIFICATIVA"
+agenda-group "rules" when
+  	
+	FactHierarchy(idtoRect:IDTO,CLASSSUP=="RECTIFICACIÓN")
+	Lock(IDTO==idtoRect,idoRect:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	ObjValue(IDO==idoRect,propsujeto:PROPNAME=="cliente"||=="proveedor",idoSujeto:IDOVALUE!=null)
+	ObjValue(IDO==idoRect, PROPNAME=="rectifica_a",idoDocPrevio:IDOVALUE!=null)
+	ObjValue(IDO==idoDocPrevio,PROPNAME==propsujeto,IDOVALUE!=idoSujeto)
+then
+	dma.printRule("\n\n===============RULE DISPARO REGLA NO SE PUEDE CAMBIAR DE SUJETO EN DOCUMENTO CON LINEAS DE OTRO SUJETO\n");
+	throw new OperationNotPermitedException("NO SE PUEDE CAMBIAR DE SUJETO EN UNA FACTURA RECTIFICATIVA");
+end	
+
+rule "RECTIFICADA ES TRUE SI UNA FACTURA TIENE UNA FACTURA RECTIFICATIVA ASOCIADA"
+ agenda-group "rules" when 
+   	
+ 	FactHierarchy(idtoRect:IDTO,CLASSSUP=="RECTIFICACIÓN")
+	IndividualState(IDTO==idtoRect,idoRect:IDO,estado:STATE==Constants.INDIVIDUAL_STATE_LOCK||==Constants.INDIVIDUAL_STATE_DELETED)	
+	ObjValue(IDO==idoRect, PROPNAME=="rectifica_a",idoDocRectificado:IDOVALUE,idoDocRectificadoOld:IDOPREVALOR,idtoDocRectificado:VALUECLS)	
+then
+	dma.printRule("\n================= > RECTIFICADA ES TRUE SI UNA FACTURA TIENE UNA FACTURA RECTIFICATIVA ASOCIADA");
+	if( idoDocRectificado!=null )		dma.setValue(idoDocRectificado,idtoDocRectificado,"rectificada", new BooleanValue(true));
+	if( estado==Constants.INDIVIDUAL_STATE_DELETED || idoDocRectificadoOld!=null && idoDocRectificado==null )
+		dma.setValue(idoDocRectificadoOld,idtoDocRectificado,"rectificada", new BooleanValue(false));
+end
+	
+rule "CALCULO TOTAL COMPRADO DE ARTICULO"
+//DE MOMENTO NO SOPORTAMOS CAMBIO EN TOTAL COMPRADO POR RECTFICACIONES DE FACTURAS
+salience 100
+ agenda-group "bddrules" when 
+  	
+	FactHierarchy(name:CLASS, idto:IDTO,CLASSSUP=="ARTÍCULO")
+	Lock(IDTO==idto,idArt:ID,idoArt:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_READY||==Constants.INDIVIDUAL_STATE_LOCK)
+	Model(IDTO==idto,idpropTotalComprado:PROP,PROPNAME=="total_comprado",OP==Constants.OP_INTERSECTION)
+	
+	contributionInit: Double() 
+    	from accumulate((and	
+					    	FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="FACTURA_PROVEEDOR")
+							ObjValue(CLASSNAME==classdoc,iddoc:ID!=null,PROPNAME=="línea",idlinea:INITIALVALOR!=null)
+							ObjValue(ID==idlinea, PROPNAME=="producto",INITIALVALOR==idArt)
+							DatValue(ID==idlinea, PROPNAME=="cantidad",cantidadInitial:INITIALDOUBLE!=null)
+						),
+                      sum(cantidadInitial))
+	contributionCurr: Double() 
+    	from accumulate((and
+							FactHierarchy(classdoc:CLASS,clssup:CLASSSUP=="FACTURA_PROVEEDOR")
+							Individual(CLASSNAME==classdoc,iddoc:ID!=null,STATE==Constants.INDIVIDUAL_STATE_READY)
+							ObjValue(ID==iddoc,PROPNAME=="línea",idlinea:VALOR!=null)
+							ObjValue(ID==idlinea, PROPNAME=="producto",VALOR==idArt)														
+							DatValue(ID==idlinea, PROPNAME=="cantidad",cantidadCurrent:DOUBLEVALUE!=null)
+							
+						),
+						sum(cantidadCurrent))             
+then
+	dma.printRule("\n\n ===========  CALCULO TOTAL COMPRADO DE ARTICULO idArt="+idArt);
+	dma.setIncrementalValue(idoArt,idto,idpropTotalComprado,contributionCurr-contributionInit,3);
+end
+
+
+rule "TARIFA PVP NO PERMITIDA"
+salience 100
+agenda-group "rules" when 
+	
+	FactHierarchy(CLASSSUP=="ARTÍCULO",idtoArticulo:IDTO)	
+		
+	ObjValue(IDTO==idtoArticulo,idoArticulo:IDO,PROPNAME=="tarifas_venta",idoPrecio:IDOVALUE, obPrecio:OBJECTVALUE)	
+	ObjValue(IDO==idoPrecio,idtoPrecio:IDTO,PROPNAME=="tarifa_precio",idoTarifaPVP:IDOVALUE)
+	DatValue(IDO==idoTarifaPVP,PROPNAME=="rdn",VALOR=="PVP")	
+	not(IndividualValue(IDO==idoPrecio,PROPNAME=="talla"||=="color"||=="fecha_inicio"||=="fecha_fin",VALOR!=null))
+	Lock(IDO==idoPrecio,LOCKEDBYUSER==false)
+then
+	dma.printRule("===========  TARIFA PVP NO PERMITIDA");
+	throw new OperationNotPermitedException("Un PVP debe ser introducido directamente en el campo PVP del artículo salvo que el precio se distinga por fecha, talla o color");
+	
+	//LO siguiente no funciona en GUI
+	//DoubleValue precio= (DoubleValue)dma.getValue(new Domain(obPrecio),"precio");
+	//boolean actualizarPrecioArticulo=(precio!=null && dma.getValue(idoArticulo,idtoArticulo,"precio")==null);
+	
+	//dma.delValue(idtoArticulo,idtoArticulo,"tarifas_venta",obPrecio);
+	//dma.deleteObject(idoPrecio,idtoPrecio);	
+	//if(actualizarPrecioArticulo) dma.setValue(idoArticulo,idtoArticulo,"pvp",precio);
+end
+
+rule "TARIFA DEPENDIENTE: INSTALACION"
+salience 100
+agenda-group "rules" when 
+	
+	FactHierarchy(CLASSSUP=="ARTÍCULO",idtoArticulo:IDTO)
+	// Si no se bloquea por el usuario esta regla consume exponenciamente en base al nº de productos en motor, asi como la de actualizacion	
+	Individual(idoArticulo:IDO, IDTO==idtoArticulo)//,LOCKEDBYUSER==true)
+	
+	FactHierarchy(clsFuente:CLASSSUP=="ARTÍCULO"||=="PRECIO",idtoFuente:IDTO)	
+
+	Individual(IDTO==idtoFuente,idoFuente:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	DatValue(IDO==idoFuente,prop:PROPNAME=="precio"||=="pvp",precioFuente:DOUBLEVALUE!=null,hasCHANGED==true)
+	not((and 	eval(prop.equals("precio"))
+				IndividualValue(IDO==idoFuente,PROPNAME=="talla"||=="color"||=="fecha_fin",VALOR!=null)))	
+	
+	(or eval(idoArticulo.equals(idoFuente))
+		exists(ObjValue(IDO==idoArticulo,PROPNAME=="tarifas_venta",IDOVALUE==idoFuente)))
+		
+	not((and FactHierarchy(CLASSSUP=="PRECIO",IDTO==idtoFuente)	
+				Lock(IDO==idoFuente,LOCKEDBYUSER==true)))
+	
+	ObjValue(CLASSNAME=="TARIFA_PRECIO", idtoTarifaDependiente:IDTO, idoTarifaDependiente:IDO, PROPNAME=="depende_de_tarifa",idoTarifaFuente:IDOVALUE)
+	DatValue(IDO==idoTarifaDependiente,PROPNAME=="factor_dependencia",factor:DOUBLEVALUE!=null)
+	DatValue(IDO==idoTarifaDependiente,PROPNAME=="rdn",rdnDep:VALOR!="PVP")	
+	
+	forall( DatValue(IDO==idoTarifaFuente,PROPNAME=="rdn",VALOR=="PVP")
+			FactHierarchy(CLASSSUP=="ARTÍCULO",IDTO==idtoFuente))
+			
+	forall( DatValue(IDO==idoTarifaFuente,PROPNAME=="rdn",VALOR!="PVP")				
+			ObjValue(IDO==idoFuente,PROPNAME=="tarifa_precio",IDOVALUE==idoTarifaFuente))
+
+	not((and	
+				ObjValue(IDO==idoArticulo,PROPNAME=="tarifas_venta",idoDependiente:IDOVALUE)								
+				ObjValue(IDO==idoDependiente,PROPNAME=="tarifa_precio",IDOVALUE==idoTarifaDependiente)))
+	
+	a_articulo:ArrayList() from collect(ObjValue(PROPNAME=="tarifas_venta",IDOVALUE==idoFuente))	
+	
+	
+then
+	dma.printRule("===========  TARIFA DEPENDIENTE: INSTALACION");
+	Domain domPrecio=dma.creaIndividualOfClass("PRECIO");
+	dma.setValue(domPrecio,"precio",new DoubleValue(0.0));
+	dma.setValue(domPrecio,"tarifa_precio",new ObjectValue(idoTarifaDependiente,idtoTarifaDependiente));	
+	
+	Integer idoRoot=idoFuente, idtoRoot=idtoFuente;
+	boolean esArticulo=true;
+	
+	if( prop.equals("precio") && a_articulo.size()>0 ){
+		ObjValue ob=(ObjValue)a_articulo.get(0);
+		idoRoot=ob.getIDO();
+		idtoRoot=ob.getIDTO();
+	}else{	
+		esArticulo= clsFuente.equals("ARTÍCULO");
+	}
+	if(esArticulo){ dma.addValue(idoRoot,idtoRoot,"tarifas_venta",new ObjectValue(domPrecio));}
+end
+
+rule "TARIFA DEPENDIENTE DE PVP: ACTUALIZAR"
+salience 100
+agenda-group "rules" when 
+	FactHierarchy(CLASSSUP=="ARTÍCULO",idtoArticulo:IDTO)	
+	// Si no se bloquea por el usuario esta regla consume exponenciamente en base al nº de productos en motor, asi como la de instalacion
+		
+	DatValue(IDTO==idtoArticulo,idoArticulo:IDO,PROPNAME=="pvp",precioFuente:DOUBLEVALUE!=null,hasCHANGED==true)	
+	
+	ObjValue(CLASSNAME=="TARIFA_PRECIO", idoTarifaDependiente:IDO, PROPNAME=="depende_de_tarifa",idoTarifaFuente:IDOVALUE)
+	DatValue(IDO==idoTarifaFuente,PROPNAME=="rdn",VALOR=="PVP")
+	DatValue(IDO==idoTarifaDependiente,PROPNAME=="factor_dependencia",factor:DOUBLEVALUE!=null)
+				
+	ObjValue(IDO==idoArticulo,PROPNAME=="tarifas_venta",idoDependiente:IDOVALUE)				
+	ObjValue(idtoDependiente:IDTO,IDO==idoDependiente,PROPNAME=="tarifa_precio",IDOVALUE==idoTarifaDependiente)	
+
+	fdigitosPrecio: ArrayList() from collect(DatValue(CLASSNAME=="APLICACIÓN", IDO!=null,PROPNAME=="n._dígitos_en_precio",INTVALUE>0))	
+then
+	dma.printRule("===========  TARIFA DEPENDIENTE DE PVP: ACTUALIZAR");
+	int digitosRedondeo=4;//por defecto 4
+	if(fdigitosPrecio.size()==1){
+	   digitosRedondeo=((DatValue)fdigitosPrecio.get(0)).getINTVALUE();
+	}
+	dma.setValue(idoDependiente,idtoDependiente,"precio",new DoubleValue(Auxiliar.redondea(precioFuente*factor,digitosRedondeo)));
+end
+
+rule "TARIFA PRECIO DEPENDIENTE DE PRECIO: ACTUALIZAR"
+salience 100
+agenda-group "rules" when 
+	FactHierarchy(CLASSSUP=="ARTÍCULO",idtoArticulo:IDTO)	
+	// Si no se bloquea por el usuario esta regla consume exponenciamente en base al nº de productos en motor, asi como la de instalacion
+	Individual(idoArticulo:IDO, IDTO==idtoArticulo)
+	
+	ObjValue(IDO==idoArticulo,PROPNAME=="tarifas_venta",idoFuente:IDOVALUE)
+	DatValue(idtoFuente:IDTO,IDO==idoFuente,PROPNAME=="precio",precioFuente:DOUBLEVALUE!=null,hasCHANGED==true)
+	not(IndividualValue(IDO==idoFuente,PROPNAME=="talla"||=="color"||=="fecha_fin",VALOR!=null))
+	ObjValue(IDO==idoFuente,PROPNAME=="tarifa_precio",idoTarifaFuente:IDOVALUE)
+	
+	ObjValue(CLASSNAME=="TARIFA_PRECIO", idoTarifaDependiente:IDO, PROPNAME=="depende_de_tarifa",IDOVALUE==idoTarifaFuente)
+	DatValue(IDO==idoTarifaDependiente,PROPNAME=="rdn",VALOR!="PVP")
+	DatValue(IDO==idoTarifaDependiente,PROPNAME=="factor_dependencia",factor:DOUBLEVALUE!=null)
+			
+	ObjValue(IDO==idoArticulo,PROPNAME=="tarifas_venta",idoDependiente:IDOVALUE)				
+	ObjValue(IDO==idoDependiente,idtoDependiente:IDTO,PROPNAME=="tarifa_precio",IDOVALUE==idoTarifaDependiente)	
+	not(IndividualValue(IDO==idoDependiente,PROPNAME=="talla"||=="color"||=="fecha_fin",VALOR!=null))						
+
+	fdigitosPrecio: ArrayList() from collect(DatValue(CLASSNAME=="APLICACIÓN", IDO!=null,PROPNAME=="n._dígitos_en_precio",INTVALUE>0))	
+then
+	dma.printRule("=========== TARIFA PRECIO DEPENDIENTE DE PRECIO: ACTUALIZAR");
+	int digitosRedondeo=4;//por defecto 4
+	if(fdigitosPrecio.size()==1){
+	   digitosRedondeo=((DatValue)fdigitosPrecio.get(0)).getINTVALUE();
+	}
+	dma.setValue(idoDependiente,idtoDependiente,"precio",new DoubleValue(Auxiliar.redondea(precioFuente*factor,digitosRedondeo)));
+end
+
+rule "TARIFA PVP DEPENDIENTE DE PRECIO: ACTUALIZAR"
+salience 100
+agenda-group "rules" when 
+	FactHierarchy(CLASSSUP=="ARTÍCULO",idtoArticulo:IDTO)	
+	// Si no se bloquea por el usuario esta regla consume exponenciamente en base al nº de productos en motor, asi como la de instalacion
+	Individual(idoArticulo:IDO, IDTO==idtoArticulo)
+	
+	ObjValue(IDO==idoArticulo,PROPNAME=="tarifas_venta",idoFuente:IDOVALUE)
+	DatValue(idtoFuente:IDTO,IDO==idoFuente,PROPNAME=="precio",precioFuente:DOUBLEVALUE!=null,hasCHANGED==true)
+	ObjValue(IDO==idoFuente,PROPNAME=="tarifa_precio",idoTarifaFuente:IDOVALUE)
+	
+	ObjValue(CLASSNAME=="TARIFA_PRECIO", idoTarifaDependiente:IDO, PROPNAME=="depende_de_tarifa",IDOVALUE==idoTarifaFuente)
+	DatValue(IDO==idoTarifaDependiente,PROPNAME=="rdn",VALOR=="PVP")
+	DatValue(IDO==idoTarifaDependiente,PROPNAME=="factor_dependencia",factor:DOUBLEVALUE!=null)
+							
+	fdigitosPrecio: ArrayList() from collect(DatValue(CLASSNAME=="APLICACIÓN", IDO!=null,PROPNAME=="n._dígitos_en_precio",INTVALUE>0))	
+then
+	dma.printRule("===========  TARIFA PVP DEPENDIENTE DE PRECIO: ACTUALIZAR");
+	int digitosRedondeo=4;//por defecto 4
+	if(fdigitosPrecio.size()==1){
+	   digitosRedondeo=((DatValue)fdigitosPrecio.get(0)).getINTVALUE();
+	}
+	dma.setValue(idoArticulo,idtoArticulo,"pvp",new DoubleValue(Auxiliar.redondea(precioFuente*factor,digitosRedondeo)));
+end
+
+rule "TARIFAS: MODIFICACION MASIVA: PREVIO"
+agenda-group "rules" when 
+   	FactHierarchy(CLASSSUP=="Asignar_precio_a_tarifa",idtoAccion:IDTO)
+    ObjValue(IDTO==idtoAccion, idoUTask:IDO,idtoUTask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+ 	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_PENDIENTE)
+ 	source:ArrayList() from collect(ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",IDOVALUE!=null))
+ 	ObjValue(IDO==idoUTask, PROPNAME=="params",idoParams:IDOVALUE!=null,idtoParams:VALUECLS)
+ 	not(ObjValue(IDO==idoParams, PROPNAME=="producto",IDOVALUE!=null))
+ then
+ 	for(int i=0;i<source.size();i++){
+ 		ObjValue ov=(ObjValue)source.get(i);
+ 		dma.addValue(idoParams,idtoParams,"producto",ov.getOBJECTVALUE());
+ 	}
+end
+ 	
+rule "TARIFAS: MODIFICACION MASIVA"
+salience -100 //poca prioridad para que se consuma antes las reglas de dependencia precio precio con iva
+agenda-group "rules" when 
+   	FactHierarchy(CLASSSUP=="Asignar_precio_a_tarifa",idtoAccion:IDTO)
+    ObjValue(IDTO==idtoAccion, idoUTask:IDO,idtoUTask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+ 	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO) 	
+       
+    ObjValue(IDO==idoUTask, PROPNAME=="params",idoParams:IDOVALUE!=null)
+	ObjValue(IDO==idoParams, PROPNAME=="tarifas_venta",idoTVparam:IDOVALUE!=null) 	
+	DatValue(IDO==idoTVparam, idtoTVparam:IDTO,propPrecio:PROPNAME=="precio"||=="precio_iva_incluido",precioFuente:DOUBLEVALUE)			
+	ObjValue(IDO==idoTVparam, PROPNAME=="tarifa_precio",idoTarifa:IDOVALUE!=null) 
+	DatValue(IDO==idoTarifa,PROPNAME=="rdn",rdnTD:VALOR!=null)		
+	
+	ObjValue(IDO==idoParams, PROPNAME=="producto",idoArticulo:IDOVALUE,idtoArticulo:VALUECLS, articulo:OBJECTVALUE)
+    artTgclass:ArrayList() from collect( ObjValue(IDO==idoUTask, PROPNAME=="targetClass",IDOVALUE==idoArticulo))
+    
+	precioDestino:TreeMap() from accumulate((and	ObjValue(IDO==idoArticulo,PROPNAME=="tarifas_venta",idoDependiente:IDOVALUE,ovPrecio:OBJECTVALUE)		
+													//No restringo fecha inicio, por si ninguna coincide, pillar la ultima con objeto de cerrar su fecha fin al dia de ayer, caso no tenga																				
+													forall(	IndividualValue(IDO==idoTVparam,p:PROPNAME=="tarifa_precio"||=="talla"||=="color"||=="fecha_fin",detalle:VALOR!=null)
+																IndividualValue(IDO==idoDependiente,PROPNAME==p,VALOR==detalle))
+												),
+												init( TreeMap mapa=new TreeMap();),														
+												action( Long fechaIni=dma.getTimeInSeconds(ovPrecio,"fecha_inicio",true);
+														mapa.put(fechaIni,ovPrecio);
+												),														
+												result(mapa))	
+	ambito:ArrayList() from collect(IndividualValue(IDO==idoTVparam,p:PROPNAME=="tarifa_precio"||=="talla"||=="color"||=="fecha_inicio"||=="fecha_fin",VALOR!=null))
+	
+then
+	dma.printRule("===========  TARIFAS: MODIFICACION MASIVA "+ambito.size());
+	if(rdnTD.equals("PVP")&&ambito.size()==1){	//como tarifa precio es obligatorio, ambito size 1 significa no se ha precisado detalle adicional	
+		dma.printRule("ES TARIFA PVP");
+		String propPvp=propPrecio.equals("precio")?"pvp":"pvp_iva_incluido";
+		dma.printRule("PVP "+propPvp+" "+precioFuente);
+		dma.setValue(idoArticulo,idtoArticulo,propPvp,new DoubleValue(precioFuente));
+	}else{
+		dma.printRule("ES TARIFA "+rdnTD);
+		Domain domPrecio=null;
+		
+				
+		long fechaIniParam=dma.getTimeInSeconds(new Domain(idoTVparam,idtoTVparam),"fecha_inicio",true);
+		Long fechaIniCurr=precioDestino.size()==0 ?null:(Long)precioDestino.lastKey();		
+		if(precioDestino.size()>0) domPrecio= new Domain((ObjectValue)precioDestino.get(fechaIniCurr));		
+		
+		if(fechaIniCurr!=null && fechaIniCurr.longValue()!=0 ){
+			Calendar cParam = Calendar.getInstance();
+			cParam.setTimeInMillis(fechaIniParam*Constants.TIMEMILLIS);
+			Calendar cLast = Calendar.getInstance();
+			cLast.setTimeInMillis( fechaIniCurr.longValue()*Constants.TIMEMILLIS);
+			
+			//si la fecha difiere pero es del mismo dia la tomo como mismo registro a actualizar
+			if(cParam.get(Calendar.DAY_OF_YEAR)>cLast.get(Calendar.DAY_OF_YEAR) && cLast.before(cParam) ){									
+				if(dma.getTimeInSeconds(domPrecio,"fecha_fin",false)==null){				
+					cParam.add(Calendar.SECOND,-1);				
+					dma.setValue(domPrecio,"fecha_fin",new TimeValue(cParam.getTimeInMillis()/Constants.TIMEMILLIS));
+				}
+				//se trataba de una fecha anterior, con lo cual el mapa precio destino no tiene un registro coincidente a actualizar
+				domPrecio=null;
+			}
+		}
+		
+		if( domPrecio==null ){
+			domPrecio=dma.creaIndividualOfClass("PRECIO");			
+			dma.addValue(idoArticulo,idtoArticulo,"tarifas_venta",new ObjectValue(domPrecio));
+			for(int i=0;i<ambito.size();i++){
+				IndividualValue iv=(IndividualValue)ambito.get(i);
+				dma.setValue(domPrecio,iv.getPROPNAME(),iv.getCVALUE());
+			}
+		}
+		
+		dma.setValue(domPrecio,propPrecio,new DoubleValue(precioFuente));
+	}
+	if(artTgclass.size()==0) dma.addValue(idoUTask,idtoUTask,"targetClass",articulo);
+	
+end
+
+rule "NO SE PERMITE DEPENDENCIAS DE TARIFAS RECURRENTES"
+salience 100
+agenda-group "rules" when 
+	
+	ObjValue(CLASSNAME=="TARIFA_PRECIO", idtarifadependiente:ID!=null, PROPNAME=="depende_de_tarifa",idtarBase:VALOR!=null)
+	ObjValue(ID==idtarBase, PROPNAME=="depende_de_tarifa",VALOR==idtarifadependiente )
+	Lock(STATE==Constants.INDIVIDUAL_STATE_LOCK, ID==idtarBase||==idtarifadependiente)
+then
+	dma.printRule("\n\n  ===========  NO SE PERMITE DEFINICIONES DE TARIFAS RECURRENTES");
+	throw new OperationNotPermitedException("Configuración de tarifas no posible:");
+end
+
+rule "FACTURAR ALBARAN: INSTALACION"
+salience 200 //debe instalarse todas las lineas antes de que aplique otra logica
+//Las propiedades dependientes del sujeto se realizan desde la regla generica "EVOLUCION PROPIEDADES DEPENDIENTES DEL SUJETO"
+agenda-group "rules" when
+    FactHierarchy(supAction:CLASSSUP=="Facturar_Documentos_Venta"||=="Facturar_Documentos_Compra"||=="Pasar_a_Pedido_Compra"||=="Pasar_a_Pedido_Venta",clsAccion:CLASS)
+    ObjValue(CLASSNAME==clsAccion, idoUTask:IDO,idtoUtask:IDTO,claseAccion:CLASSNAME!=null,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+ 	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO) 	
+	
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoDocSource:IDOVALUE,albaran:OBJECTVALUE,idtoSource:VALUECLS)
+    
+    ObjValue(IDO==idoDocSource,PROPNAME=="línea"||=="consumo", idoLinea:IDOVALUE!=null,linea:OBJECTVALUE)
+    lineasSourceCount:Long() from accumulate(ObjValue(IDO==idoDocSource,PROPNAME=="línea"||=="consumo", ido:IDOVALUE!=null),count(ido))
+
+	not((and	ObjValue(IDO==idoLinea,PROPNAME=="documento", clsTarget:RANGENAME,IDOVALUE!=idoDocSource, IDOVALUE!=null)
+				eval(supAction.contains("Pedido") && clsTarget.contains("PEDIDO") || supAction.contains("Facturar") && clsTarget.contains("FACTURA"))))			
+												
+	esArrendamiento:ArrayList() from collect(FactHierarchy(IDTO==idtoSource,CLASSSUP=="ARRENDAMIENTO"))			
+	
+	DatValue(IDO==idoDocSource,PROPNAME=="rdn",rdnSource:VALOR!=null)
+	DatValue(IDO==idoLinea,PROPNAME=="importe",importeLinea:DOUBLEVALUE!=null)
+	
+	FactHierarchy(empresaIDTO:IDTO, CLASSSUP=="MI_EMPRESA")//debe ser una mi empresa porque al final se lo asignamos a la factura
+	ObjValue(IDO==idoDocSource,PROPNAME=="empresa"||=="mi_empresa",idoEmpresaSource:IDOVALUE!=null,empresa:OBJECTVALUE,VALUECLS==empresaIDTO)
+
+	idoParams:Integer() from accumulate(ObjValue(IDO==idoUTask, PROPNAME=="params",ido:IDOVALUE!=null),
+										init(Integer res=0;),
+										action(res=ido;),
+										result(res))
+									
+	Individual(CLASSNAME=="MI_EMPRESA",idoMiEmpresa:IDO,idtoMiEmpresa:IDTO)	
+	forall(	ObjValue(IDO==idoParams,PROPNAME=="mi_empresa",idoEmpParam:IDOVALUE!=null)
+			Individual(IDO==idoMiEmpresa,IDO==idoEmpParam))			
+	not((and not(ObjValue(IDO==idoParams,PROPNAME=="mi_empresa",idoEmpParam:IDOVALUE!=null))
+	 		Individual(IDO==idoMiEmpresa,IDO!=idoEmpresaSource)))	 		
+											     
+	ObjValue(IDO==idoDocSource,PROPNAME=="cliente"||=="proveedor", idoSujetoSrc:IDOVALUE!=null)
+	
+	FactHierarchy(idtoSujeto:IDTO,clsSujeto:CLASSSUP=="CLIENTE"||=="CLIENTE_POTENCIAL"||=="PROVEEDOR")	
+	Individual(IDTO==idtoSujeto,idoSujeto:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)	
+	forall(	ObjValue(IDO==idoParams,PROPNAME=="cliente",idoCliParam:IDOVALUE!=null)
+			Individual(IDO==idoSujeto,IDO==idoCliParam))			
+	not((and not(ObjValue(IDO==idoParams,PROPNAME=="cliente",idoCliParam:IDOVALUE!=null))
+	 		 Individual(IDO==idoSujeto,IDO!=idoSujetoSrc)))	 
+	 													 										 								
+	clsIncluirRectificativo:String() from accumulate((and 	not(DatValue(IDO==idoParams, PROPNAME=="generar_una_factura_por_albarán",BOOLEANVALOR==true))
+															DatValue(IDO==idoDocSource,PROPNAME=="importe",DOUBLEVALUE<0))
+										init(String res="DOCUMENTO";),
+										action(res="RECTIFICACIÓN";),
+										result(res))	
+	clsExcluirRectificativo:String() from accumulate(DatValue(IDO==idoParams||==idoDocSource, PROPNAME=="generar_una_factura_por_albarán"||=="importe",BOOLEANVALOR==true||DOUBLEVALUE>0)													
+										init(String res="NOEXCLUIRCLS";),
+										action(res="RECTIFICACIÓN";),
+										result(res))				
+										
+	agente:ObjectValue() from accumulate(ObjValue(ido:IDO==idoDocSource||==idoParams,PROPNAME=="agente_comercial", ag:OBJECTVALUE!=null),
+										init(TreeMap<Integer,ObjectValue> tree=new TreeMap<Integer,ObjectValue>(); ),
+										action(tree.put(ido.equals(idoParams)?1:2,ag);),
+										result(tree.size()==0?new ObjectValue(0,0):tree.get(tree.firstKey())))														
+	
+	domFacturaAcum:Domain() from accumulate( (and	ObjValue(IDO==idoUTask, PROPNAME=="targetClass",idoFacturaTmp:IDOVALUE,idtoFactura:VALUECLS)																																									
+													ObjValue(IDO==idoFacturaTmp, PROPNAME=="mi_empresa",IDOVALUE==idoMiEmpresa)		
+													ObjValue(IDO==idoFacturaTmp, PROPNAME=="proveedor"||=="cliente",IDOVALUE==idoSujeto)
+													
+													exists(FactHierarchy(IDTO==idtoFactura,CLASSSUP==clsIncluirRectificativo))
+													not(FactHierarchy(IDTO==idtoFactura,CLASSSUP==clsExcluirRectificativo))		
+																																						
+													not( ObjValue(IDO==idoFacturaTmp, PROPNAME=="agente_comercial",IDOVALUE!=(agente.getValue())))																																																																																					
+											), 
+											init( Domain resId= new Domain(0,0)),
+											action( resId= new Domain(idoFacturaTmp,idtoFactura);),
+											result(resId))	
+											
+	//Como en arrendamiento se clona la linea, no debe haber facturada otra linea con mismo concepto en el target. Estamos suponiendo que la factura es nueva											
+	not((and	FactHierarchy(IDTO==idtoSource,CLASSSUP=="ARRENDAMIENTO")
+				ObjValue(IDO==idoUTask, PROPNAME=="targetClass",idoFacturaTmp:IDOVALUE!=null)
+				ObjValue(IDO==idoFacturaTmp, PROPNAME=="proveedor"||=="cliente",IDOVALUE==idoSujeto)
+				ObjValue(IDO==idoFacturaTmp, PROPNAME=="mi_empresa",IDOVALUE==idoMiEmpresa)
+																		
+				ObjValue(IDO==idoFacturaTmp, PROPNAME=="línea",idoLineaAny:IDOVALUE!=null)				
+				forall(IndividualValue(IDO==idoLinea,propDet:PROPNAME=="producto"||=="lote"||=="medida1"||=="medida2"||=="talla"||=="color", idDetalle:VALOR!=null)
+					   IndividualValue(IDO==idoLineaAny,PROPNAME==propDet, VALOR==idDetalle))))																	
+	
+	serieParam: ArrayList()	from collect(DatValue(IDO==idoParams,PROPNAME=="serie",VALOR!=null))
+	
+	fechaParam: ArrayList()	from collect(DatValue(IDO==idoParams,PROPNAME=="fecha",VALOR!=null))
+											 											
+	formaPago: ArrayList()	from collect(ObjValue(IDO==idoParams,PROPNAME=="forma_pago",VALOR!=null))
+	facturaParam: ArrayList()	from collect(ObjValue(IDO==idoParams,PROPNAME=="factura",VALOR!=null))
+
+then
+	dma.printRule("========::: RULE FACTURAR ALBARAN v2: INSTALACION linea "+idoLinea+", doc source "+idoDocSource+" empresa:"+empresa+", almacen:"+"  factura "+domFacturaAcum.getIdo()+",factura exis "+facturaParam.size());
+	dma.printRule("source cls "+clsAccion+" idtosource "+idtoSource+" params "+ idoParams);
+	dma.printRule("fp:"+formaPago.size());
+	Domain domFactura=domFacturaAcum;
+	if(facturaParam.size()>0){
+		domFactura=new Domain(((ObjValue)facturaParam.get(0)).getOBJECTVALUE());
+		if(domFacturaAcum.getIdo()==0 && dma.getValue(idoUTask,idtoUtask,"targetClass")==null){		
+			dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(domFactura));
+		}
+	}
+	if(domFactura.getIdo()==0){
+	dma.printRule("crear factura (source "+clsAccion); 
+		String facturaClass=null;
+		boolean sourceTicket=dma.getIdClass("TICKET")!=null&&dma.isSpecialized(idtoSource,dma.getIdClass("TICKET"));//es nulo si no lo tiene el modelo
+		if(clsAccion.equals("Facturar_Documentos_Venta")){
+			if(sourceTicket) 
+				facturaClass="FACTURA_A_CLIENTE";
+			else 
+				facturaClass=clsIncluirRectificativo.equals("RECTIFICACIÓN") ? "FACTURA_RECTIFICATIVA_VENTAS":"FACTURA_A_CLIENTE";
+		}else if(clsAccion.equals("Facturar_Documentos_Compra")){
+			facturaClass=clsIncluirRectificativo.equals("RECTIFICACIÓN") ? "FACTURA_RECTIFICATIVA_COMPRAS":"FACTURA_PROVEEDOR";
+		}else if(clsAccion.equals("Pasar_a_Albarán-Factura_Compra")){
+			facturaClass="ALBARÁN-FACTURA_PROVEEDOR";
+		}else if(clsAccion.equals("Pasar_a_Albarán-Factura_Venta")){
+			facturaClass="ALBARÁN-FACTURA_CLIENTE";
+		}else if(clsAccion.equals("Pasar_a_Pedido_Compra")){
+			facturaClass="PEDIDO_A_PROVEEDOR";
+		}else if(clsAccion.equals("Pasar_a_Pedido_Venta")){
+			facturaClass="PEDIDO_DE_CLIENTE";
+		}else	System.err.println("////////////////////////WARNING!!: RULE FACTURAR UN ALBARÁN CON TIPO ALBARÁN  NO CONTEMPLADO: clsAccion "+clsAccion);
+
+	dma.printRule(" clase a crear "+facturaClass);
+		String excluproperties="línea#fecha#emitido#almacén#cobro_anticipo#archivos#factor_descuento_global#cargos#desglose_iva#agente_comercial";
+		
+		if(clsSujeto.equals("CLIENTE_POTENCIAL")||clsSujeto.equals("CLIENTE_VARIOS")) excluproperties=excluproperties+"#cliente";
+		
+		if(formaPago.size()>0){
+			excluproperties=excluproperties+"#forma_pago";
+		}						
+		domFactura=dma.cloneIndividual(albaran.getValue(),albaran.getValueCls(), dma.getIdClass(facturaClass), excluproperties,true);
+	dma.printRule(" creada ");
+		if(clsSujeto.equals("CLIENTE_POTENCIAL")){
+			ObjectValue ovCliente=(ObjectValue)dma.getValue(idoSujeto,idtoSujeto,"cliente");
+			if(ovCliente!=null){
+				dma.setValue(domFactura,"cliente",ovCliente);
+				dma.consumirEventoCambio(domFactura.getIdo(),"cliente");
+			}				
+		}	
+		ObjectValue ovmiEmpresa= new ObjectValue(idoMiEmpresa,idtoMiEmpresa);
+		dma.setValue(domFactura,"mi_empresa",ovmiEmpresa);			
+		dma.consumirEventoCambio(domFactura.getIdo(),"mi_empresa");
+		
+		if(serieParam.size()>0){
+			StringValue dvSerie=(StringValue)((DatValue)serieParam.get(0)).getDATAVALUE();
+			dma.setValue(domFactura,"serie",dvSerie);
+			dma.printRule(" serie tenia parametro " +dvSerie );				
+		}
+		if(fechaParam.size()>0){
+			TimeValue dvFecha=(TimeValue)((DatValue)fechaParam.get(0)).getDATAVALUE();
+			dma.setValue(domFactura,"fecha",dvFecha);						
+		}
+		
+		for(int f=0;f<formaPago.size();f++){	
+			dma.printRule(" añadiendo forma de pago "+f);				 
+			ObjectValue ovFp=(ObjectValue)((ObjValue)formaPago.get(f)).getOBJECTVALUE();				
+			Domain domainFp = dma.cloneIndividual(ovFp.getValue(),ovFp.getValueCls(),ovFp.getValueCls(),null);
+			dma.addValue(domFactura,"forma_pago",new ObjectValue(domainFp));			
+		}
+				 
+		ObjectValue ovCliente=new ObjectValue(idoSujeto,idtoSujeto);
+		dma.setValue(domFactura,"cliente",ovCliente);
+		dma.consumirEventoCambio(domFactura.getIdo(),"cliente");				
+		if(agente.getValue().intValue()!=0){
+			dma.setValue(domFactura,"agente_comercial",agente);
+			dma.consumirEventoCambio(domFactura.getIdo(),"agente_comercial");	
+		}				
+				
+		dma.printRule(" previo target ");
+		dma.addValue(idoUTask,idtoUtask,"targetClass",new ObjectValue(domFactura));
+		dma.printRule(" post target ");		
+	}			
+	if(esArrendamiento.size()>0){
+		Domain d=dma.cloneIndividual(linea.getValue(),linea.getValueCls(), linea.getValueCls(),"documento",true);	
+		linea=new ObjectValue(d);
+	}
+	dma.printRule(" añadiendo linea "+linea.getValue());
+	dma.addValue(domFactura, "línea", linea);
+	if(dma.isSpecialized(idtoSource,dma.getIdClass("FACTURA"))){
+		dma.printRule(" facturando una factura, seguramente es ticket");
+		//dma.delValue(idoDocSource,idtoSource,"línea",linea);
+		if(lineasSourceCount.intValue()==1){
+			
+			StringValue observ=(StringValue)dma.getValue(domFactura,"observaciones_a_imprimir");
+			String tickets=null;
+			if(observ==null){
+				tickets="Tickets:"+rdnSource;
+			}else{							
+				tickets=observ.getValue()+","+rdnSource;
+			}
+			dma.setValue(domFactura,"observaciones_a_imprimir",new StringValue(tickets));
+		}
+		dma.addValue(domFactura,"rectifica_a",albaran);
+	}
+	dma.consumirEventoCambio(domFactura.getIdo(),"línea",linea.getValue(),linea.getValueCls());
+end
+
+rule "FACTURAR ALBARAN: CARGOS"
+salience -150 //No debe dispararse hasta estar creadas todas las facturas y enganchadas las lineas
+//Si un mismo albaran se segrega en varias empresas/facturas, se distribuyen aleatoriamente sin duplicarse
+//No pongo -100 para que se dispare tras las reglas de evolucion propiedades dependientes
+agenda-group "rules" when
+    FactHierarchy(CLASSSUP=="Facturar_Documentos_Venta"||=="Facturar_Documentos_Compra"||=="Pasar_a_Pedido_Compra"||=="Pasar_a_Pedido_Venta",clsAccion:CLASS)
+    ObjValue(CLASSNAME==clsAccion, idoUTask:IDO,idtoUtask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+	ObjValue(IDO==idoUTask,	PROPNAME=="sourceClass",idAlbaran:IDOVALUE)
+	ObjValue(IDO==idAlbaran,PROPNAME=="cliente"||PROPNAME=="proveedor", idSujeto:IDOVALUE!=null)	
+	
+	//Por cada tipo de cargo/IVA a facturar calculo, debe haber un unico cargo en una factura cualquiera (any) de este sujeto
+	//En realidad los tipos de cargos se pueden repetir, disparandose demas esta regla, pero calculando bien todas las veces.
+	
+	//LIMITACIONES: Si un albaran está asociado a una unica empresa remitente, y tiene un cargo de un tipo que no aparece en otros albaranes
+	// ..puede suceder que aleatoriamente sea asignado a una factura cuya empresa remitente sea otra de la que la entregó
+	ObjValue(IDO==idAlbaran,PROPNAME=="cargos",idCargo:IDOVALUE,cargo:OBJECTVALUE)													
+    ObjValue(IDO==idCargo,	PROPNAME=="tipo_cargo",idTipoCargo:IDOVALUE!=null)
+    ObjValue(IDO==idCargo,	PROPNAME=="iva",idIVACargo:IDOVALUE!=null)
+	DatValue(IDO==idCargo,PROPNAME=="importe",importeCargo:DOUBLEVALUE!=null)
+	
+	importeCargosAlbaranes:Double(doubleValue!=0) from accumulate( (and	ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idAlb:IDOVALUE)
+															ObjValue(IDO==idAlb, PROPNAME=="cliente"||=="proveedor",IDOVALUE==idSujeto)	
+															ObjValue(IDO==idAlb, PROPNAME=="cargos",idCargoAlb:IDOVALUE)										
+													    	ObjValue(IDO==idCargoAlb,PROPNAME=="tipo_cargo",IDOVALUE==idTipoCargo)
+													    	ObjValue(IDO==idCargoAlb,PROPNAME=="iva",IDOVALUE==idIVACargo)
+													    	forall(	DatValue(IDO==idCargo,PROPNAME=="descripción",desc:VALOR!=null)
+													    			DatValue(IDO==idCargoAlb,PROPNAME=="descripción",VALOR==desc))
+															DatValue(IDO==idCargoAlb,PROPNAME=="importe",importeAlb:DOUBLEVALUE!=null)),
+																					 
+															init(Double res=new Double(0);),action(res+=importeAlb;),result(res))	
+				
+	cargoFacturado:Domain() from accumulate( (and	ObjValue(IDO==idoUTask, PROPNAME=="targetClass",idoFacturaTmp:IDOVALUE)
+													ObjValue(IDO==idoFacturaTmp, PROPNAME=="cliente"||=="proveedor",IDOVALUE==idSujeto)
+													ObjValue(IDO==idoFacturaTmp, PROPNAME=="cargos",idCargoFact:IDOVALUE)											
+											    	ObjValue(IDO==idCargoFact,idtoCargo:IDTO,PROPNAME=="tipo_cargo",IDOVALUE==idTipoCargo)
+											    	forall(	DatValue(IDO==idCargo,PROPNAME=="descripción",desc:VALOR!=null)
+															DatValue(IDO==idCargoFact,PROPNAME=="descripción",VALOR==desc))
+											    	ObjValue(IDO==idCargoFact,PROPNAME=="iva",IDOVALUE==idIVACargo)), 
+													init( Domain resId= new Domain(0,0);),
+													action( resId= new Domain(idCargoFact,idtoCargo);),
+													result(resId))																								
+												
+	facturaAny:ObjectValue() from accumulate( (and	ObjValue(IDO==idoUTask, PROPNAME=="targetClass",idFact:IDOVALUE,factura:OBJECTVALUE)
+													//En el caso de facturar un albaran de compra y otro devolucion, se genera factura recitificativa, y cargo debe ir en su sitio
+													exists((and ObjValue(IDO==idFact, PROPNAME=="línea", idoLinea:IDOVALUE)
+																ObjValue(IDO==idoLinea, PROPNAME=="documento", IDOVALUE==idAlbaran)
+																))
+											), 
+											init( ObjectValue resId= new ObjectValue(0,0)),
+											action( resId= factura;),
+											result(resId))														
+											
+										
+then
+	dma.printRule("=========> FACTURAR ALBARAN: CARGOS importe albaranes "+importeCargosAlbaranes+", fact Any "+facturaAny.getValue()+" cargo exist:"+cargoFacturado.getIdo());
+	 
+	if(facturaAny.getValue()==0) dma.printRule("=========> FACTURAR ALBARAN: CARGOS ERROR NO HAY FACTURAS ");
+	else{
+		if(cargoFacturado.getIdo()==0){
+			
+			cargoFacturado= dma.cloneIndividual(cargo.getValue(),
+												cargo.getValueCls(),
+												cargo.getValueCls(),
+												null);
+										
+			dma.addValue(facturaAny.getValue(),facturaAny.getValueCls(),"cargos",new ObjectValue(cargoFacturado));
+			//consumo para que regla "IVA LINEA ES EL DEL PRODUCTO/CARGO SI REGIMEN IVA" no reasigne como iva el indicado en el individuo "tipo de cargo"
+			dma.consumirEventoCambio(facturaAny.getValue(),"cargos");
+			dma.consumirEventoCambio(cargoFacturado.getIdo(),"tipo_cargo");  
+		}
+		dma.setDataValue(cargoFacturado,"importe",new Double(importeCargosAlbaranes).toString());
+	}
+end
+
+rule "FACTURAR DOCUMENTOS: PARAMETROS: FORMA PAGO POR DEFECTO"
+salience 0
+//Solo actua con el primer albaran que pilla con forma de pago, despues para por el not
+agenda-group "rules" when
+    FactHierarchy(CLASSSUP=="Facturar_Documentos_Venta"||=="Facturar_Documentos_Compra",clsAccion:CLASS)
+    ObjValue(CLASSNAME==clsAccion, idoUTask:IDO,idtoUtask:IDTO,claseAccion:CLASSNAME!=null,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_PENDIENTE)
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoAlbaran:IDOVALUE!=null)
+	ObjValue(IDO==idoAlbaran, idtoAlbaran:IDTO,PROPNAME=="cliente"||=="proveedor",idoSujeto:IDOVALUE!=null)
+	ObjValue(IDO==idoUTask, PROPNAME=="params",idoParams:IDOVALUE!=null,idtoParams:VALUECLS)
+	not(ObjValue(IDO==idoParams, PROPNAME=="forma_pago"))	
+    formasdepagoAlbaran:ArrayList() from collect( ObjValue(IDO==idoAlbaran,PROPNAME=="forma_pago",VALOR!=null))   
+    eval( formasdepagoAlbaran.size()>0)  
+then
+ 	dma.printRule("======== FACTURAR DOCUMENTOS: PARAMETROS: FORMA PAGO POR DEFECTO");
+	Iterator itFactFormaPago=itFactFormaPago=formasdepagoAlbaran.iterator();
+	while(itFactFormaPago.hasNext()){
+		ObjValue fpago=(ObjValue)itFactFormaPago.next();
+		Domain fpagoClonada=dma.cloneIndividual(Integer.parseInt(fpago.getVALUE()),fpago.getVALUECLS(), fpago.getVALUECLS(),"importe");
+		dma.addValue(idoParams,idtoParams,"forma_pago",new ObjectValue(fpagoClonada));
+	}
+end
+
+rule "FACTURAR DOCUMENTOS: NO SE PUEDE FACTURAR PARCIALMENTE UN DOCUMENTO CON ANTICIPO"
+//Menos prioridad que traza documento
+salience -100
+agenda-group "bddrules" when
+    FactHierarchy(CLASSSUP=="Facturar_Documentos_Venta"||=="Facturar_Documentos_Compra",clsAccion:CLASS)
+    ObjValue(CLASSNAME==clsAccion, idoUTask:IDO,idtoUtask:IDTO,claseAccion:CLASSNAME!=null,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+    DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",idoAlbaran:IDOVALUE!=null,idtoSource:VALUECLS)
+    not(FactHierarchy(IDTO==idtoSource,CLASSSUP=="TICKET"))
+    DatValue(IDO==idoAlbaran,PROPNAME=="rdn",rdnAlb:VALOR!=null)
+    exists(ObjValue(IDO==idoAlbaran,PROPNAME=="cobro_anticipo",idoCobroAny:IDOVALUE!=null))    				 							
+    not(DatValue(IDO==idoAlbaran,PROPNAME=="facturado",BOOLEANVALOR==true))
+then
+ 	dma.printRule("======== FACTURAR DOCUMENTOS: NO SE PUEDE FACTURAR PARCIALMENTE UN DOCUMENTO CON ANTICIPO");
+	throw new OperationNotPermitedException("El albaran "+rdnAlb+" tiene anticipos por lo que NO puede ser facturado parcialmente");
+end
+ 
+
+rule "CALCULO PRECIO CON IVA A PARTIR PRECIO SIN IVA EN ARTÍCULO O LÍNEA ARTICULOS"
+
+//Atiende primero al campo que cambia, con o sin IVA, simplemente porque ya se ha consumido ambos campos, cy nunca estan los dos en el antecedente
+//Sin embargo ponemos mas prioridad al precio con iva por si loq ue ha cambiado es el iva directamente
+salience 200//MAXIMA PRIORIDAD PARA TENER LOS VARLOES SINCRONIZADOS LO ANTES POSIBLE ANTES DE QUE OTRAS REGLAS RAZONEN CON VALORES NOACTUALIZADOS CORRECTAMENTE
+agenda-group "rules" when 
+	
+	FactHierarchy(idtoRoot:IDTO,clsSup:CLASSSUP=="ARTÍCULO"||=="LÍNEA_ARTÍCULOS"||=="LÍNEA_CAMBIO_PRECIO")
+	DatValue(IDTO==idtoRoot,idoRoot:IDO!=null,PROPNAME=="precio"||=="pvp",precioSinIva:DOUBLEVALUE,chPrecio:hasCHANGED)
+	ObjValue(IDO==idoRoot,PROPNAME=="iva",idoIva:IDOVALUE!=null,chIva:hasCHANGED)
+	eval(chIva||chPrecio)
+	DatValue(IDO==idoIva,PROPNAME=="porcentaje_iva",porc:DOUBLEVALUE)	
+	DatValue(CLASSNAME=="APLICACIÓN", IDO!=null,PROPNAME=="n._dígitos_en_precio",digitosRedondeo:INTVALUE>0)	
+then
+	dma.printRule("\n\n=================== CALCULO PRECIO CON IVA A PARTIR PRECIO SIN IVA EN ARTÍCULO O LÍNEA ARTICULOS: clsSup:"+clsSup+" ido:"+idoRoot+" precioSinIva "+precioSinIva+" porcIva"+porc);
+	String propiedadPrecioConIva= clsSup.equals("ARTÍCULO") ? "pvp_iva_incluido":"precio_iva_incluido";
+	boolean propagado=calculaPrecioConIvaAPartirSinIva(dma,idoRoot,idtoRoot,propiedadPrecioConIva,precioSinIva,porc,digitosRedondeo);
+	//if(clsSup.equals("ARTÍCULO") && propagado){
+	//	dma.setValueNotLock(idoRoot,idtoRoot,"referencia_iva_incluido", new BooleanValue(false));		
+	//}
+end
+
+rule "CALCULO PRECIO SIN IVA A PARTIR PRECIO CON IVA EN ARTÍCULO O LÍNEA ARTICULOS"
+salience 190//MAXIMA PRIORIDAD PARA TENER LOS VARLOES SINCRONIZADOS LO ANTES POSIBLE ANTES DE QUE OTRAS REGLAS RAZONEN CON VALORES NOACTUALIZADOS CORRECTAMENTE
+agenda-group "rules" when 
+	
+	FactHierarchy(idtoRoot:IDTO,clsSup:CLASSSUP=="ARTÍCULO"||=="LÍNEA_ARTÍCULOS"||=="LÍNEA_CAMBIO_PRECIO")
+	DatValue(IDTO==idtoRoot,idoRoot:IDO!=null,p:PROPNAME=="precio_iva_incluido"||=="pvp_iva_incluido"||=="pvp_iva_incluido_promocion",precioConIva:DOUBLEVALUE,chPrecio:hasCHANGED)
+	ObjValue(IDO==idoRoot,PROPNAME=="iva",idoIva:IDOVALUE!=null,chIva:hasCHANGED)
+	eval(chIva||chPrecio)
+	DatValue(IDO==idoIva,PROPNAME=="porcentaje_iva",porc:DOUBLEVALUE)	
+	DatValue(CLASSNAME=="APLICACIÓN", IDO!=null,PROPNAME=="n._dígitos_en_precio",digitosRedondeo:INTVALUE>0)	
+	
+then
+	dma.printRule("\n\n=================== CALCULO PRECIO SIN IVA A PARTIR PRECIO CON IVA EN ARTÍCULO O LÍNEA ARTICULOS");
+	String propiedadPrecioSinIva= clsSup.equals("ARTÍCULO") ? "pvp":"precio";
+	if(p.contains("promocion")) propiedadPrecioSinIva="pvp_promocion";//pvp_iva_incluido se calcula de la regla "Precio promocion"
+	boolean propagado=calculaPrecioSinIvaAPartirConIva(dma,idoRoot,idtoRoot,propiedadPrecioSinIva,precioConIva,porc,digitosRedondeo);
+	//if(clsSup.equals("ARTÍCULO") && propagado){
+	//	dma.setValueNotLock(idoRoot,idtoRoot,"referencia_iva_incluido", new BooleanValue(true));		
+	//}
+end
+
+rule "CALCULO PRECIO CON IVA A PARTIR PRECIO SIN IVA EN PRECIO TARIFA"
+salience 200//MAXIMA PRIORIDAD PARA TENER LOS VARLOES SINCRONIZADOS LO ANTES POSIBLE ANTES DE QUE OTRAS REGLAS RAZONEN CON VALORES NOACTUALIZADOS CORRECTAMENTE
+agenda-group "rules" when 
+	
+	FactHierarchy(idtoArticulo:IDTO,clsSup:CLASSSUP=="ARTÍCULO")		
+	ObjValue(IDTO==idtoArticulo,idoArticulo:IDO!=null, PROPNAME=="tarifas_venta",idoPrecio:IDOVALUE)
+	ObjValue(IDO==idoArticulo,PROPNAME=="iva",idoIva:IDOVALUE!=null, chIva:hasCHANGED)
+	DatValue(IDO==idoPrecio,idtoPrecio:IDTO,PROPNAME=="precio",precioSinIva:DOUBLEVALUE, chPrecio:hasCHANGED)
+	eval(chIva||chPrecio)			
+	//Lock(IDO==idoRoot2,STATE==Constants.INDIVIDUAL_STATE_LOCK)//el articulo este bloqueado
+	DatValue(IDO==idoIva,PROPNAME=="porcentaje_iva",porc:DOUBLEVALUE)	
+	DatValue(CLASSNAME=="APLICACIÓN", IDO!=null,PROPNAME=="n._dígitos_en_precio",digitosRedondeo:INTVALUE>0)	
+then
+	dma.printRule("\n\n=================== CALCULO PRECIO CON IVA A PARTIR PRECIO SIN IVA EN PRECIO TARIFA");
+	boolean propagado=calculaPrecioConIvaAPartirSinIva(dma,idoPrecio,idtoPrecio,"precio_iva_incluido",precioSinIva,porc,digitosRedondeo);
+	//if(propagado){
+	//	dma.setValueNotLock(idoRoot,idtoRoot,"referencia_iva_incluido", new BooleanValue(false));		
+	//}
+end
+
+rule "CALCULO PRECIO SIN IVA A PARTIR PRECIO CON IVA EN PRECIO TARIFA"
+salience 190//MAXIMA PRIORIDAD PARA TENER LOS VARLOES SINCRONIZADOS LO ANTES POSIBLE ANTES DE QUE OTRAS REGLAS RAZONEN CON VALORES NOACTUALIZADOS CORRECTAMENTE
+agenda-group "rules" when 
+	FactHierarchy(idtoArticulo:IDTO,clsSup:CLASSSUP=="ARTÍCULO")		
+	ObjValue(IDTO==idtoArticulo,idoArticulo:IDO!=null, PROPNAME=="tarifas_venta",idoPrecio:IDOVALUE)
+	ObjValue(IDO==idoArticulo,PROPNAME=="iva",idoIva:IDOVALUE!=null, chIva:hasCHANGED)
+	DatValue(IDO==idoPrecio,idtoPrecio:IDTO,PROPNAME=="precio_iva_incluido",precioConIva:DOUBLEVALUE, chPrecio:hasCHANGED)
+	eval(chIva||chPrecio)			
+	//Lock(IDO==idoRoot2,STATE==Constants.INDIVIDUAL_STATE_LOCK)//el articulo este bloqueado
+	DatValue(IDO==idoIva,PROPNAME=="porcentaje_iva",porc:DOUBLEVALUE)	
+	DatValue(CLASSNAME=="APLICACIÓN", IDO!=null,PROPNAME=="n._dígitos_en_precio",digitosRedondeo:INTVALUE>0)	
+then
+	dma.printRule("\n\n=================== CALCULO PRECIO SIN IVA A PARTIR PRECIO CON IVA EN PRECIO TARIFA");
+	boolean propagado=calculaPrecioSinIvaAPartirConIva(dma,idoPrecio,idtoPrecio,"precio",precioConIva,porc,digitosRedondeo);
+	//if(clsSup.equals("ARTÍCULO") && propagado){
+	//	dma.setValueNotLock(idoPrecio,idtoPrecio,"referencia_iva_incluido", new BooleanValue(true));		
+	//}
+end
+
+rule "PRECIO ANTERIOR"
+salience 50 
+agenda-group "rules" when 	    			
+	DatValue(idoTarget:IDO,idtoTarget:IDTO,p:PROPNAME=="pvp_iva_incluido"||=="precio",nuevoPrecio:DOUBLEVALUE!=null,vInit:INITIALDOUBLE!=null,initialValuesChanged==true)
+	Model(IDTO==idtoTarget,PROPNAME==(p+"_anterior"),OP==Constants.OP_INTERSECTION)
+	then
+	dma.printRule("=================	PRECIO ANTERIOR");
+	dma.setValue(idoTarget,idtoTarget,p+"_anterior",new DoubleValue(vInit));
+end
+	
+rule "PRECIO PROMOCION"
+agenda-group "rules" when 	    			
+	Model(idto:IDTO,p:PROPNAME=="pvp_iva_incluido_promocion",OP==Constants.OP_INTERSECTION)
+	Lock(IDTO==idto,idoArticulo:IDO,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+
+	precioPromo:DoubleChanged() from accumulate((and 	ObjValue(IDO==idoArticulo, PROPNAME=="tarifas_venta", idoPrecio:IDOVALUE!=null,ch1:hasCHANGED)														
+														ObjValue(IDO==idoPrecio,PROPNAME=="tarifa_precio",idoTarifa:IDOVALUE,ch2:hasCHANGED)														
+														DatValue(IDO==idoTarifa,PROPNAME=="rdn",VALOR=="PVP")
+														DatValue(IDO==idoPrecio, PROPNAME=="fecha_inicio",q:QMIN!=null,ch3:hasCHANGED)		
+														eval(Auxiliar.inicioSg(q.longValue())<=System.currentTimeMillis()/Constants.TIMEMILLIS)												
+																											
+														not(DatValue(IDO==idoPrecio, PROPNAME=="fecha_fin",QMIN<(System.currentTimeMillis()/Constants.TIMEMILLIS)))														
+														DatValue(IDO==idoPrecio, PROPNAME=="precio_iva_incluido",precio:QMIN!=null,ch4:hasCHANGED)
+												),												
+												init(DoubleChanged res= new DoubleChanged(null,false);),
+												action( 
+														boolean hayCambio=ch1||ch2||ch3||ch4;
+														if(hayCambio||res.getValor()==null)	res=new DoubleChanged(precio,hayCambio);
+														
+														),
+								                result(res))
+								                	
+	eliminaPromo:ArrayList() from collect(ObjValue(IDO==idoArticulo, PROPNAME=="tarifas_venta", IDOVALUE==null,hasCHANGED==true))
+								                								                	
+	DatValue(IDO==idoArticulo,PROPNAME=="pvp_iva_incluido",pvp_recomendado:QMIN!=null,chPvp:hasCHANGED)	
+	eval(chPvp||precioPromo.isChanged()||eliminaPromo.size()>0)
+then
+	dma.printRule("=================	PRECIO PROMOCION");
+	
+	double precio=0;
+	boolean rebajado=false;
+	if(precioPromo.getValor()!=null){
+		precio=precioPromo.getValor();
+		if(precio!=pvp_recomendado) rebajado=true;
+	}else{	
+		precio=pvp_recomendado;		
+	}	
+	dma.setValue(idoArticulo,idto,p,new DoubleValue(precio));
+	dma.setValue(idoArticulo,idto,"promocionado",new BooleanValue(rebajado));
+end
+
+
+rule "PRECIO LÍNEA EN VENTAS"
+salience 50 
+agenda-group "rules" when 	
+	not((and    FactHierarchy(CLASSSUP=="Modificar_manteniendo_precios",clsAccion:CLASS)
+    			ObjValue(CLASSNAME==clsAccion,PROPNAME=="estadoRealizacion",VALUE!=null)))
+    			
+	FactHierarchy(nameDoc:CLASS,CLASSSUP=="DOCUMENTO_VENTA"||=="LIQUIDACIÓN_POR_CAMBIO_PRECIO")
+	ObjValue(CLASSNAME==nameDoc,idDoc:ID,idoDoc:IDO,PROPNAME=="cliente",sujeto:VALOR,idoCliente:IDOVALUE!=null,chCliente:hasCHANGED)	
+	not(DatValue(ID==idDoc,PROPNAME=="emitido",VALOR=="true"))
+	ObjValue(ID==idDoc, PROPNAME=="línea"||=="productos_y_precios", idoLinea:IDOVALUE,idLinea:VALOR!=null,idtolinea:VALUECLS,chLinea:hasCHANGED)
+	//PERMORMANCE si metemos individual se vuelve a disparar al editar una linea para desautorizar precios. Para que funcione habria que al final del run consumir todos los hasChanged
+	//Lock(IDO==idoLinea,st:STATE)
+	//eval(chCliente||st.equals(Constants.INDIVIDUAL_STATE_LOCK))
+	ObjValue(IDO==idoLinea, PROPNAME=="producto", idProducto:VALOR!=null,idoProducto:IDOVALUE!=null,idtoProducto:VALUECLS,producto:OBJECTVALUE,chProducto:hasCHANGED) 	
+	ObjValue(IDO==idoProducto, PROPNAME=="iva", idoIVA:IDOVALUE!=null)
+	DatValue(IDO==idoIVA,PROPNAME=="porcentaje_iva",porcIva:QMIN!=null) 	
+	
+	ObjValue(IDO==idoLinea,PROPNAME=="mi_empresa",idoEmpresaLinea:IDOVALUE!=null,chEmpLin:hasCHANGED)
+	
+	DatValue(CLASSNAME=="APLICACIÓN", IDO!=null,PROPNAME=="n._dígitos_en_precio",digitosRedondeo:INTVALUE>0)
+	//DatValue(IDO==idoLinea,PROPNAME=="cantidad",cantidad:QMIN!=null,qCh:hasCHANGED)	
+	
+ 	precioEspecial:HashMap()
+ 	
+ 		from accumulate(
+	 		(and    
+			    FactHierarchy(CLASSSUP=="CONDICIÓN_ESPECIAL_VENTA", clsPrecioEspecial:CLASS)
+			    Individual(CLASSNAME==clsPrecioEspecial, idoPrecioEspecial:IDO!=null,idtoCondEsp:IDTO)	
+			    not FactHierarchy(IDTO==idtoProducto,CLASSSUP=="ARTÍCULO_FINANCIERO") //excluir articulo financiero ya que se podrian acumular descuentos			    
+			  	
+			    ObjValue(IDO==idoPrecioEspecial, PROPNAME=="prioridad", idoPrioridad:IDOVALUE!=null)
+			    DatValue(IDO==idoPrioridad, PROPNAME=="peso_prioridad", pesoPrioridad:INTVALUE!=null) 
+			    DatValue(IDO==idoPrecioEspecial, propPrecioPorcentaje:PROPNAME=="precio"||=="porcentaje", precioOPorcentaje:DOUBLEVALUE!=null)
+			    
+			    ObjValue(IDO==idoPrecioEspecial, PROPNAME=="aplica_en", idoAplicar:IDOVALUE!=null)
+			    DatValue(IDO==idoAplicar, PROPNAME=="rdn", lugarAplicaPorcentaje:VALOR!=null&&!="Descuento_totales")
+						     			     	     
+				forall(//Si el precio especial especifica un ambito, tiene que existir al menos una coincidencia con el articulo
+				    ObjValue(IDO==idoPrecioEspecial, propiedadambitoarticulo:PROPNAME=="marca"||=="familia"||=="subfamilia"||=="categoria_articulo",VALOR!=null)
+					ObjValue(IDO==idoProducto, PROPNAME==propiedadambitoarticulo,idAmbitoarticuloAny:VALOR!=null)
+					ObjValue(IDO==idoPrecioEspecial,PROPNAME==propiedadambitoarticulo,VALOR==idAmbitoarticuloAny)
+				) 
+				forall(
+				    ObjValue(IDO==idoPrecioEspecial, prop:PROPNAME=="talla"||=="color",VALOR!=null)
+					ObjValue(IDO==idoLinea,PROPNAME==prop,idoAny:IDOVALUE!=null)
+					ObjValue(IDO==idoPrecioEspecial, PROPNAME==prop,IDOVALUE==idoAny)
+				)				
+				forall(//EN ARTICULO SOPORTAREMOS INDICAR VARIOS ARTICULOS PARA QUE APLIQUE A VARIOS
+					ObjValue(IDO==idoPrecioEspecial, PROPNAME=="producto",VALOR!=null)
+					ObjValue(IDO==idoPrecioEspecial, PROPNAME=="producto",IDOVALUE==idoProducto)					
+				)
+				forall(
+					ObjValue(IDO==idoPrecioEspecial, PROPNAME=="cliente",VALOR!=null)
+					ObjValue(IDO==idoPrecioEspecial, PROPNAME=="cliente",IDOVALUE==idoCliente)					
+				)															
+				//Notar que en articulos cuya empresa es un proveedor, en sus lineas se pone como mi_empresa la del documento
+				forall(
+					ObjValue(IDO==idoPrecioEspecial,PROPNAME=="empresa",idoMiEmpCE:IDOVALUE!=null,RANGENAME=="MI_EMPRESA")
+					ObjValue(IDO==idoLinea,PROPNAME=="mi_empresa",IDOVALUE==idoMiEmpCE)
+				)	
+								
+				forall(
+					ObjValue(IDO==idoPrecioEspecial,PROPNAME=="empresa",idoProveedorCE:IDOVALUE!=null,RANGENAME=="PROVEEDOR")
+					ObjValue(IDO==idoProducto,PROPNAME=="empresa",IDOVALUE==idoProveedorCE)
+				)	
+					
+				forall(
+					//si asigno como empresa una delegacion, la tomo como delegacion central de un grupo de empresas, y la empresa de la linea debe ser de ese grupo
+					ObjValue(IDO==idoPrecioEspecial,PROPNAME=="empresa",idoEmpresaCE:IDOVALUE!=null,RANGENAME=="DELEGACIÓN")
+					ObjValue(IDO==idoEmpresaLinea,PROPNAME=="delegacion_central",IDOVALUE==idoEmpresaCE)					
+				)				
+				forall(
+					ObjValue(IDO==idoPrecioEspecial,PROPNAME=="delegación",VALOR!=null)
+					ObjValue(IDO==idoPrecioEspecial,PROPNAME=="delegación",idoDel:IDOVALUE)
+					ObjValue(IDO==idoDoc,PROPNAME=="delegación",IDOVALUE==idoDel)
+				)
+				forall(
+					ObjValue(IDO==idoPrecioEspecial, p:PROPNAME=="grupo_cliente"||=="tarifa_precio",VALOR!=null)
+					ObjValue(IDO==idoCliente, PROPNAME==p,idVal:VALOR!=null)
+					ObjValue(IDO==idoPrecioEspecial,PROPNAME==p,VALOR==idVal)
+				)			
+				//las fechas las pongo al final para que solo casen si todas las condiciones de cliente se cumple, de lo contrario, al cambiar fecha de un documento nuevo
+				//se reevalua la regla y se machacan cambios de precio del usuario
+				forall(
+	  				DatValue(IDO==idoPrecioEspecial, PROPNAME=="fecha_inicio", inicioComisionSegundos:QMIN!=null)
+	  				DatValue(IDO==idoDoc, PROPNAME=="fecha", QMIN>=inicioComisionSegundos)
+	  			)
+	  		  	forall(
+			  		DatValue(IDO==idoPrecioEspecial, PROPNAME=="fecha_fin", finComisionSegundos:QMIN!=null)
+			  		DatValue(IDO==idoDoc, PROPNAME=="fecha", QMIN<=finComisionSegundos)
+			  	)
+										 			
+			),
+		init( 
+			HashMap<String, Object> mapa = new HashMap<String, Object>(); 
+		),
+		action(		
+			Integer prioridadActual = (Integer)mapa.get("peso_prioridad"); 
+			if(prioridadActual == null || pesoPrioridad >= prioridadActual){				
+				mapa.put("domain", new Domain(idoPrecioEspecial,idtoCondEsp));				
+				mapa.put("peso_prioridad", pesoPrioridad);
+				mapa.put("valor", precioOPorcentaje);
+				mapa.put("propAplicable", propPrecioPorcentaje);
+				mapa.put("lugarAplicaPorcentaje", lugarAplicaPorcentaje);
+			} 
+		),
+		result( mapa )
+	)							                      					
+	
+	pvpSINIvaIncluidoArticulo: DoubleChanged() from accumulate(	DatValue(ID==idProducto, PROPNAME=="pvp", pvpivaincluido:DOUBLEVALUE!=null,ch:hasCHANGED ),
+									                    		init(DoubleChanged res= new DoubleChanged(null,false);),
+																action( res=new DoubleChanged(pvpivaincluido,ch);),
+								                      			result(res))
+									                      		
+	pvpTarifaSujeto: DoubleChanged() 		   from accumulate((and		ObjValue(ID==sujeto, PROPNAME=="tarifa_precio", tarifasuj:VALOR!=null ,ch1:hasCHANGED,idoTarifa:IDOVALUE) 
+								    									ObjValue(ID==idProducto, PROPNAME=="tarifas_venta", idoPrecio:IDOVALUE!=null,ch2:hasCHANGED)
+							    				 						ObjValue(IDO==idoPrecio, idtoPrecio:IDTO,PROPNAME=="tarifa_precio",VALOR==tarifasuj,ch3:hasCHANGED)
+								 										forall(
+				    														ObjValue(IDO==idoPrecio, prop:PROPNAME=="talla"||=="color",idoAny:IDOVALUE!=null)																			
+																			ObjValue(IDO==idoLinea, PROPNAME==prop,IDOVALUE==idoAny)
+																		)	
+			    														forall(
+	  																		DatValue(IDO==idoPrecio, PROPNAME=="fecha_inicio", inicioComisionSegundos:QMIN!=null)
+	  																		DatValue(ID==idDoc, PROPNAME=="fecha", QMIN>=inicioComisionSegundos)
+	  																	)
+	  		  															forall(
+			  																DatValue(IDO==idoPrecio, PROPNAME=="fecha_fin", finComisionSegundos:QMIN!=null)
+			  																DatValue(ID==idDoc, PROPNAME=="fecha", QMIN<=finComisionSegundos)
+			  															)	
+			  															forall(
+																		//si asigno como empresa una delegacion, la tomo como delegacion central de un grupo de empresas, y la empresa de la linea debe ser de ese grupo
+																			ObjValue(IDO==idoTarifa,PROPNAME=="empresa",idoEmpresaCE:IDOVALUE!=null,RANGENAME=="DELEGACIÓN")
+																			ObjValue(IDO==idoEmpresaLinea,PROPNAME=="delegacion_central",IDOVALUE==idoEmpresaCE)					
+																		)																		
+	    				 	  											DatValue(IDO==idoPrecio, PROPNAME=="precio",pvptar1:DOUBLEVALUE!=null,ch4:hasCHANGED)),
+	                     												init(TreeMap mapa=new TreeMap();),	                     														                     													
+	                     												action(
+	                     													int peso=0;
+	                     													if(dma.getIdProperty("talla")!=null&&dma.getValue(idoPrecio,idtoPrecio,"talla")!=null) peso++;
+	                     													if(dma.getIdProperty("color")!=null&&dma.getValue(idoPrecio,idtoPrecio,"color")!=null) peso++;
+	                     													if(dma.getValue(idoPrecio,idtoPrecio,"fecha_inicio")!=null) peso++;
+	                     													if(dma.getValue(idoPrecio,idtoPrecio,"fecha_fin")!=null) peso++;
+	                     													mapa.put(new Integer(peso),new DoubleChanged(pvptar1,ch1||ch2||ch3||ch4));
+	                     												),	                     												
+								                      					result(mapa.size()==0?new DoubleChanged(null,false):(DoubleChanged)mapa.get(mapa.lastKey())))
+								                      					
+	pvpTarifaSujetoCondicionada: DoubleChanged() 
+    from accumulate(
+	    				 (and
+		    				  ObjValue(ID==sujeto, PROPNAME=="tarifa_condicionada", tarifaCondi:VALOR!=null ,ch1:hasCHANGED) 
+    				 		  ObjValue(ID==tarifaCondi, PROPNAME=="tarifa_precio", tarifasujCond:VALOR!=null ,ch3:hasCHANGED) 
+		    				  ObjValue(ID==idProducto, PROPNAME=="tarifas_venta", idPrecio:VALOR!=null,ch4:hasCHANGED) 
+		    				  ObjValue(ID==idPrecio, PROPNAME=="tarifa_precio",VALOR==tarifasujCond,ch5:hasCHANGED) 
+	    				 	  DatValue(ID==idPrecio, PROPNAME=="precio",pvptar1:DOUBLEVALUE!=null,ch6:hasCHANGED) 
+	    				 	  
+	    				 	
+	    				 	  forall(//si el ambito_artículo del precio especial es un articulo tiene que ser el articulo de la linea
+								ObjValue(ID==tarifaCondi,PROPNAME=="producto",VALOR!=null)
+								ObjValue(ID==tarifaCondi,PROPNAME=="producto",VALOR==idProducto)								
+    				 		  )
+	    				 	  forall(//si el ambito_artículo del precio especial es un articulo tiene que ser el articulo de la linea
+								ObjValue(ID==tarifaCondi,propiedadambito:PROPNAME=="familia"||=="subfamilia"||=="marca",VALOR!=null)
+								ObjValue(ID==tarifaCondi,PROPNAME==propiedadambito,valorAmbito:VALOR!=null)								
+								ObjValue(ID==idProducto,PROPNAME==propiedadambito,VALOR==valorAmbito)								
+    				 		  )
+	     				  ),
+	     				  
+	     				 init(DoubleChanged res= new DoubleChanged(null,false);),
+						 action( res=new DoubleChanged(pvptar1,ch1||ch3||ch4||ch5||ch6);),
+					     result(res))
+					     								                      					
+	(or					                      					
+		eval( /*qCh ||*/ chEmpLin || chCliente || chProducto || pvpSINIvaIncluidoArticulo.isChanged() || pvpTarifaSujeto.isChanged() || pvpTarifaSujetoCondicionada.isChanged())
+		exists( IndividualValue(IDO==idoProducto,PROPNAME=="marca"||=="familia"||=="subfamilia", hasCHANGED==true)) 
+		not(exists(DatValue(ID==idLinea, PROPNAME=="precio", VALOR!=null)))
+	)
+	
+    then
+		dma.printRule("\n\n  >>>=================== PRECIO LÍNEA  EN VENTAS:=============== precioEspecial: "+precioEspecial.size()+" " +chEmpLin+" "+chCliente+" "+chProducto+" "+pvpSINIvaIncluidoArticulo.isChanged()+" "+ pvpTarifaSujeto.isChanged()+" "+pvpTarifaSujetoCondicionada.isChanged());
+		
+		Double precioSinCE = null;
+		Double precioLinea = null;
+		Double descuentoLinea=null;
+		
+		//1. obtenemos el precio que aplicaria sino hay CE
+		if(pvpTarifaSujetoCondicionada.getValor()!=null){
+			precioSinCE=pvpTarifaSujetoCondicionada.getValor();
+		}
+		else if(pvpTarifaSujeto.getValor()!=null){
+			precioSinCE=pvpTarifaSujeto.getValor();
+		}
+		else if(pvpSINIvaIncluidoArticulo.getValor()!=null){
+			precioSinCE=pvpSINIvaIncluidoArticulo.getValor();
+		}
+		
+		if(precioEspecial.get("valor") != null){
+			dma.printRule(" tiene valor "+precioEspecial.get("valor") );
+			String propAplicable = (String)precioEspecial.get("propAplicable"); //propAplicable será 'precio' o 'porcentaje'
+			Double valorAplicable = (Double)precioEspecial.get("valor"); //precio o porcentaje a aplicar (depende del precio especial)
+			Domain condEsp=(Domain)precioEspecial.get("domain");		
+			//No soporta variacion por importes.
+			//Si llamo a la funcion resuelve tramo en acumulacion da error cast drools		
+			
+			Double variacion=resuelveTramo(dma,condEsp,dma.getDoubleValue(new Domain(idoLinea,idtolinea),"cantidad",true));
+			if(variacion!=null) valorAplicable=variacion;
+		
+			if(propAplicable.equals("precio")){
+				dma.printRule(" aplica en precio "); 
+				precioLinea = valorAplicable;			
+			}else if(propAplicable.equals("porcentaje")){
+				dma.printRule(" aplica en porcent "); 
+				if(precioSinCE == null){
+					dma.printRule("\n\n ======== info regla PRECIO LÍNEA EN VENTAS: hay precio especial porcentual pero no hay precio base, no se hara nada. precioEspecial:"+precioEspecial);
+				}
+				else{
+					if(precioEspecial.get("lugarAplicaPorcentaje").equals("Precio")){
+						precioLinea = valorAplicable * 0.01D * precioSinCE;
+					}else{//el porcentaje se aplica como un descuento en la linea y como precioLinea se pone el precio que aplique sin CE
+						precioLinea = precioSinCE;//el precio de la linea es el precio base
+						descuentoLinea=valorAplicable;
+					}
+					dma.printRule("...debug precio especial es porcentual, porcentaje:"+ valorAplicable+" precioSinCE:"+precioSinCE+"  precioLinea:"+precioLinea);
+				}
+				StringValue decimales= (StringValue)dma.getValue(condEsp,"decimales_redondeo");	
+				if(decimales!=null){
+					double precioReferencia=precioLinea;
+					boolean ivaIncluido= dma.getBooleanValue(condEsp,"aplicar_iva_incluido",true);
+					if(ivaIncluido){
+						precioReferencia=precioLinea*(1+porcIva/100);
+					} 
+					String str=""+precioReferencia;
+					String[] partes=str.split("[^0-9]");
+					precioReferencia=(new Double(partes[0])).doubleValue()+(new Double(decimales.getValue())).doubleValue()/100;
+					if(ivaIncluido) precioLinea=precioReferencia/(1+porcIva/100);
+					else precioLinea=precioReferencia;
+				}				
+			}
+		}else{
+			precioLinea = precioSinCE;//si no hay precio especial el precio de la linea es el precio base
+		}
+		
+		if(precioLinea != null){
+			dma.setValue(idLinea,idtolinea,"precio",new DoubleValue(Auxiliar.redondea(precioLinea,digitosRedondeo)));
+		}
+		if(descuentoLinea != null){
+			dma.setValue(idLinea,idtolinea,"descuento",new DoubleValue(Auxiliar.redondea(descuentoLinea,digitosRedondeo)));
+		}
+end
+
+function Double resuelveTramo(DataModelAdapter dma,Domain condEspecial, double valor){
+	LinkedList<Value>lv= (LinkedList<Value>)dma.getValues(condEspecial,"variación_por_cantidad");	
+	for(int i=0;i<lv.size();i++){				
+		ObjectValue ovLinea=(ObjectValue)lv.get(i);
+		Double min=dma.getDoubleValue(ovLinea,"objetivo_mínimo",false);
+		Double max=dma.getDoubleValue(ovLinea,"objetivo_máximo",false);
+		
+		if(	(min==null || min!=null && min.doubleValue()<= valor) &&
+			(max==null || max!=null && max.doubleValue()>= valor) ){						
+			return dma.getDoubleValue(ovLinea,"valor_tramo",false);		
+		}
+	}
+	return null;
+}
+
+rule "ARTICULO NUEVO: PVP POR DEFECTO ES PRECIO DE VENTA A PUBLICO"
+salience -200 
+agenda-group "rules" when 	    			
+	FactHierarchy(idtoDoc:IDTO,CLASSSUP=="TICKET_VENTA")
+	ObjValue(IDTO==idtoDoc,idoDoc:IDO<0,PROPNAME=="línea",idoLinea:IDOVALUE)
+	ObjValue(IDO==idoLinea,PROPNAME=="producto",idoProducto:IDOVALUE<0,idtoProducto:VALUECLS)	
+	not(DatValue(IDO==idoProducto,PROPNAME=="pvp_iva_incluido",VALOR!=null))
+	DatValue(IDO==idoLinea, PROPNAME=="precio_iva_incluido", precio:QMIN!=null)
+	then
+	dma.printRule("========== ARTICULO NUEVO: PVP POR DEFECTO ES PRECIO DE VENTA A PUBLICO");
+	dma.setValue(idoProducto,idtoProducto,"pvp_iva_incluido",new DoubleValue(precio));
+end 	
+
+rule "MOSTRAR INFORMACION SOBRE PRECIOS VENTA DE ARTICULO A CLIENTE"
+agenda-group "rules" when 
+   	ddm:DocDataModel()
+   	f:FactInfo(idoLinea:IDO!=null,idPropPrecio:PROP!=null)
+   	FactProp(PROP==idPropPrecio,prop:NAME=="precio"||=="precio_iva_incluido")
+   	FactHierarchy(CLASSSUP=="DOCUMENTO_VENTA_NOMINATIVO",cls:CLASS)
+   	ObjValue(CLASSNAME==cls,PROPNAME=="cliente",idoCliente:IDOVALUE!=null,idtoCliente:VALUECLS,idoDoc:IDO)
+   	ObjValue(IDO==idoDoc,PROPNAME=="línea",IDOVALUE==idoLinea)   	
+   	ObjValue(IDO==idoLinea,PROPNAME=="producto",idoProducto:IDOVALUE!=null,idtoProducto:VALUECLS)   	
+then
+	dma.printRule("\n\n========== MOSTRAR INFORMACION SOBRE PRECIOS VENTA DE ARTICULO A CLIENTE: articulo:"+idoProducto+"  cliente:"+idoCliente);
+	//dma.showMessage("MOSTRAR INFORMACION SOBRE PRECIOS VENTA DE ARTICULO A CLIENTE: articulo:"+idoProducto+"  cliente:"+idoCliente);
+	ArrayList parametrosProductoYcliente=new ArrayList();
+	parametrosProductoYcliente.add(idoProducto);
+	parametrosProductoYcliente.add(idoCliente);
+	String mensajeUsuario=null;
+	
+	ArrayList<Object> resultQuery=Query.getResultsAssociatedToQuery(ddm,Query.ultimas3VentasPorCliente,parametrosProductoYcliente);
+	for(int i=0;i<resultQuery.size();i++){
+		//cada fila es un array con los datos como string
+		ArrayList arraydatos=(ArrayList)resultQuery.get(i);
+    	if(mensajeUsuario==null){
+    		mensajeUsuario="";
+    	}
+		 mensajeUsuario+="\n precio "+arraydatos.get(1)+" (con IVA) "+arraydatos.get(2) +" en factura fecha: "+arraydatos.get(0)+" con cantidad vendida "+arraydatos.get(3);
+	}
+	if(mensajeUsuario==null){
+		mensajeUsuario="No hay datos de facturas a ese cliente de ese producto";
+	}
+	dma.showMessage(mensajeUsuario);
+	//por último borramos el factInfo introducido por F3 para que funcione como un evento ante pulsación F3
+	dma.getDDM().retractInfoFactDataRules(f,true);
+ end
+  
+/*
+rule "RECORDAR ULTIMA LINEA"
+agenda-group "rules" when 
+   	ddm:DocDataModel()
+   	FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA")
+   	Lock(STATE==Constants.INDIVIDUAL_STATE_END_LOCK,idoLinea:IDO,IDTO==idtoLinea)
+then
+	dma.printRule("========= RECORDAR ULTIMA LINEA");
+	dma.getDDM().getCache().put("ultima_linea",""+idoLinea+";"+idtoLinea);
+end*/
+
+rule "DUPLICAR LINEA"
+agenda-group "rules" when 
+   	f:FactInfo(idoLinea:IDO!=null,idPropPrecio:PROP!=null)
+   	ObjValue(idoDoc:IDO,idtoDoc:IDTO,p:PROPNAME=="línea"||=="tarifas_venta",IDOVALUE==idoLinea,idtoLinea:VALUECLS)	
+then
+	dma.printRule("========== DUPLICAR LINEA");
+	Domain newLinea=dma.cloneIndividual(idoLinea,idtoLinea,idtoLinea, "rdn#número#color#lote");
+	if(p.equals("tarifas_venta")) 	dma.addValue(idoDoc,idtoDoc,p,new ObjectValue(newLinea));
+	dma.getDDM().retractInfoFactDataRules(f,true);
+	/*
+	String ultimaLineaStr=dma.getDDM().getCache().get("ultima_linea");
+	if(ultimaLineaStr!=null){	
+		String[] data=ultimaLineaStr.split(";");
+		int idoLastLinea=Integer.parseInt(data[0]);
+		int idtoLinea=Integer.parseInt(data[1]);
+		
+		Domain newLinea=dma.cloneIndividual(idoLastLinea,idtoLinea,idtoLinea, "rdn#número#color#talla#cantidad#lote#documento");
+		dma.addValue(idoDoc,idtoDoc,"línea",new ObjectValue(newLinea));
+		dma.getDDM().retractInfoFactDataRules(f,true);
+	}*/
+end
+  
+
+rule "MOSTRAR INFORMACION SOBRE CANTIDADES COMPRADAS/VENDIDAS EN ALBARANES DE UN ARTICULO AL PULSAR F3"
+agenda-group "rules" when 
+   	f:FactInfo(idoProducto:IDO!=null,idProp:PROP!=null)
+   	FactProp(PROP==idProp,propiedad:NAME=="total_aprovisionado"||=="importe_total_aprovisionado"||=="total_vendido"||=="importe_total_vendido")
+    ddm:DocDataModel()   	
+  then
+	dma.printRule("\n\n========== MOSTRAR INFORMACION SOBRE CANTIDADES COMPRADAS EN ALBARANES DE UN ARTICULO: articulo:"+idoProducto);
+	
+	ArrayList parametroProducto=new ArrayList();
+	parametroProducto.add(idoProducto);
+	String nameQuery=null;
+	String mensajeUsuario=null;
+	if(propiedad.equals("total_aprovisionado")||propiedad.equals("importe_total_aprovisionado")){
+		nameQuery=Query.infoComprasAlbaranArticulo;		
+	}else{
+		 nameQuery=Query.infoVentasAlbaranArticulo;
+	}
+	ArrayList<Object> resultQuery=Query.getResultsAssociatedToQuery(ddm,nameQuery,parametroProducto);
+	for(int i=0;i<resultQuery.size();i++){
+		//cada fila es un array con los datos como string
+		ArrayList arraydatos=(ArrayList)resultQuery.get(i);
+    	if(mensajeUsuario==null){
+    		mensajeUsuario="";
+    	}
+		 mensajeUsuario+="\n fecha: "+arraydatos.get(0)+" n.albaran: "+arraydatos.get(1)+"  cantidad: "+arraydatos.get(2)+" precio:"+arraydatos.get(3);
+	}
+	if(mensajeUsuario==null){
+		mensajeUsuario="No hay datos de albaranes para ese producto";
+	}
+	dma.showMessage(mensajeUsuario);
+	//por último borramos el factInfo introducido por F3 para que funcione como un evento ante pulsación F3
+	dma.getDDM().retractInfoFactDataRules(f,true);
+end
+ 
+rule "ACTUALIZAR PRECIOS SEGUN MARGEN: TARGETCLASS ES EL SOURCE Y PRECARGA ARTÍCULOS "
+agenda-group "rules" when
+    
+    ObjValue(CLASSNAME=="Actualizar_precios_segun_margenes", idoUTask:IDO,idtoutask:IDTO,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+	ObjValue(IDO==idoUTask,PROPNAME==Constants.PROP_SOURCECLASS,idoMargen:IDOVALUE!=null,objmargen:OBJECTVALUE!=null)
+	
+	ambitoarticulos: HashSet()	from accumulate(
+												(and
+													ObjValue(IDO==idoMargen,PROPNAME=="producto",ov:OBJECTVALUE!=null)
+												),
+											 init(HashSet res=new HashSet();),
+											 action( res.add(ov);),
+											 result(res))
+	ambitofamilia: ArrayList()	from accumulate(
+												(and
+													ObjValue(IDO==idoMargen,PROPNAME=="familia",ov:OBJECTVALUE!=null)
+												),
+											 init(ArrayList res=new ArrayList();),
+											 action( res.add(ov);),
+											 result(res))	
+	ambitosubfamilia: ArrayList()	from accumulate(
+												(and
+													ObjValue(IDO==idoMargen,PROPNAME=="subfamilia",ov:OBJECTVALUE!=null)
+												),
+											 init(ArrayList res=new ArrayList();),
+											 action( res.add(ov);),
+											 result(res))	
+	ambitomarca: ArrayList()	from accumulate(
+												(and
+													ObjValue(IDO==idoMargen,PROPNAME=="marca",ov:OBJECTVALUE!=null)
+												),
+											 init(ArrayList res=new ArrayList();),
+											 action( res.add(ov);),
+											 result(res))												 											 	
+then
+	dma.printRule("\n\n========  ACTUALIZAR PRECIOS SEGUN MARGEN: TARGETCLASS ES EL SOURCE Y PRECARGA ARTÍCULOS  ========== \n idoMargen:"+idoMargen+"  ambitoarticulos: "+ambitoarticulos+"\n ambitofamilia: "+ambitofamilia+"\n  ambitosubfamilia: "+ambitosubfamilia+"\n  ambitomarca: "+ambitomarca);
+	dma.addValue(idoUTask,idtoutask,"targetClass",objmargen);
+	//precarga de productos
+	if(ambitoarticulos.size()>0){	//si se han fijado los productos es suficiente con cargar esos productos, no importan las otras valores fijados en otras prop
+	 	HashSet<Integer> idosarticulos= dma.ruleGetFromServer(ambitoarticulos, 2, false);
+	 	dma.printRule(".... fijadas articulos en el margen");
+	}
+	else{
+		HashMap<String, ArrayList<Value>> propiedadValores= new HashMap<String, ArrayList<Value>>();
+		if(ambitofamilia.size()>0){
+			propiedadValores.put("familia",ambitofamilia);
+		}
+		if(ambitosubfamilia.size()>0){
+			propiedadValores.put("subfamilia",ambitosubfamilia);
+		}
+		if(ambitomarca.size()>0){
+			propiedadValores.put("marca",ambitomarca);
+		}		
+		instance instancefilter=dma.buildInstanceWith ("ARTÍCULO",null,propiedadValores,null,null);
+		HashSet<IDIndividual> idosCargados = dma.loadIndividualsWithSatisficedFilter(instancefilter,2);//PARA QUE CARGE LOS PRECIOS TARIFAS, FAMILIA,MARCA,...
+	}
+end
+
+rule "CALCULO PVP ARTICULO SEGÚN MARGEN BENEFICIO SOBRE COSTE"
+	agenda-group "rules" when 
+	//No hay que bloquear articulos porque los margenes no estan cargados salvo en la accion de actualizar precios, que carga articulos por lo que no deben estar bloqueados
+	//las tarifas igualmente se calcualarian porque dependen del hasChanged de PVP
+	FactHierarchy(clsMargen:CLASS,CLASSSUP=="MARGEN_PVP_COSTE")
+	Individual(CLASSNAME==clsMargen,idoMargen:IDO!=null,idtoMargen:IDTO)
+	ObjValue(IDO==idoMargen,PROPNAME=="prioridad",idoPrioridad:IDOVALUE!=null)	
+	DatValue(IDO==idoPrioridad,PROPNAME=="peso_prioridad",pesoPrioridad:INTVALUE!=null)
+	DatValue(IDO==idoMargen,PROPNAME=="margen_beneficio",porcentaje:DOUBLEVALUE!=null)
+	ObjValue(IDO==idoMargen,PROPNAME=="calcular_según_coste",idoCosteAplica:IDOVALUE!=null)
+	DatValue(IDO==idoCosteAplica,PROPNAME=="rdn",tipoCosteAplica:VALUE!=null)
+	
+	FactHierarchy(clsArticulo:CLASS,CLASSSUP=="ARTÍCULO")
+	DatValue(CLASSNAME==clsArticulo,idoArticulo:IDO!=null,idtoArticulo:IDTO!=null,PROPNAME=="coste",costeArticulo:DOUBLEVALUE!=null)
+	DatValue(IDO==idoArticulo,PROPNAME=="coste_actual",costeActualArticulo:DOUBLEVALUE!=null)
+	DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="n._dígitos_en_precio",digitosRedondeo:INTVALUE!=null)
+	
+	forall(
+		  ObjValue(IDO==idoMargen, propiedadAmbitoComision:PROPNAME=="familia"||=="subfamilia"||=="marca",VALOR!=null)
+	  	  ObjValue(IDO==idoMargen, PROPNAME==propiedadAmbitoComision,idAmbitoarticulo:VALOR!=null,idoAmbitoarticulo:IDOVALUE!=null)
+	  	  IndividualValue(IDO==idoArticulo,PROPNAME=="marca"||=="familia"||=="subfamilia",VALOR==idAmbitoarticulo)
+	 )
+	 forall(
+	 	  ObjValue(IDO==idoMargen, PROPNAME=="producto",VALOR!=null)
+	  	  ObjValue(IDO==idoMargen, PROPNAME=="producto",idAmbitoarticulo:VALOR!=null,idoAmbitoarticulo:IDOVALUE!=null)
+	  	  IndividualValue(IDO==idoArticulo,PROPNAME=="rdn",IDO==idoAmbitoarticulo)
+	 )
+	//DEBE CUMPLIRSE QUE NO EXISTA OTRO MARGEN2 APLICABLE CON MAS PESO 
+	not((and
+		
+		Individual(CLASSNAME==clsMargen,idoMargen2:IDO!=null)
+		ObjValue(IDO==idoMargen2,PROPNAME=="prioridad",idoPrioridad2:IDOVALUE!=null)	
+		DatValue(IDO==idoPrioridad2,PROPNAME=="peso_prioridad",pesoPrioridad2:INTVALUE>pesoPrioridad)
+		forall(
+			  ObjValue(IDO==idoMargen2, propiedadAmbitoComision:PROPNAME=="familia"||=="subfamilia"||=="marca",VALOR!=null)
+		  	  ObjValue(IDO==idoMargen2, PROPNAME==propiedadAmbitoComision,idAmbitoarticulo2:VALOR!=null,idoAmbitoarticulo2:IDOVALUE!=null)
+		  	  IndividualValue(IDO==idoArticulo,PROPNAME=="marca"||=="familia"||=="subfamilia",VALOR==idAmbitoarticulo2)
+		 )
+		 forall(
+		 	  ObjValue(IDO==idoMargen2, PROPNAME=="producto",VALOR!=null)
+		  	  ObjValue(IDO==idoMargen2, PROPNAME=="producto",idAmbitoarticulo2:VALOR!=null,idoAmbitoarticulo2:IDOVALUE!=null)
+		  	  IndividualValue(IDO==idoArticulo,PROPNAME=="rdn",IDO==idoAmbitoarticulo2)
+		 )
+	))
+//cierra el not de que no debe cumplirse que exista una comisión 2 aplicable con mas peso
+then
+	dma.printRule("\n\n ============= CALCULO PVP ARTICULO SEGÚN MARGEN BENEFICIO SOBRE COSTE: ARTICULO:"+idoArticulo+" coste:"+costeArticulo+"  costeActualArticulo:"+costeActualArticulo+"\n idoMargen:"+idoMargen+" porcentaje:"+porcentaje+"  prioridad:"+pesoPrioridad);
+	Double coste=null;
+	if(tipoCosteAplica.equals("Coste_actual")){
+		coste=costeActualArticulo;
+	}else{
+		coste=costeArticulo;
+	}
+	double pvp=Auxiliar.redondea(coste*(1.00D+0.01D*porcentaje),digitosRedondeo);
+	dma.setValue(idoArticulo,idtoArticulo,"pvp",new DoubleValue(pvp));
+	//se actualiza la fecha aplicación del margen
+	dma.setValue(idoMargen,idtoMargen,"fecha_última_aplicación",new TimeValue(Auxiliar.getFechaActual()));
+end
+
+rule "CALCULO PRECIO TARIFA ARTICULO SEGÚN MARGEN BENEFICIO SOBRE COSTE"
+agenda-group "rules" when 
+	//No hay que bloquear articulos porque los margenes no estan cargados salvo en la accion de actualizar precios, que carga articulos por lo que no deben estar bloqueados
+	FactHierarchy(clsMargen:CLASS,CLASSSUP=="MARGEN_TARIFA_COSTE")
+	Individual(CLASSNAME==clsMargen,idoMargen:IDO!=null,idtoMargen:IDTO)
+	ObjValue(IDO==idoMargen,PROPNAME=="prioridad",idoPrioridad:IDOVALUE!=null)	
+	DatValue(IDO==idoPrioridad,PROPNAME=="peso_prioridad",pesoPrioridad:INTVALUE!=null)
+	DatValue(IDO==idoMargen,PROPNAME=="margen_beneficio",porcentaje:DOUBLEVALUE!=null)
+	ObjValue(IDO==idoMargen,PROPNAME=="calcular_según_coste",idoCosteAplica:IDOVALUE!=null)
+	ObjValue(IDO==idoMargen,PROPNAME=="tarifa_precio",tarifaPrecio:VALOR!=null)
+	DatValue(IDO==idoCosteAplica,PROPNAME=="rdn",tipoCosteAplica:VALUE!=null)
+	
+	FactHierarchy(clsArticulo:CLASS,CLASSSUP=="ARTÍCULO")	
+	DatValue(CLASSNAME==clsArticulo,idoArticulo:IDO!=null,idtoArticulo:IDTO!=null,PROPNAME=="coste",costeArticulo:DOUBLEVALUE!=null)
+	DatValue(IDO==idoArticulo,PROPNAME=="coste_actual",costeActualArticulo:DOUBLEVALUE!=null)
+	ObjValue(IDO==idoArticulo,PROPNAME=="tarifas_venta",idoPrecio:IDOVALUE!=null,idtoPrecio:VALUECLS)
+	ObjValue(IDO==idoPrecio,PROPNAME=="tarifa_precio",VALOR==tarifaPrecio)
+	
+	DatValue(CLASSNAME=="APLICACIÓN",PROPNAME=="n._dígitos_en_precio",digitosRedondeo:INTVALUE!=null)
+	
+	forall(
+		  ObjValue(IDO==idoMargen, propiedadAmbitoComision:PROPNAME=="familia"||=="subfamilia"||=="marca",VALOR!=null)
+	  	  ObjValue(IDO==idoMargen, PROPNAME==propiedadAmbitoComision,idAmbitoarticulo:VALOR!=null,idoAmbitoarticulo:IDOVALUE!=null)
+	  	  IndividualValue(IDO==idoArticulo,PROPNAME=="marca"||=="familia"||=="subfamilia",VALOR==idAmbitoarticulo)
+	 )
+	 forall(
+	 	  ObjValue(IDO==idoMargen, PROPNAME=="producto",VALOR!=null)
+	  	  ObjValue(IDO==idoMargen, PROPNAME=="producto",idAmbitoarticulo:VALOR!=null,idoAmbitoarticulo:IDOVALUE!=null)
+	  	  IndividualValue(IDO==idoArticulo,PROPNAME=="rdn",IDO==idoAmbitoarticulo)
+	 )
+	//DEBE CUMPLIRSE QUE NO EXISTA OTRO MARGEN2 APLICABLE CON MAS PESO 
+	not((and
+		
+		Individual(CLASSNAME==clsMargen,idoMargen2:IDO!=null)
+		ObjValue(IDO==idoMargen2,PROPNAME=="prioridad",idoPrioridad2:IDOVALUE!=null)	
+		DatValue(IDO==idoPrioridad2,PROPNAME=="peso_prioridad",pesoPrioridad2:INTVALUE>pesoPrioridad)
+		ObjValue(IDO==idoMargen2,PROPNAME=="tarifa_precio",VALOR==tarifaPrecio)		
+		forall(
+			  ObjValue(IDO==idoMargen2, propiedadAmbitoComision:PROPNAME=="familia"||=="subfamilia"||=="marca",VALOR!=null)
+		  	  ObjValue(IDO==idoMargen2, PROPNAME==propiedadAmbitoComision,idAmbitoarticulo2:VALOR!=null,idoAmbitoarticulo2:IDOVALUE!=null)
+		  	  IndividualValue(IDO==idoArticulo,PROPNAME=="marca"||=="familia"||=="subfamilia",VALOR==idAmbitoarticulo2)
+		 )
+		 forall(
+		 	  ObjValue(IDO==idoMargen2, PROPNAME=="producto",VALOR!=null)
+		  	  ObjValue(IDO==idoMargen2, PROPNAME=="producto",idAmbitoarticulo2:VALOR!=null,idoAmbitoarticulo2:IDOVALUE!=null)
+		  	  IndividualValue(IDO==idoArticulo,PROPNAME=="rdn",IDO==idoAmbitoarticulo2)
+		 )
+	))
+//cierra el not de que no debe cumplirse que exista una comisión 2 aplicable con mas peso
+then
+	dma.printRule("\n\n ============= CALCULO PRECIO TARIFA ARTICULO SEGÚN MARGEN BENEFICIO SOBRE COSTE SOBRE COSTE: ARTICULO:"+idoArticulo+" coste:"+costeArticulo+"  costeActualArticulo:"+costeActualArticulo+"\n idoMargen:"+idoMargen+" porcentaje:"+porcentaje+"  prioridad:"+pesoPrioridad);
+	Double coste=null;
+	if(tipoCosteAplica.equals("Coste_actual")){
+		coste=costeActualArticulo;
+	}else{
+		coste=costeArticulo;
+	}
+	double pvp=Auxiliar.redondea(coste*(1.00D+0.01D*porcentaje),digitosRedondeo);
+	dma.setValue(idoPrecio,idtoPrecio,"precio",new DoubleValue(pvp));
+	//se actualiza la fecha aplicación del margen
+	dma.setValue(idoMargen,idtoMargen,"fecha_última_aplicación",new TimeValue(Auxiliar.getFechaActual()));
+end
+
+rule "DESCUENTO GLOBAL: DEPENDENCIA IMPORTE>PORCENTAJE"
+salience -200 
+agenda-group "rules" when
+    
+    FactHierarchy(CLASSSUP=="DOCUMENTO_COMERCIAL",idtoDoc:IDTO)
+    ObjValue(IDTO==idtoDoc,idoDoc:IDO,PROPNAME=="descuentos_globales",idoDescuento:IDOVALUE!=null,idtoDescuento:VALUECLS)
+    		
+    baselineas: Double() from accumulate((and  	ObjValue(IDO==idoDoc, PROPNAME=="línea", idoLinea:IDOVALUE!=null)
+    	         				  	  			DatValue(IDO==idoLinea,PROPNAME=="importe" ,imp:DOUBLEVALUE!=null)),
+                              		sum(imp))
+                              		
+	DatValue(IDO==idoDescuento,PROPNAME=="importe",importe:DOUBLEVALUE!=null,hasCHANGED==true)		
+then
+	 dma.printRule("================ DESCUENTO GLOBAL: DEPENDENCIA IMPORTE>PORCENTAJE "+ importe +" "+baselineas);
+	 DataValue dvPorcentaje=(DataValue)dma.getValue(idoDescuento,idtoDescuento,"porcentaje");
+	 double porcentaje=0;
+	 double importeBack=0;
+	 
+	 if(dvPorcentaje!=null){
+	 	porcentaje=dvPorcentaje.getNumericValue();	 	 	 	
+	 	importeBack= Auxiliar.redondea(porcentaje*baselineas/100,2);
+	 }
+	 
+	 if(dvPorcentaje==null || importeBack!=importe){
+	 	double res= Auxiliar.redondea(importe/baselineas*100,2);
+	 	dma.printRule("PORCENTAJE "+res);
+	 	dma.setValue(idoDescuento,idtoDescuento,"porcentaje",new DoubleValue(res));
+	 	dma.consumirEventoCambio(idoDescuento,"porcentaje");
+	 }	 
+	 dma.consumirEventoCambio(idoDescuento,"importe");
+end 
+
+rule "DESCUENTO GLOBAL: DEPENDENCIA PORCENTAJE>IMPORTE"
+salience -100 //Para esperar se calcule bien el IVA, pero antes que la del importe, pues quizas se sabe el porcentaje a priori antes de haber lienas, pero no el importe
+agenda-group "rules" when
+    
+    FactHierarchy(CLASSSUP=="DOCUMENTO_COMERCIAL",idtoDoc:IDTO)
+    ObjValue(IDTO==idtoDoc,idoDoc:IDO,PROPNAME=="descuentos_globales",idoDescuento:IDOVALUE!=null,idtoDescuento:VALUECLS)
+    
+    baselineas: Double() from accumulate((and  	ObjValue(IDO==idoDoc, PROPNAME=="línea", idoLinea:IDOVALUE!=null)
+    	         				  	  			DatValue(IDO==idoLinea,PROPNAME=="importe" ,imp:DOUBLEVALUE!=null)),
+                              		sum(imp))	
+    //Todo se basa en el porcentaje del descuento, por tanto tiene prioridad esta regla para que el importe se "someta" al porcentjae.
+    //POr eso mismo, para permitir que el usuario pueda fijar un importe exacto de descuento, y que modificaciones posteriores de la linea no lo modifiquen, 
+    //en esta regla obligo a que el porcentaje haya cambiado, pero si lo cambio desde esta regla del otro sentido consumo el evento para que no actue
+	DatValue(IDO==idoDescuento,PROPNAME=="porcentaje",porcentaje:DOUBLEVALUE!=null, hasCHANGED==true)		
+then
+	 dma.printRule("================ DESCUENTO GLOBAL: DEPENDENCIA PORCENTAJE>IMPORTE");
+	 DataValue dvImporte=(DataValue)dma.getValue(idoDescuento,idtoDescuento,"importe");
+	 double importe=0;
+	 double porcentajeBack=0;
+	 
+	 if(dvImporte!=null){
+	 	importe=dvImporte.getNumericValue();	 	 	 	
+	 	porcentajeBack= Auxiliar.redondea(importe/baselineas*100,2);
+	 }
+	 
+	 if(dvImporte==null || porcentajeBack!=porcentaje){
+	 	dma.setValue(idoDescuento,idtoDescuento,"importe",new DoubleValue(Auxiliar.redondea(porcentaje*baselineas/100,2)));
+	 }	 
+end
+
+rule "CLIENTES: RIESGO: BLOQUEO PEDIDOS CON DEUDA"
+ agenda-group "rules" when 
+	DatValue(CLASSNAME=="PARAMETRO_NUMERICO",idoParam:IDO,PROPNAME=="rdn",VALOR=="deuda_cliente_maxima_para_nuevo_pedido")
+	DatValue(IDO==idoParam,PROPNAME=="valor_numerico",deuda:QMIN>=0)
+	FactHierarchy(CLASSSUP=="PEDIDO_DE_CLIENTE",idtoDoc:IDTO)
+	Individual(IDTO==idtoDoc,idoDoc:IDO<0,STATE==Constants.INDIVIDUAL_STATE_READY)
+	ObjValue(IDO==idoDoc,PROPNAME=="cliente",idoCliente:IDOVALUE)	
+	DatValue(IDO==idoCliente,PROPNAME=="deuda",deudaCliente:QMIN>=deuda)
+	DatValue(IDO==idoCliente,PROPNAME=="rdn",clienteRdn:VALUE!=null)
+then
+	throw new OperationNotPermitedException("El cliente "+clienteRdn+" tiene una deuda de "+deudaCliente+" superior a la máxima de "+deuda);
+
+end
+
+/*
+	Comentada esta regla por dispararse demasiadas veces (una por cada línea).
+rule " NO SE PUEDE CAMBIAR DE SUJETO EN DOCUMENTO CON LINEAS DE OTRO SUJETO"
+agenda-group "rules" when
+  	
+	FactHierarchy(classdoc:CLASS,CLASSSUP=="DOCUMENTO")
+	Lock(iddoc:ID,CLASSNAME==classdoc,STATE==Constants.INDIVIDUAL_STATE_END_LOCK,idoDoc:IDO,idtoDoc:IDTO)
+	ObjValue(CLASSNAME==classdoc,ID==iddoc,propsujeto:PROPNAME=="cliente"||=="proveedor",idsujeto:VALOR)
+	ObjValue(ID==iddoc, PROPNAME=="línea",linea:VALOR!=null)
+    ObjValue(ID==linea, PROPNAME=="documento",iddocB:VALOR!=iddoc,idtoDocB:VALUECLS)            				 
+	ObjValue(classdocB:CLASSNAME,ID==iddocB,PROPNAME==propsujeto,VALOR!=idsujeto)
+then
+	dma.printRule("\n\n===============RULE DISPARO REGLA NO SE PUEDE CAMBIAR DE SUJETO EN DOCUMENTO CON LINEAS DE OTRO SUJETO\n");
+	String info="Documentos: "+classdoc+"  de código '"+dma.getValue(idoDoc,idtoDoc,"rdn").getValue_s()+"' y "+ classdocB+"  de código '"+dma.getValue(Integer.parseInt(iddocB),idtoDocB,"rdn").getValue_s()+"'";
+	dma.printRule(info);
+	//throw new OperationNotPermitedException("No se puede cambiar de "+propsujeto+" si ya están asociadas las líneas a otros documentos.\n"+info,null);
+	dma.showMessage("Advertencia: ha cambiado el "+propsujeto+" en un documento evolucionado desde otro");
+end	
+*/
+
+/////ESTADO DE ENTREGA (ALBARANADO) DE LOS DOCUMENTOS
+
+rule "PEDIDO FALSE SI ALGUNA LINEA NO TIENE PEDIDO"
+salience -200
+ agenda-group "rules" when 
+	Model(PROPNAME=="pedido",OP=="AND",clsDoc:CLASSNAME)
+	Individual(CLASSNAME==clsDoc,idoDoc:IDO!=null,idtoDoc:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	not(DatValue(IDO==idoDoc,PROPNAME=="pedido",BOOLEANVALOR==false))
+	ObjValue(IDO==idoDoc,PROPNAME=="línea",idoLinea:IDOVALUE)
+	Individual(IDO==idoLinea,STATE==Constants.INDIVIDUAL_STATE_READY) //necesario para estar seguro razona con lineas cargadas en motor
+	//TODO PERFORMANCE: añadir regla adicional que diga que un documento que no tiene asociado un evolucion docuemnto pedido, no esta pedido. Necesaria para el caso en el que se elimina el pedido
+   	// lo cual no bloquea las lineas y no actuaria las contribuciones.
+	not(	
+		(and
+			FactHierarchy(clsAlbaran:CLASS,CLASSSUP=="PEDIDO")
+			ObjValue(IDO==idoLinea,PROPNAME=="documento",RANGENAME==clsAlbaran,VALOR!=null)
+		)
+	)
+then
+	dma.printRule("\n\n============= PEDIDO FALSE SI ALGUNA LINEA NO TIENE PEDIDO");
+	dma.setValue(idoDoc,idtoDoc,"pedido",new BooleanValue(false));
+end
+
+rule "PEDIDO TRUE SI TODAS LAS LINEAS TIENEN PEDIDO"
+salience -200
+ agenda-group "rules" when 
+	Model(PROPNAME=="pedido",OP=="AND",clsDoc:CLASSNAME)
+	Individual(CLASSNAME==clsDoc,idoDoc:IDO!=null,idtoDoc:IDTO,STATE==Constants.INDIVIDUAL_STATE_READY)
+	not(DatValue(IDO==idoDoc,PROPNAME=="pedido",BOOLEANVALOR==true))
+	//PERFORMANCE//TODO habria que añadir campos lineas_no_pedidas, que seria contributivo, y el estado seria = numero=0
+	
+	exists(ObjValue(IDO==idoDoc,PROPNAME=="línea",VALOR!=null))
+	//TODO PERFORMANCE: añadir regla adicional que diga que un documento que no tiene asociado un evolucion docuemnto pedido, no esta pedido. Necesaria para el caso en el que se elimina el pedido
+   	// lo cual no bloquea las lineas y no actuaria las contribuciones.
+	forall(
+			ObjValue(IDO==idoDoc,PROPNAME=="línea",linea:VALOR!=null)			
+			FactHierarchy(clsAlbaran:CLASS,CLASSSUP=="PEDIDO")
+			ObjValue(ID==linea,RANGENAME==clsAlbaran,PROPNAME=="documento",VALOR!=null)
+					
+	)	
+then
+	dma.printRule("\n\n============= PEDIDO TRUE SI TODAS LAS LINEAS TIENEN PEDIDO idoDoc="+idoDoc+"  clsDoc="+clsDoc);
+	dma.setValue(idoDoc,idtoDoc,"pedido",new BooleanValue(true));
+end
+
+
+rule "MODIFICAR MANTENIENDO PRECIOS"
+salience 100 
+agenda-group "rules" when
+    FactHierarchy(accion:CLASSSUP=="Modificar_manteniendo_precios",clsAccion:CLASS)
+    ObjValue(CLASSNAME==clsAccion, idoUTask:IDO,idtoUtask:IDTO,claseAccion:CLASSNAME!=null,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null) 	 	
+    ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",doc:OBJECTVALUE,idoDoc:IDOVALUE)
+    not(ObjValue(IDO==idoUTask, PROPNAME=="targetClass",IDOVALUE==idoDoc))
+	then
+		dma.printRule("========::: MODIFICAR MANTENIENDO PRECIOS");
+		dma.addValue(idoUTask,idtoUtask,"targetClass",doc);
+end
+
+rule "DOCUMENTO INCOMPLETO REPLICAS"
+	//Si se inserta en base de datos un pedido por replcias, por ejemplo de la web, que no pasa por motor, cuando sea procesado
+	//simulamos un cambio de cliente para que las reglas de valores por defecto actuen
+	salience 200
+	agenda-group "rules" 
+	when		
+		FactHierarchy(idtoClsRoot:IDTO,CLASSSUP=="PEDIDO_DE_CLIENTE")
+		ObjValue(IDTO==idtoClsRoot,idoRoot:IDO>0, PROPNAME=="cliente" , cliente:OBJECTVALUE!=null, hasCHANGED==false)
+				
+		exists((and	DatValue(IDO==idoRoot,p:PROPNAME=="importe"||=="base",VALOR!=null)
+					DatValue(IDO==idoRoot,PROPNAME==p,INITIALVALOR==null)))				 		
+	then	    
+	    dma.printRule("=================DOCUMENTO INCOMPLETO REPLICAS");	    
+	    dma.delValues(idoRoot, idtoClsRoot, "cliente");
+	    dma.setValue(idoRoot, idtoClsRoot, "cliente",cliente);
+end
+
+rule "FACTURAR TICKET EN PERIODO"
+agenda-group "rules" when 
+    
+    ObjValue(CLASSNAME=="Facturar_periodo_de_ticket",idoUTask:IDO, idtoTask:IDTO,PROPNAME=="params",idoParams:IDOVALUE!=null)
+    exists(ObjValue(IDO==idoUTask, PROPNAME=="sourceClass",VALOR!=null))
+    
+    ObjValue(IDO==idoUTask,PROPNAME=="estadoRealizacion",idEstado:VALUE!=null)
+	DatValue(ID==idEstado,PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_INFORMADO)
+		
+	diariamente:ArrayList() from collect(DatValue(IDO==idoParams, PROPNAME=="generar_una_factura_por_cada_dia",BOOLEANVALOR==true))
+	
+	DatValue(IDO==idoParams, PROPNAME=="fecha_inicio",fIni:QMIN!=null)
+	fFin:Double() from accumulate(DatValue(IDO==idoParams, PROPNAME=="fecha_fin",f:QMIN!=null),sum(f))
+	
+	
+	clienteParams: ArrayList()	from collect(ObjValue(IDO==idoParams,PROPNAME=="cliente",IDOVALUE!=null))
+	empresaParams: ArrayList()	from collect(ObjValue(IDO==idoParams,PROPNAME=="mi_empresa",IDOVALUE!=null))	
+	productoParams: ArrayList()	from collect(ObjValue(IDO==idoParams,PROPNAME=="producto_varios",IDOVALUE!=null))	
+then
+	dma.printRule("====================  FACTURAR TICKET EN PERIODO");
+	String sql=	"	select t.agente_comercial,t.\"agente_comercialIdto\",";
+	
+	if(empresaParams.size()>0) 	sql+= "max(t.mi_empresa),";
+	else 						sql+= "t.mi_empresa,";
+	
+	if(clienteParams.size()>0) 	sql+="max(t.cliente),max(t.\"clienteIdto\"),";
+	else 						sql+="t.cliente,t.\"clienteIdto\",";
+	
+	if(diariamente.size()>0) sql+="(ceil(t.fecha/86400.0))*86400,";
+	else 					 sql+="max(ceil(t.fecha/86400.0)*86400),";
+	
+	if(productoParams.size()>0) 	sql+="max(lin.producto),max(lin.\"productoIdto\"),";
+	else 							sql+="lin.producto,lin.\"productoIdto\",";
+	
+	sql+=		"	lin.idto, sum(lin.cantidad) as q, sum(lin.importe), max(lin.coste_unitario) as coste 									\n"+
+				"	from																													\n"+ 
+	      		"	v_ticket 	as t												inner join												\n"+
+	      		"	\"v_ticket#línea_artículos\" as aso on(t.\"tableId\"=aso.\"ticketId\")						inner join					\n"+	
+	      		"	\"v_línea\" as lin on(lin.\"tableId\"=aso.\"línea_artículosId\" and lin.idto=aso.\"línea_artículosIdto\")				\n"+
+	      		"	where t.facturado=false and fecha>="+fIni;
+	//Facturado significa facturado a un cliente nominativo
+	if(fFin>0) sql+=" and fecha<="+fFin; 
+	 		 
+	sql+=		"	group by t.agente_comercial,t.\"agente_comercialIdto\",";
+	
+	if(empresaParams.size()==0) sql+="t.mi_empresa,";
+	
+	if(clienteParams.size()==0) sql+="t.cliente,t.\"clienteIdto\",";
+				
+	if(diariamente.size()>0) sql+="(ceil(t.fecha/86400.0)),";
+	
+	if(productoParams.size()==0)	sql+="lin.producto,lin.\"productoIdto\",";
+	
+	sql+="lin.idto ";
+	
+	long oldFecha=0;
+	int oldEmpresa=0;
+	int oldCliente=0;
+	int oldAgente=0;
+	
+	int idtoEmpresa=dma.getIdClass("MI_EMPRESA");
+	
+	int agId=0;
+	int agIdto=0; 
+	int agIdo=0;
+	double coste=0.0;
+	
+	List<List<String>> resultadosbbdd=Query.executeQuery(dma.getDDM(), sql,false);
+	Domain domainF=null;
+	for(int i=0;i<resultadosbbdd.size();i++){
+		List<String> columnasfilai=resultadosbbdd.get(i);
+		Object objetoRepresentaFila=null;
+		if(!columnasfilai.isEmpty()){
+			if(columnasfilai.get(0)!=null){
+				agId= Integer.parseInt(columnasfilai.get(0));
+				agIdto= Integer.parseInt(columnasfilai.get(1));
+				agIdo=QueryConstants.getIdo(agId,agIdto);
+			}
+			
+			int empresaTableId= Integer.parseInt(columnasfilai.get(2));
+			int idoEmpresa= QueryConstants.getIdo(empresaTableId,idtoEmpresa);
+			int cliId= Integer.parseInt(columnasfilai.get(3));
+			int cliIdto= Integer.parseInt(columnasfilai.get(4));
+			int cliIdo=QueryConstants.getIdo(cliId,cliIdto);
+												
+			long fecha= Long.parseLong(columnasfilai.get(5));
+					 														 	   		
+	   		int tableidPro= Integer.parseInt(columnasfilai.get(6));
+	   		int idtoPro= Integer.parseInt(columnasfilai.get(7));
+	   		int idoPro=QueryConstants.getIdo(tableidPro,idtoPro);
+	   		
+	   		int idtoLinea= Integer.parseInt(columnasfilai.get(8));	
+	   		
+	   		double cantidad= Double.parseDouble(columnasfilai.get(9));
+	   		double importe= Double.parseDouble(columnasfilai.get(10));
+
+	   		if(columnasfilai.get(10)!=null)	coste= Double.parseDouble(columnasfilai.get(11));
+	   	
+	   		// O cambio de fecha, no habiendose forzado una empresa el ticket ha cambiado de empresa
+	   		if(fecha!=oldFecha || empresaParams.size()==0 && oldEmpresa!=idoEmpresa || clienteParams.size()==0 && oldCliente!=cliIdo || oldAgente!=agIdo){
+	   			domainF=dma.creaIndividualOfClass("FACTURA_A_CLIENTE");	   
+	   			dma.setValue(domainF,"fecha",new TimeValue(fecha));
+	   			if(empresaParams.size()>0){
+	   					dma.setValue(domainF,"mi_empresa",((ObjValue)empresaParams.get(0)).getOBJECTVALUE());
+	   			}else
+	   					dma.setValue(domainF,"mi_empresa",new ObjectValue(idoEmpresa,idtoEmpresa));
+	   							
+	   			dma.addValue(idoUTask,idtoTask,"targetClass",new ObjectValue(domainF));		
+	   			
+	   			if(clienteParams.size()>0){
+	   					dma.setValue(domainF,"cliente",((ObjValue)clienteParams.get(0)).getOBJECTVALUE());
+	   			}else
+	   					dma.setValue(domainF,"cliente",new ObjectValue(cliIdo,cliIdto));
+	   					
+				if(agIdo!=0) dma.setValue(domainF,"agente_comercial",new ObjectValue(agIdo,agIdto));	   	
+				dma.consumirEventoCambio(domainF.getIdo(),"cliente");				
+	   		}	
+	   		Domain domainLin= dma.creaIndividualOfClass(idtoLinea);
+	   		dma.addValue(domainF,"línea",new ObjectValue(domainLin));
+	   		
+	   		if(productoParams.size()==0)	dma.setValue(domainLin,"producto",new ObjectValue(idoPro,idtoPro));
+	   		else							dma.setValue(domainLin,"producto",((ObjValue)productoParams.get(0)).getOBJECTVALUE());
+	   		
+	   		dma.setValue(domainLin,"cantidad",new DoubleValue(cantidad));
+	   		dma.setValue(domainLin,"precio",new DoubleValue(Auxiliar.redondea(importe/cantidad,8)));
+	   		dma.setValue(domainLin,"coste_unitario",new DoubleValue(coste));
+	   		dma.consumirEventoCambio(domainLin.getIdo(),"producto");
+	   		dma.consumirEventoCambio(domainF.getIdo(),"línea");
+	   		oldFecha=fecha;
+	   		oldEmpresa=idoEmpresa;
+	   		oldCliente=cliIdo;
+	   	}	
+	}			
+end
+
+/*rule "DESCUENTO ARTICULO FINANCIERO" (para celop)
+salience 50
+no-loop true
+ agenda-group "rules" 
+ when 
+  	
+  	DatValue(CLASSNAME=="GÉNERO",producto:ID,PROPNAME=="rdn",clave:VALOR!=null)
+  	//eval(clave.matches("\\d{6}") && (new Double(clave.substring(0,3)))+(new Double(clave.substring(2,4)))==(new Double(clave.substring(5))))
+  	eval(clave.length()==11 && clave.substring(0,5).equals("PROMO") && (new Double(clave.substring(5,7)).doubleValue()+new Double(clave.substring(7,9)).doubleValue()==new Double(clave.substring(9)).doubleValue()))
+	Lock(CLASSNAME=="TICKET_CARGO",idoTicket:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_LOCK,LEVEL==Constants.LEVEL_PROTOTYPE)
+	ObjValue(IDO==idoTicket, PROPNAME=="línea", linea:VALOR!=null) 
+	ObjValue(ID==linea,idoLinea:IDO,idtoLinea:IDTO,PROPNAME=="producto",VALOR==producto)	
+	importe:Double() from accumulate((and 	ObjValue(IDO==idoTicket, PROPNAME=="línea", lineaAny:VALOR!=linea)											
+											DatValue(ID==lineaAny,PROPNAME=="importe", i:QMIN!=null)), sum(i))
+then
+	dma.printRule("\n\n=========== DESCUENTO ARTICULO FINANCIERO "+importe+" "+clave.matches("PROMO\\d{6}")+" "+new Double(clave.substring(5,7)));
+	double descuento=new Double(clave.substring(5,7));
+		
+	dma.setValue(idoLinea,idtoLinea,"cantidad",new DoubleValue(importe*descuento/100));
+end*/

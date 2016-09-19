@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+
+<CONFIG>
+	<UTASKS>
+	<!--AREA PRODUCCIÓN-->
+		
+		<!-- <UT A_FUNC="Compras" NAME="SOLICITUD_DE_COMPRA">
+			<TG_CLASS CLASS="SOLICITUD_DE_COMPRA"  />
+		</UT>-->
+		<UT A_FUNC="Proyectos" NAME="TAREA">
+			<TG_CLASS CLASS="TAREA" />
+		</UT>
+		<UT A_FUNC="Proyectos" NAME="REALIZADO (subtareas)">
+			<TG_CLASS CLASS="PARTE_TRABAJO" />
+		</UT>		
+		<UT A_FUNC="Proyectos" NAME="DISPONIBILIDAD">
+			<TG_CLASS CLASS="DISPONIBILIDAD" />
+		</UT>		
+		<UT A_FUNC="Proyectos" USERROL="fuerzadecampo" NAME="Nuevo_Parte_Trabajo">
+			<TG_CLASS CLASS="PARTE_TRABAJO" />
+		</UT>		
+		<UT A_FUNC="Proyectos" NAME="PROYECTO">
+			<TG_CLASS CLASS="PROYECTO"  />
+		</UT>
+		<UT A_FUNC="Proyectos" NAME="ESTADO_PROYECTO">
+			<TG_CLASS CLASS="ESTADO_PROYECTO"  />
+		</UT>
+		<UT A_FUNC="Proyectos" NAME="RECURSO">
+			<TG_CLASS CLASS="RECURSO"/>
+		</UT>		
+		<UT A_FUNC="Proyectos" NAME="SUBVENCIÓN">
+			<TG_CLASS CLASS="SUBVENCIÓN"  />
+		</UT>
+		<!-- <UT A_FUNC="Proyectos" NAME="PRODUCCIÓN_CADENA">
+			<TG_CLASS CLASS="PRODUCCIÓN_CADENA"  />
+		</UT>-->	
+		<UT A_FUNC="Proyectos" NAME="CALENDARIO_HÁBIL">
+			<TG_CLASS CLASS="CALENDARIO_HÁBIL"  />
+		</UT>	
+		<UT A_FUNC="Proyectos" NAME="Subvención_justif._cercana" LISTENER="true">
+			<TG_CLASS CLASS="SUBVENCIÓN"  />
+		</UT>
+		
+		<UT A_FUNC="Proyectos" NAME="LÍNEA_GASTO">
+			<TG_CLASS CLASS="LÍNEA_GASTO"  />
+		</UT>	
+
+		<UT A_FUNC="Proyectos" NAME="SUBTAREA">
+			<TG_CLASS CLASS="SUBTAREA"  />
+		</UT>	
+		
+		<UT A_FUNC="Proyectos" NAME="LIQUIDACIÓN_SUBVENCIÓN_PROYECTO">
+			<TG_CLASS CLASS="LIQUIDACIÓN_SUBVENCIÓN_PROYECTO"/>
+		</UT>
+		
+		
+		
+				
+	</UTASKS>
+</CONFIG>
+	

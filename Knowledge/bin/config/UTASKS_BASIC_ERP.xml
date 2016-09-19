@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<CONFIG>
+	<UTASKS>
+	
+	
+	<!-- ÁREA DE PRUEBAS -->
+
+<!-- 
+<UT A_FUNC="Pruebas" NAME="Forma_Pago">
+<TG_CLASS CLASS="FORMA_PAGO" />
+</UT>
+<UT A_FUNC="Pruebas" NAME="Línea">
+<TG_CLASS CLASS="LÍNEA" />
+</UT>
+ -->	
+	
+		<!--AREA ALMACENAMIENTO-->
+
+		<UT A_FUNC="Almacenamiento" NAME="Almacén">
+			<TG_CLASS CLASS="ALMACÉN" />
+		</UT>
+		<UT A_FUNC="Almacenamiento" NAME="ENTRADA_PRODUCTOS_ALMACÉN">
+			<TG_CLASS CLASS="ENTRADA_PRODUCTOS_ALMACÉN" />
+		</UT>
+		<UT A_FUNC="Almacenamiento" NAME="Regularización">
+			<TG_CLASS CLASS="REGULARIZACIÓN" />
+		</UT>
+		<UT A_FUNC="Almacenamiento" NAME="TRASPASO_ALMACENES">
+			<TG_CLASS CLASS="TRASPASO_ALMACENES"  />
+		</UT>
+		<UT A_FUNC="Almacenamiento" NAME="TRANSPORTISTA">
+			<TG_CLASS CLASS="TRANSPORTISTA" />
+		</UT>
+		<UT A_FUNC="Almacenamiento" NAME="Stock">
+			<TG_CLASS CLASS="STOCK"  />
+		</UT>
+		
+		<UT A_FUNC="Almacenamiento"  USERROL="administrador"  NAME="CENTRO_TRABAJO">
+			<TG_CLASS CLASS="CENTRO_TRABAJO"  />
+		</UT>
+		
+		<UT A_FUNC="Almacenamiento"  USERROL="administrador"  NAME="LÍMITE_STOCK">
+			<TG_CLASS CLASS="LÍMITE_STOCK"  />
+		</UT>
+		
+			
+		<!--AREA COMERCIAL-->
+		<UT A_FUNC="Comercial" NAME="CATÁLOGO">
+			<TG_CLASS CLASS="CATÁLOGO"  />
+		</UT>
+		<UT A_FUNC="Comercial" NAME="Cliente_potencial">
+			<TG_CLASS CLASS="CLIENTE_POTENCIAL" />
+		</UT>
+		<UT A_FUNC="Comercial" NAME="Familia">
+			<TG_CLASS CLASS="FAMILIA"  />
+		</UT>
+		<UT A_FUNC="Comercial" NAME="Subfamilia">
+			<TG_CLASS CLASS="SUBFAMILIA"  />
+		</UT>
+		<UT A_FUNC="Comercial" NAME="Categoria articulo">
+			<TG_CLASS CLASS="CATEGORIA_ARTICULO"  />
+		</UT>
+		<UT A_FUNC="Comercial" NAME="Grupo_Cliente">
+			<TG_CLASS CLASS="GRUPO_CLIENTE" />
+		</UT>
+		<UT A_FUNC="Comercial" NAME="Marca">
+			<TG_CLASS CLASS="MARCA" />
+		</UT>
+		<UT A_FUNC="Comercial" NAME="Tarifa_Precio">
+			<TG_CLASS CLASS="TARIFA_PRECIO" />
+		</UT>
+		<UT A_FUNC="Comercial" NAME="Tipo_Descuento_Global">
+			<TG_CLASS CLASS="TIPO_DESCUENTO_GLOBAL" />
+		</UT>
+		<UT A_FUNC="Comercial" NAME="COLOR">
+			<TG_CLASS CLASS="COLOR" />
+		</UT>
+
+		<UT A_FUNC="Comercial" NAME="TALLA">
+			<TG_CLASS CLASS="TALLA" />
+		</UT>
+		<UT A_FUNC="Comercial" NAME="NÚMERO_SERIE">
+			<TG_CLASS CLASS="NÚMERO_SERIE" />
+		</UT>
+		<UT A_FUNC="Comercial" NAME="SERIE_TALLAS">
+			<TG_CLASS CLASS="SERIE_TALLAS" />
+		</UT>
+		<UT A_FUNC="Comercial" NAME="Lote">
+			<TG_CLASS CLASS="LOTE"  />
+		</UT>		
+		<UT A_FUNC="Comercial" NAME="Registro_envio_mail">
+			<TG_CLASS CLASS="LOG_EMAIL"  />
+		</UT>	
+
+		
+		<!--AREA COMPRAS-->
+		<UT A_FUNC="Compras" NAME="Albarán_Proveedor">
+			<TG_CLASS CLASS="ALBARÁN_PROVEEDOR" />
+		</UT>
+		<UT A_FUNC="Compras" NAME="Artículo Género(Compras)">
+			<TG_CLASS CLASS="GÉNERO"  />
+		</UT>
+		<UT A_FUNC="Compras" NAME="Artículo Servicio(Compras)">
+			<TG_CLASS CLASS="SERVICIO" />
+		</UT>
+		<UT A_FUNC="Compras" NAME="Factura_Proveedor">
+			<TG_CLASS CLASS="FACTURA_PROVEEDOR" />
+		</UT>
+
+		<UT A_FUNC="Compras" NAME="FACTURA_RECTIFICATIVA_COMPRA">
+			<TG_CLASS CLASS="FACTURA_RECTIFICATIVA_COMPRAS" />
+		</UT>
+		<UT A_FUNC="Compras" NAME="Pedido_A_Proveedor">
+			<TG_CLASS CLASS="PEDIDO_A_PROVEEDOR"  />
+		</UT>
+		<UT A_FUNC="Compras" NAME="Presupuesto_Compra">
+			<TG_CLASS CLASS="PRESUPUESTO_COMPRA" />
+		</UT>
+		<UT A_FUNC="Compras" NAME="Proveedor">
+			<TG_CLASS CLASS="PROVEEDOR"  />
+		</UT>
+		
+			
+		<UT A_FUNC="Compras" NAME="Albarán-factura_proveedor">
+			<TG_CLASS CLASS="ALBARÁN-FACTURA_PROVEEDOR" />
+		</UT>		
+		
+		
+		
+		
+		<!--AREA VENTAS-->
+		
+		<UT A_FUNC="Ventas" NAME="Albarán_Venta">
+			<TG_CLASS CLASS="ALBARÁN_CLIENTE" />
+		</UT>
+
+		<UT A_FUNC="Ventas" NAME="Albarán-factura_cliente">
+			<TG_CLASS CLASS="ALBARÁN-FACTURA_CLIENTE" />
+		</UT>
+
+
+		<UT A_FUNC="Ventas" NAME="Cliente">
+			<TG_CLASS CLASS="CLIENTE"  />
+		</UT>
+		
+		<UT A_FUNC="Ventas" NAME="ARRENDAMIENTO">
+			<TG_CLASS CLASS="ARRENDAMIENTO"  />
+		</UT>
+		
+		<UT A_FUNC="Ventas" NAME="Factura_Venta">
+			<TG_CLASS CLASS="FACTURA_A_CLIENTE"  />
+		</UT>
+		<UT A_FUNC="Ventas" NAME="FACTURA_RECTIFICATIVA_VENTA">
+			<TG_CLASS CLASS="FACTURA_RECTIFICATIVA_VENTAS" />
+		</UT>
+		<UT A_FUNC="Ventas" NAME="Artículo Género(Ventas)">
+			<TG_CLASS CLASS="GÉNERO"  />
+		</UT>
+		<UT A_FUNC="Ventas" NAME="Artículo Servicio(Ventas)">
+			<TG_CLASS CLASS="SERVICIO"  />
+		</UT>
+		
+		<UT A_FUNC="Ventas" NAME="Pedido_Venta">
+			<TG_CLASS CLASS="PEDIDO_DE_CLIENTE"  />
+		</UT>
+		<UT A_FUNC="Ventas" NAME="Presupuesto_Venta">
+			<TG_CLASS CLASS="PRESUPUESTO_VENTA"  />
+		</UT>
+		
+		<UT A_FUNC="Ventas" NAME="CONDICIÓN_ESPECIAL_VENTA">
+			<TG_CLASS CLASS="CONDICIÓN_ESPECIAL_VENTA"  />
+		</UT>
+		<UT A_FUNC="Ventas" NAME="MARGEN_PRECIO_COSTE">
+			<TG_CLASS CLASS="MARGEN_PRECIO_COSTE"  />
+		</UT>
+				
+		
+		<!--AREA TESORERÍA-->
+		
+		<UT A_FUNC="Tesorería" NAME="Cobro">
+			<TG_CLASS CLASS="COBRO"  />
+		</UT>
+		<UT A_FUNC="Tesorería" NAME="Pago">
+			<TG_CLASS CLASS="PAGO"  />
+		</UT>
+		<UT A_FUNC="Tesorería" NAME="DEBE_CLIENTE_MANUAL">
+			<TG_CLASS CLASS="DEBE_CLIENTE_MANUAL"  />
+		</UT>
+		<UT A_FUNC="Tesorería" NAME="REMESA">
+			<TG_CLASS CLASS="REMESA" />
+		</UT>
+		
+		<UT A_FUNC="Tesorería" NAME="FLUJO_CAJA">
+			<TG_CLASS CLASS="FLUJO_CAJA" />
+		</UT>
+
+
+		<UT A_FUNC="Tesorería" NAME="Vencimiento_de_Cobro">
+			<TG_CLASS CLASS="VENCIMIENTO_DE_COBRO"  />
+		</UT>
+
+		<UT A_FUNC="Tesorería" NAME="Vencimiento_de_Pago">
+			<TG_CLASS CLASS="VENCIMIENTO_DE_PAGO" />
+		</UT>
+		
+		<UT A_FUNC="Tesorería" NAME="Vencimiento_de_Pago_Pendiente">
+			<TG_CLASS CLASS="VENCIMIENTO_DE_PAGO"  />
+		</UT>
+
+		<UT A_FUNC="Tesorería" NAME="Vencimiento_de_Cobro_Pendiente">
+			<TG_CLASS CLASS="VENCIMIENTO_DE_COBRO" />
+		</UT>		
+		
+		<UT A_FUNC="Tesorería" USERROL="administrador"  NAME="CAJA">
+			<TG_CLASS CLASS="CAJA" />
+		</UT>
+		 <UT A_FUNC="Tesorería" USERROL="administrador"  NAME="CIERRE_CAJA">
+			<TG_CLASS CLASS="CIERRE_CAJA" />
+		</UT>		
+		
+		
+		
+	</UTASKS>
+</CONFIG>
+	

@@ -1,0 +1,46 @@
+package dynagent.common.communication;
+
+public class properties {
+    //public final static int lightView=1;
+	//public final static int recursive=2;
+	public final static int id=3;
+	//public final static int type=4;
+	public final static int currTask=5;
+	public final static int currPro=6;
+	public final static int processType=7;
+	//public final static int taskType=8;
+	//public final static int GUI_id=9;
+	//public final static int testID=10;
+	//public final static int JMSLoopback=11;
+	//public final static int XALoop=12;
+	//public static final int destination = 13;
+	public static final int levels = 14;
+	public static final int lastStructLevel = 15;
+	//public static final int nameQuery = 16;
+	public static final int modeQuery = 17;
+	public static final int directImpresion = 18;
+	public static final int localSearch = 19;
+	public static final int format = 20;
+	public static final int jrxml = 21;
+	public static final int returnResults = 22;
+	public static final int className = 23;
+	public static final int nameProject = 24;
+	public static final int oldMode = 25;
+	public static final int currentTime = 26;
+	public static final int migration = 27;
+	public static final int preprocess = 28;
+	public static final int keepTableIds = 29;
+	public static final int licenseConcurrentUsers = 30;
+	public static final int licenseType = 31;
+	public static final int licenseExpiredDate = 32;
+	public static final int licenseCode = 33;
+	public static final int email = 34;
+	public static final int emailSubject = 35;
+	public static final int emailIdoMiEmpresa = 36;
+	public static final int emailIdo = 37;
+	public static final int emailIdto = 38;
+	public static final int emailReportFileName = 39;
+	public static final int success = 40;
+	public static final int emailIdoDestinatario=41;
+	public static final int replicaSource = 42;
+}

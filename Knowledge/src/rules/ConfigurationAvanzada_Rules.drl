@@ -1,0 +1,68 @@
+package dynagent.ruleengine.src.ruler.ERPrules
+
+import dynagent.common.exceptions.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import org.drools.WorkingMemory;
+import dynagent.common.properties.values.*;
+global DataModelAdapter dma;
+
+
+rule "EVITAR BORRAR O MODIFICAR ROL DE SISTEMA"
+ agenda-group "rules" when
+  	IndividualState(CLASSNAME=="USERROL", ido:IDO!=null, idto:IDTO, STATE==Constants.INDIVIDUAL_STATE_DELETED||==Constants.INDIVIDUAL_STATE_LOCK)
+  	eval(dma.preload(ido,idto))
+  	DatValue(IDO==ido,PROPNAME=="rdn",VALUE==Constants.ADMIN_ROL)
+then
+	dma.printRule("\n\n------EVITAR BORRAR O MODIFICAR ROL DE SISTEMA");
+	throw new OperationNotPermitedException("No se puede borrar ni modificar este perfil de usuario ya que es de sistema");
+end
+
+rule "EVITAR BORRAR O MODIFICAR MENÚ DE SISTEMA"
+ agenda-group "rules" when
+  	IndividualState(CLASSNAME=="MENÚ", ido:IDO!=null, idto:IDTO, STATE==Constants.INDIVIDUAL_STATE_DELETED||==Constants.INDIVIDUAL_STATE_LOCK)
+  	eval(dma.preload(ido,idto))
+  	DatValue(IDO==ido,PROPNAME=="rdn",VALUE=="MENÚ")
+then
+	dma.printRule("\n\n------EVITAR BORRAR O MODIFICAR MENÚ DE SISTEMA");
+	throw new OperationNotPermitedException("No se puede borrar ni modificar este menú ya que es de sistema");
+end
+
+rule "EVITAR BORRAR O MODIFICAR ÁREA FUNCIONAL DE SISTEMA"
+ agenda-group "rules" when
+  	IndividualState(CLASSNAME=="FUNCTIONAL_AREA", ido:IDO!=null, idto:IDTO, STATE==Constants.INDIVIDUAL_STATE_DELETED||==Constants.INDIVIDUAL_STATE_LOCK)
+  	eval(dma.preload(ido,idto))
+  	DatValue(IDO==ido,PROPNAME=="rdn",VALUE=="Configuración_Avanzada")
+then
+	dma.printRule("\n\n------EVITAR BORRAR O MODIFICAR ÁREA FUNCIONAL DE SISTEMA");
+	throw new OperationNotPermitedException("No se puede borrar ni modificar este área funcional ya que es de sistema");
+end
+
+rule "NO PERMITIR ASIGNAR A LA VEZ LONGITUD Y EXPRESION REGULAR EN MASCARA"
+agenda-group "rules" when
+   	Lock(name:CLASSNAME=="MÁSCARA_CAMPO", ido:IDO!=null, idto:IDTO, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+   	DatValue(IDO==ido,idProp1:PROP,PROPNAME=="longitud",QMIN!=null)
+   	DatValue(IDO==ido,idProp2:PROP, PROPNAME=="expresión_regular",VALUE!=null)
+then
+	dma.printRule("\n\n ============= NO PERMITIR ASIGNAR A LA VEZ LONGITUD Y EXPRESION REGULAR EN MASCARA: "+ido);
+   	throw new OperationNotPermitedException("No está permitido asignar valor a la vez en los campos "+dma.getDDM().getAliasOfProperty(idto, idProp1, null)+" y "+dma.getDDM().getAliasOfProperty(idto, idProp2, null));
+end
+
+rule "NO PERMITIR ENVIO DE MÁSCARAS A BASE DE DATOS SIN RELLENAR LONGITUD O EXPRESION REGULAR"
+agenda-group "rules"	when   	
+	Individual(name:CLASSNAME=="MÁSCARA_CAMPO", ido:IDO!=null, idto:IDTO)
+	ObjValue(idoUTask:IDO, PROPNAME=="targetClass",IDOVALUE==ido)
+	ObjValue(IDO==idoUTask ,PROPNAME=="estadoRealizacion",idEstado:VALOR!=null)
+    DatValue(ID==idEstado, PROPNAME=="rdn",VALOR==Constants.INDIVIDUAL_REALIZADO)       	
+    not(exists(DatValue(IDO==ido, PROPNAME=="longitud",QMIN!=null)))       
+   	not(exists(DatValue(IDO==ido, PROPNAME=="expresión_regular",VALUE!=null)))   	   
+then
+	dma.printRule("\n\n ============= NO PERMITIR ENVIO DE MÁSCARAS A BASE DE DATOS SIN RELLENAR LONGITUD O EXPRESION REGULAR:"+ido);
+	throw new OperationNotPermitedException("Debe asignar un valor en el campo "+dma.getDDM().getAliasOfProperty(idto, dma.getIdProperty("longitud"), null)+" o en "+dma.getDDM().getAliasOfProperty(idto, dma.getIdProperty("expresión_regular"), null));	
+end
+

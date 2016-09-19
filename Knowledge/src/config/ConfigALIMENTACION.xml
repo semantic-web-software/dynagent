@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!--
+ COMPATIBLE CON ONTOLOGIA: 
+V1.2 SUBIDA AL SVN DESDE ECLIPSE
+ -owlpath E:/DESARROLLO/Workspace/(ponAquiTuWorkspace)/Knowledge/src/owl/
+- nombre ontología: MODELO_V1.2.owl
+
+EJEMPLO IMPORTACION:
+-modulesInclude MÓDULO_DISTRIBUIDOR;MÓDULO_EMBALADO;MÓDULO_INFO_DIMENSIONES;MÓDULO_LOTE;MÓDULO_PRODUCCIÓN;MÓDULO_CONTABILIDAD;MÓDULO_COMERCIAL;MÓDULO_TICKET
+-ip 192.168.1.3
+-bns 101
+-gestor mySQL
+-owlpath  E:/DESARROLLO/ONTOLOGIA/
+-owlfile MODELO.owl
+-xmlfile ConfigALIMENTACION.xml
+-xmlpath E:/DESARROLLO/Workspace/Alfonso/GenericCustomer/src/config/
+-pathimports E:/DESARROLLO/Workspace/Alfonso/Knowledge/src/config/
+-replica  false
+-port 3310
+-reportpath E:/DESARROLLO/filesReport/Alimentacion2
+-->
+<CONFIG>
+
+	<UTASKS IMPORT="UTASKS_BASIC_ERP;UTASKS_COMERCIALES;UTASKS_CONFIGURACION;UTASKS_PRODUCCION;UTASKS_DISTRIBUCION;UTASKS_CALIDAD;UTASKS_CONTABILIDAD;UTASKS_TICKET">
+	</UTASKS>
+	
+	<GROUPS IMPORT="NEW_GROUPS_ERP">
+	</GROUPS>
+
+	<PROPERTIES >
+		<EXCLU_PROP PROP="margen_beneficio"/>
+		<EXCLU_PROP PROP="pvp_previo_iva_incluido"/>
+		<EXCLU_PROP PROP="pedido_mínimo"/>
+		<EXCLU_PROP PROP="agregados_empresa"/> <!-- Cuando se les ponga el modelo nuevo, quizá interese NO excluirla -->
+		<EXCLU_PROP PROP="divisa"/>
+		<!--<EXCLU_PROP PROP="control_transporte"/>-->
+		<EXCLU_PROP PROP="departamento"/>
+		<EXCLU_PROP PROP="sueldo"/>
+		<EXCLU_PROP PROP="grupo_cotización"/>
+		<EXCLU_PROP PROP="horario_trabajo"/>
+		<EXCLU_PROP PROP="advertencias"/>
+		<EXCLU_PROP PROP="periocidad_facturación"/>
+		<EXCLU_PROP PROP="idioma"/>
+		<EXCLU_PROP PROP="mi_codigo_cliente"/>
+		<EXCLU_PROP PROP="mi_código_proveedor"/>
+		<EXCLU_PROP PROP="fecha_min_entrega"/>
+		<EXCLU_PROP PROP="fecha_max_entrega"/>
+		<EXCLU_PROP PROP="fecha_estimada_entrega"/>
+		<EXCLU_PROP PROP="cuenta_T.G.S.S"/>
+		<EXCLU_PROP PROP="categoría_trabajador"/>
+		<EXCLU_PROP PROP="recibido"/>				
+		
+		
+	</PROPERTIES>
+	
+	<CLASSES >
+		<EXCLU_CLASS NAME="CARDINALIDAD"/>
+		<EXCLU_CLASS NAME="AGREGADO_EMPRESA"/>
+		<EXCLU_CLASS NAME="UNIDADES"/>	
+		<EXCLU_CLASS NAME="CLIENTE_PARTICULAR"/>			
+		<EXCLU_CLASS NAME="Cambiar_Precio_Venta"/>	
+	</CLASSES>	
+	
+
+	<ALIAS IMPORT="ALIAS_ERP">
+		<AL UTASK="PEDIDO_TRASPASO_EMITIDO" ALIAS="PEDIDO_RETIRADA_DE_TIENDA"/>
+		<AL UTASK="PEDIDO_TRASPASO_RECIBIDO" ALIAS="PEDIDO_ENVIO_A_TIENDA"/>
+	</ALIAS>
+	
+	<COLUMNPROP IMPORT="NEW_COLUMNPROP_ERP">
+	</COLUMNPROP>
+		
+	<USUARIOS IMPORT="USUARIOS_ERP">
+	</USUARIOS>
+	
+	<ROLES IMPORT="USUARIOS_ERP">
+	</ROLES>
+	<USUARIO_ROLES IMPORT="USUARIOS_ERP">
+	</USUARIO_ROLES>
+
+	<ACCESS IMPORT="ACCESS_ERP">
+	</ACCESS>
+
+	<ORDERPROPERTIES IMPORT="NEW_ORDERPROPERTIES_ERP">
+	</ORDERPROPERTIES>
+
+	<INDEX IMPORT="INDEX_ERP">
+	</INDEX>
+
+	
+	<CARDMED IMPORT="CARDMED_ERP">
+	</CARDMED>
+	
+	<DEFVALUES IMPORT="DEFVALUES_ERP">
+	</DEFVALUES>
+	
+	
+	<RANGES>
+		<RANGE CLASS="ESCANDALLO" PROP="proporción_intermedia">
+			<VALUERG CLASS="CONTRIBUCIÓN_LINEAL"/>
+		</RANGE>
+		<RANGE CLASS="ALBARÁN_DISTRIBUIDOR" PROP="línea">
+			<VALUERG CLASS="LÍNEA_ARTÍCULOS_MATERIA"/>
+		</RANGE>		
+	</RANGES>
+
+	<CARDINALITIES>
+	</CARDINALITIES>
+
+	<DEFVALUES>
+			<DV  CLASS="PARÁMETROS_PLANIFICAR" PROP="crear_trabajos"   VALUE="false" VALUECLS="boolean"/>
+	
+	</DEFVALUES>
+
+	<REPORTS PATH="E:/DESARROLLO/filesReport/Alimentacion/">
+		<RP NAME="rp@albaran_cliente"/>
+		<RP NAME="rp@albaran_cliente_ingles"/>
+		<RP NAME="rp@albaran_valorado" DIRECT_IMPRESION="TRUE" N_COPIES="2" DISPLAY_PRINT_DIALOG="TRUE"/>
+		<RP NAME="rp@albaran_valorado_ingles"/>
+		<RP NAME="rp@clientes347"/>
+		<RP NAME="rp@clientes349"/>
+		<RP NAME="rp@extractos_de_cuentas"/>
+		<RP NAME="rp@factura" DIRECT_IMPRESION="TRUE" N_COPIES="2" DISPLAY_PRINT_DIALOG="TRUE"/>
+		<RP NAME="rp@factura_ingles"/>
+		<RP NAME="rp@facturas_emitidas"/>
+		<RP NAME="rp@listado_de_genero"/>
+		<RP NAME="rp@nota_pedido_cliente" DIRECT_IMPRESION="TRUE" N_COPIES="2" DISPLAY_PRINT_DIALOG="TRUE"/>
+		<RP NAME="rp@presupuesto"/>
+		<RP NAME="rp@proveedores347"/>
+		<RP NAME="rp@proveedores349"/>
+		<!--<RP NAME="rp@tabla_consumo"/>
+		<RP NAME="rp@puntos_verdes"/>
+		<RP NAME="rp@planificacion"/>
+		<RP NAME="rp@recibo_cliente"/>
+		<RP NAME="rp@recibo_factura"/>
+		<RP NAME="rp@recibo_fechas"/>
+		<RP NAME="rp@recibo_vencimiento"/>
+		<RP NAME="rp@remesa_de_recibos"/>
+		<RP NAME="rp@trabajos"/>
+		<RP NAME="rp@tabla_consumo_cliente"/>-->
+		<RP NAME="rp@tarifa_de_precios"/>
+		<RP NAME="rp@tarifa_de_precios_consumida"/>
+		<RP NAME="rp@tarifa_de_precios_dirigida"/>
+		<RP NAME="rp@trazabilidad"/>
+		<RP NAME="rp@pedido_proveedor"/>
+		<!--<RP NAME="rp@etiqueta_albaran"/>
+		<RP NAME="rp@etiqueta_cliente"/>-->
+		<!-- <RP NAME="rp@albaran_factura_proveedor" DIRECT_IMPRESION="TRUE" N_COPIES="2" DISPLAY_PRINT_DIALOG="TRUE"/>
+		<RP NAME="rp@credito_tarjeta" DISPLAY_PRINT_DIALOG="TRUE" PRINTER_NAME="Generic / Text Only"/>
+		<RP NAME="rp@etiqueta_lote" DISPLAY_PRINT_DIALOG="TRUE" PRINTER_NAME="Brother QL-500"/>
+		<RP NAME="rp@etiqueta_precio" DISPLAY_PRINT_DIALOG="TRUE" PRINTER_NAME="Brother QL-500"/> -->
+	</REPORTS>
+	
+<!-- COMENTADAS MASCARAS NO ESTAN PROBADAS TODAVIA
+	<MASKS>
+		<MASK CLASS="CUENTA_BANCARIA" PROP="CÓDIGO_IBAN" EXPRESSION="([a-zA-Z]{2})([0-9]{2})" LENGTH="4"/>
+		<MASK CLASS="CUENTA_BANCARIA" PROP="ENTIDAD" EXPRESSION="[0-9]{4}" LENGTH="4"/>
+		<MASK CLASS="CUENTA_BANCARIA" PROP="OFICINA" EXPRESSION="[0-9]{4}" LENGTH="4"/>
+		<MASK CLASS="CUENTA_BANCARIA" PROP="DÍGITO_DE_CONTROL" EXPRESSION="[0-9]{2}" LENGTH="2"/>
+		<MASK CLASS="CUENTA_BANCARIA" PROP="NÚMERO_CUENTA" EXPRESSION="[0-9]{10}" LENGTH="10"/>
+		<MASK PROP="porcentaje_realización" EXPRESSION="^100(\\\\.0{0,2}?)?$|^\\\\d{0,2}(\\\\.\\\\d{0,2})?$"/>
+	</MASKS>	
+	
+-->
+
+
+</CONFIG>
+
+
+
+

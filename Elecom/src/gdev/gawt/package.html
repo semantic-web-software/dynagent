@@ -1,0 +1,26 @@
+<html>
+
+<head></head>
+
+<body bgcolor="#FFFFFF">
+
+<!-- COMENTARIO DEL PAQUETE INTRODUCIDO MANUALMENTE -->
+<p>
+Este paquete es el que se encarga de representar gráficamente los formularios de la aplicación.
+Hay que comentar que este paquete contiene dos clases principales, 
+que son {@link gdev.gawt.GSimpleForm} y la clase abstracta {@link gdev.gawt.GComponent}. 
+Todas las demás clases extienden de {@link gdev.gawt.GComponent} (excepto GTableModel) y sirven para crear cada 
+componente individual del formulario, dependiendo del tipo que ha sido definido en el XML, checkbox, tabla, imagen, listado…
+<br>En la clase {@link gdev.gawt.GSimpleForm}, se crean todos los grupos del formulario y todos los componentes (campos) 
+de éstos grupos, según la información extraída del XML (gracias al paquete gdev.gfld), 
+y dichos componentes se crean con la clase {@link gdev.gawt.GComponent}. 
+Ésta clase contiene un método abstracto, {@link gdev.gawt.GComponent#createComponent()}, que será implementado en las clases que extiendan a 
+{@link gdev.gawt.GComponent} y que tendrá una implementación específica según el tipo del componente que se está creando.
+</p>
+<!-- FIN DEL COMENTARIO DEL PAQUETE INTRODUCIDO MANUALMENTE -->
+
+
+
+</body>
+
+</html>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- =====================================================================-->
+<!--                                                                       -->
+<!--  JBoss Server Configuration                                           -->
+<!--                                                                       -->
+<!-- =====================================================================-->
+
+<!-- $Id: mssql-ds.xml 23720 2004-09-15 14:37:40Z loubyansky $ -->
+
+  <!-- ======================================================================-->
+  <!-- New ConnectionManager setup for Microsoft SQL Server 2000  driver     -->
+  <!-- You may download the latest Microsoft JDBC driver from *Microsoft*    -->
+  <!-- http://msdn.microsoft.com/downloads/default.asp?url=/downloads/sample.asp?url=/MSDN-FILES/027/001/779/msdncompositedoc.xml&frame=true-->
+  <!-- =====================================================================-->
+
+<datasources>
+	<!-- Local Datasource Block -->
+</datasources>

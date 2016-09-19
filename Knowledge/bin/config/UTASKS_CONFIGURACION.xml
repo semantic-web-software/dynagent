@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<CONFIG>
+	<UTASKS>
+	
+	<!--AREA CONFIGURACIÓN Basica-->
+	
+	
+	
+		<UT A_FUNC="Configuración"  USERROL="administrador"  NAME="USUARIO">
+			<TG_CLASS CLASS="USER"  />
+		</UT>
+	
+			<UT A_FUNC="Configuración"  USERROL="administrador"  NAME="EMPLEADO">
+			<TG_CLASS CLASS="EMPLEADO"  />
+		</UT>
+		
+		<UT A_FUNC="Configuración" USERROL="administrador" NAME="APLICACIÓN">
+			<TG_CLASS CLASS="APLICACIÓN"  />
+		</UT>
+		
+		
+		<UT A_FUNC="Configuración"   USERROL="administrador"  NAME="CONFIGURACIÓN_CONTABILIDAD">
+			<TG_CLASS CLASS="CONFIGURACIÓN_CONTABLE"  />
+		</UT>
+		<UT A_FUNC="Configuración" USERROL="administrador"   NAME="CONFIGURACIÓN_REMESAS">
+			<TG_CLASS CLASS="CONFIGURACIÓN_REMESAS"  />
+		</UT>
+			<UT A_FUNC="Configuración" NAME="Pais">
+			<TG_CLASS CLASS="PAÍS"  />
+		</UT>
+
+		<UT A_FUNC="Configuración" NAME="Provincia">
+			<TG_CLASS CLASS="PROVINCIA"  />
+		</UT>
+		<UT A_FUNC="Configuración" NAME="Localidad">
+			<TG_CLASS CLASS="LOCALIDAD"  />
+		</UT>
+
+		<UT A_FUNC="Configuración" NAME="DELEGACIÓN">
+			<TG_CLASS CLASS="DELEGACIÓN"  />
+		</UT>
+		
+		<UT A_FUNC="Configuración" NAME="Unidades_de_medida">
+			<TG_CLASS CLASS="UNIDADES" />
+		</UT>
+		
+		<UT A_FUNC="Configuración" NAME="TIPO_CARGO"  USERROL="administrador">
+			<TG_CLASS CLASS="TIPO_CARGO"  />
+		</UT>	
+
+		<!-- Existe una utask de valores por defecto que varia ligeramnete el nombre para que no colisionen -->
+		<UT A_FUNC="Configuración"  USERROL="administrador"  NAME="VALORES_DEFECTO">
+			<TG_CLASS CLASS="VALOR_POR_DEFECTO"  />
+		</UT>
+				
+		<!--  lo llamamos en plurarl para que no colisiones con el menu de config avanzada -->
+		<UT A_FUNC="Configuración"  USERROL="administrador"  NAME="INFORMES">
+			<TG_CLASS CLASS="INFORME"  />
+		</UT>		
+		
+		<!-- SON LAS BASICAS DE ERP, LAS BASICAS DE SISTEMA ESTAN EN UTASK_CONFIGURACION-->
+				<UT A_FUNC="Configuración" USERROL="administrador"  NAME="Mi_Empresa">
+			<TG_CLASS CLASS="MI_EMPRESA"  />
+		</UT>
+		<UT A_FUNC="Configuración" USERROL="administrador" NAME="IVA">
+			<TG_CLASS CLASS="TIPO_IVA"  />
+		</UT>
+		<!-- <UT A_FUNC="Configuración" USERROL="administrador" NAME="ESTADO_SOLICITUD">
+			<TG_CLASS CLASS="ESTADO_SOLICITUD"  />
+		</UT>-->
+		
+		<UT A_FUNC="Configuración"  USERROL="administrador"  NAME="ÍNDICE">
+			<TG_CLASS CLASS="ÍNDICE"  />
+		</UT>
+		
+		<UT A_FUNC="Configuración"  USERROL="administrador"  NAME="LOG EMAIL">
+			<TG_CLASS CLASS="LOG_EMAIL"  />
+		</UT>
+		<UT A_FUNC="Configuración"  USERROL="administrador"  NAME="LOG SESION">
+			<TG_CLASS CLASS="LOG_SESION"  />
+		</UT>
+		<UT A_FUNC="Configuración"  USERROL="administrador"  NAME="Configuracion Mail">
+			<TG_CLASS CLASS="NOTIFICACIÓN"  />
+		</UT>
+		
+		<UT A_FUNC="Configuración"  USERROL="administrador"  NAME="Parámetros configuración">
+			<TG_CLASS CLASS="PARAMETRO_PROCESADO"  />
+		</UT>
+		<UT A_FUNC="Configuración"  USERROL="administrador"  NAME="Codigos_bancarios_BIC">
+			<TG_CLASS CLASS="CODIFICACION_BANCARIA_BIC"  />
+		</UT>
+		
+	</UTASKS>
+</CONFIG>

@@ -1,0 +1,222 @@
+package dynagent.ruleengine.src.ruler.ERPrules;
+
+
+import org.drools.WorkingMemory;
+import dynagent.ruleengine.src.ruler.Fact;
+import dynagent.ruleengine.src.ruler.FactHierarchy;
+import dynagent.ruleengine.src.ruler.Individual;
+import dynagent.ruleengine.src.ruler.Lock;
+import dynagent.ruleengine.src.ruler.FactAccess;
+import dynagent.ruleengine.src.ruler.FactProp;
+import dynagent.ruleengine.src.ruler.FactProp;
+import dynagent.common.properties.*;
+import dynagent.common.knowledge.IPropertyDef;
+import dynagent.ruleengine.src.ruler.queryDef.QueryAccessDef;
+import dynagent.ruleengine.src.ruler.queryDef.QueryHierarchyDef;
+import dynagent.ruleengine.src.ruler.queryDef.QueryInstanceDef;
+import dynagent.ruleengine.src.ruler.queryDef.QueryPropertyDef;
+import dynagent.ruleengine.meta.api.DocDataModel;
+import dynagent.ruleengine.meta.api.DataModelAdapter;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+global DataModelAdapter dma;
+
+////////////////////////////////////////////////////
+////////////////// QUERYS SOBRE Fact
+//////////////////////////////////////////////////
+query "getInstanceFactsWhereIdoAndIdProp" (int ido, int idProp)
+	
+	f : Fact(IDO == ido, PROP == idProp, deleted == false)
+end
+
+query "getInstanceFactsDeletedWhereIdoAndIdProp" (int ido, int idProp)
+	
+	f : Fact(IDO == ido, PROP == idProp, VALUE == null, OP == null, QMAX == null, QMIN == null)
+end
+
+query "getInstanceFactsWhereIdtoAndIdPropAndIdoNull" (int idto, int idProp)
+	
+	f : Fact(IDO == null, IDTO == idto, PROP == idProp, deleted == false)
+end
+
+query "getInstanceFactsDeletedWhereIdtoAndIdPropAndIdoNull" (int idto, int idProp)
+	
+	f : Fact(IDO == null, IDTO == idto, PROP == idProp, VALUE == null, OP == null, QMAX == null, QMIN == null)
+end
+
+query "getInstanceFactsWhereIdtoAndIdPropNotNullAndIdoNull" (int idto)
+	
+	f : Fact(IDO == null, IDTO == idto, PROP != null, deleted == false)
+end
+
+query "getInstanceFactsDeletedWhereIdtoAndIdPropNotNullAndIdoNull" (int idto)
+	f : Fact(IDO == null, IDTO == idto, PROP != null, VALUE == null, OP == null, QMAX == null, QMIN == null)
+end
+
+query "getInstanceFactsWhereIdo" (int ido)
+	f : Fact(IDO == ido, deleted == false)
+end
+
+query "getInstanceFactsDeletedWhereIdo" (int ido)
+	f : Fact(IDO == ido, VALUE == null, OP == null, QMAX == null, QMIN == null)
+end
+
+query "getInstanceFactsWhereIdtoWithIdoNull" (int idto)
+	f : Fact(IDTO == idto, IDO == null, deleted == false)
+end
+
+query "getInstanceFactsDeletedWhereIdtoWithIdoNull" (int idto)
+	f : Fact(IDTO == idto, IDO == null, VALUE == null, OP == null, QMAX == null, QMIN == null)
+end
+
+query "getInstanceFactsWhereIdoAndPropNotNull" 
+	f : Fact(PROP != null, IDO != null, deleted == false)
+end
+
+query "getInstanceFactsDeletedWhereIdoAndPropNotNull" 
+	f : Fact(PROP != null, IDO != null, VALUE == null, OP == null, QMAX == null, QMIN == null)
+end
+
+query "getInstanceFactsWhereIdtoAndPropNotNullAndIdoNull" 
+	f : Fact(PROP != null, IDO == null, IDTO != null, deleted == false)
+end
+
+query "getInstanceFactsDeletedWhereIdtoAndPropNotNullAndIdoNull" 
+	f : Fact(PROP != null, IDO == null, IDTO != null, VALUE == null, OP == null, QMAX == null, QMIN == null)
+end
+
+query "getInstanceFactsWhereIdtoNotNullAndIdoNull" 
+	f : Fact(IDO == null, IDTO != null, deleted == false)
+end
+
+query "getInstanceFactsDeletedWhereIdtoNotNullAndIdoNull" 
+	f : Fact(IDO == null, IDTO != null, VALUE == null, OP == null, QMAX == null, QMIN == null)
+end
+
+query "getInstanceFactsWherePropAndValueAndValueCls"(int prop, int valuecls, String value)
+	f : Fact(PROP == prop, VALUECLS == valuecls, VALUE == value)
+end
+
+query "getInstanceFactsWhere" (int idto, Integer ido, int prop, String value,Integer valuecls,Double qMin, Double qMax, String op)
+	f : Fact(IDTO == idto, IDO == ido, PROP == prop, VALUE == value,VALUECLS==valuecls, QMIN == qMin, QMAX == qMax, OP == op)
+end
+
+query "getInstanceFactsDeletedOptimized" (int ido, int idProp)
+	f : Fact(IDO == ido, PROP == idProp, VALUE == null, OP == null, QMAX == null, QMIN == null)
+end
+
+query "getInstanceValuesFacts" (int ido, int idProp)
+	f : Fact(IDO == ido, PROP == idProp, OP == null)
+end
+
+query "getInstanceFactsWithIdo" (int ido)
+	f : Fact(IDO == ido)
+end
+
+query "getInstanceFactsWithIdto" (int idto)
+	f : Fact(IDTO == idto)
+end
+
+query "getInstanceFactsWhereValue" (String value)
+       f : Fact(VALUE==value)
+end
+
+query "getInstanceFactsWhereIdoAndIdPropAndValueAndValueCls" (int ido, int idProp, String value, int valueCls)
+	
+	f : Fact(IDO == ido, PROP == idProp, deleted == false,VALUE_s==value, VALUECLS==valueCls)
+end
+
+
+query "getInstanceFactsWhereIdoAndIdPropAndValueNullAndValueCls" (int ido, int idProp, int valueCls)
+	
+	f : Fact(IDO == ido, PROP == idProp, deleted == false, VALUE_s==null, VALUECLS==valueCls)
+end
+
+query "getInstanceFactsWhereValueAndValueCls"(int valuecls, String value)
+	f : Fact(VALUECLS == valuecls, VALUE == value)
+end
+
+
+query "getInstanceFactsWhereName"( String name)
+	f : Fact(CLASSNAME==name)
+end
+
+////////////////////////////////////////////////////
+////////////////// QUERYS SOBRE FactHierarchy
+//////////////////////////////////////////////////
+query "getHierarchyFactsWhereIdtoSup" (int idtoSup)
+	f : FactHierarchy(IDTOSUP == idtoSup)
+end
+
+
+query "getHierarchyFactsWhereIdtoAndIdtoSup" (int idto, int idtoSup)
+	f : FactHierarchy(IDTO == idto, IDTOSUP == idtoSup)
+end
+
+
+query "getHierarchyFactsWhereIdto" (int idto)
+	f : FactHierarchy(IDTO == idto)
+end
+
+////////////////////////////////////////////////////
+////////////////// QUERYS SOBRE FactProp
+//////////////////////////////////////////////////
+query "getPropertyFactsWhereIdProp" (int idProp)
+	f : FactProp(PROP == idProp)
+end
+
+
+query "getPropertyFactsWhereName" (String nameProp)
+	f : FactProp(NAME == nameProp)
+end
+
+query "getAllPropertyFacts" ()
+	f : FactProp()
+end
+
+
+
+
+
+////////////////////////////////////////////////////
+////////////////// QUERYS SOBRE FactAccess
+//////////////////////////////////////////////////
+
+query "getAccessFactsOfProperty"  (int idto, Integer ido, int idProp, String userRol, String user, Integer usertask)
+       f : FactAccess(IDTO==idto||==null, IDO==ido||==null, PROP==idProp||==null,USERROL==userRol||==null,USER==user||==null,TASK==usertask||==null)
+end
+
+query "getAccessFactsIdoRequired"  (int idto, int ido, int idProp, String userRol, String user, Integer usertask)
+       f : FactAccess(IDO==ido, IDTO==idto||==null, PROP==idProp||==null,USERROL==userRol||==null,USER==user||==null,TASK==usertask||==null)
+end
+
+query "getAccessFactsOfPropertyAndIdtoRequired"  (int idto, Integer ido, int idProp, String userRol, String user, Integer usertask)
+       f : FactAccess(IDTO==idto, IDO==ido||==null, PROP==idProp,USERROL==userRol||==null,USER==user||==null,TASK==usertask||==null)
+end
+
+query "getAccessFactsOverObject"  (Integer idto, Integer ido, String userRol, String user, Integer usertask)
+       f : FactAccess(IDTO==idto||==null, IDO==ido||==null, PROP==null, USERROL==userRol||==null,USER==user||==null,TASK==usertask||==null)
+end
+
+query "getAllAccessFacts"  ()
+       f : FactAccess()
+end
+
+////////////////////////////////////////////////////
+////////////////// QUERYS SOBRE Individual
+//////////////////////////////////////////////////
+
+query "getIndividualFact" (int ido)
+       f : Individual(IDO==ido)
+end
+
+////////////////////////////////////////////////////
+////////////////// QUERYS SOBRE Lock
+//////////////////////////////////////////////////
+
+query "getLockFact" (int ido)
+       f : Lock(IDO==ido)
+end
+
+
+

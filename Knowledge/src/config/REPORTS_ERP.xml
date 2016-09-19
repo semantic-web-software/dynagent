@@ -1,0 +1,437 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<CONFIG>
+	<REPORTS PATH="">
+		
+		
+		<RP NAME="apuntes contables" PATH="apuntes_contables" FILE="rp@apuntes_contables" CLASS="APUNTE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="excel" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="fecha inicio del apunte" VALUECLS="DATE" CARMAX="1"/>
+			<PARAM NAME="fecha fin del apunte" VALUECLS="DATE" CARMAX="1"/>
+			<PARAM NAME="fecha creación inicio del apunte" VALUECLS="DATE" CARMAX="1"/>
+			<PARAM NAME="fecha creación fin del apunte" VALUECLS="DATE" CARMAX="1"/>
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMIN="1" CARMAX="1"/>
+		</RP>
+		<RP NAME="produccion" PATH="produccion" FILE="produccion" CLASS="PRODUCCIÓN_MATERIAL" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="produccion" VALUECLS="PRODUCCIÓN_MATERIAL" CARMIN="1"/>		
+			<SUBREPORT NAME="produccion input" FILE="produccion_input"/>	
+		</RP>
+		<RP NAME="produccion encadena" PATH="produccion" FILE="produccion" CLASS="PRODUCCIÓN_CADENA" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="produccion encadena" VALUECLS="PRODUCCIÓN_CADENA" CARMIN="1"/>
+			<SUBREPORT NAME="produccion input" FILE="produccion_input"/>			
+		</RP>
+		<RP NAME="mensaje formato ticket" PATH="mensaje" FILE="rp@mensaje" CLASS="MENSAJE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="mensaje" VALUECLS="MENSAJE"/>
+		</RP>
+		<RP NAME="mensaje generica" PATH="mensaje" FILE="rp@mensaje_generica" CLASS="MENSAJE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="mensaje" VALUECLS="MENSAJE"/>
+		</RP>
+		<RP NAME="cierre de caja" PATH="cierre_de_caja" FILE="rp@cierre_de_caja" CLASS="CAJA" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="caja" VALUECLS="CAJA" CARMAX="1"/>
+			<PARAM NAME="delegacion" VALUECLS="DELEGACIÓN" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE" CARMIN="1" CARMAX="1"/>
+			<SUBREPORT NAME="declaración saldo inicial" FILE="rp@cierre_de_caja_declaracion_saldo_inicial"/>
+			<SUBREPORT NAME="operaciones iniciales" FILE="rp@cierre_de_caja_operaciones_iniciales"/>
+		</RP>
+		<RP NAME="cierre de caja ticket" PATH="cierre_de_caja" FILE="rp@cierre_de_caja_ticket" CLASS="CAJA" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="caja" VALUECLS="CAJA" CARMAX="1"/>
+			<PARAM NAME="delegacion" VALUECLS="DELEGACIÓN" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE" CARMIN="1" CARMAX="1"/>
+		</RP>
+		<RP NAME="cierre de caja ticket generica" PATH="cierre_de_caja" FILE="rp@cierre_de_caja_ticket_generica" CLASS="CAJA" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="caja" VALUECLS="CAJA" CARMAX="1"/>
+			<PARAM NAME="delegacion" VALUECLS="DELEGACIÓN" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE" CARMIN="1" CARMAX="1"/>
+		</RP>		
+		<RP NAME="cierre de caja detallado" PATH="cierre_de_caja" FILE="rp@cierre_de_caja_detallado" CLASS="CAJA" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="caja" VALUECLS="CAJA" CARMAX="1"/>
+			<PARAM NAME="delegacion" VALUECLS="DELEGACIÓN" CARMAX="1"/>			
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE" CARMIN="1" CARMAX="1"/>
+			<SUBREPORT NAME="declaración saldo inicial detallado" FILE="rp@cierre_de_caja_declaracion_saldo_inicial"/>
+			<SUBREPORT NAME="operaciones iniciales detallado" FILE="rp@cierre_de_caja_operaciones_iniciales"/>
+		</RP>
+		<RP NAME="clientes 347" PATH="clientes_347" FILE="clientes_347" CLASS="CLIENTE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+			<PARAM NAME="facturacion minima" VALUECLS="DOUBLE"/>
+		</RP>
+		<RP NAME="clientes 349" PATH="clientes_349" FILE="rp@clientes_349" CLASS="CLIENTE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+		</RP>
+		<RP NAME="comparativa_ventas" PATH="comparativa_ventas" FILE="comparativa_ventas" CLASS="ARTÍCULO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/> la grafica no funciona bien con mas de una empresa 
+			<PARAM NAME="delegacion" VALUECLS="DELEGACIÓN" CARMAX="1"/>
+		</RP>
+		<RP NAME="disponibilidad_recursos" PATH="disponibilidad_recursos" FILE="disponibilidad_recursos" CLASS="DISPONIBILIDAD" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="fecha_inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha_fin" VALUECLS="DATE"/>
+		</RP>
+		
+		<RP NAME="control economico del proyecto" PATH="control_economico_del_proyecto" FILE="rp@control_economico_del_proyecto" CLASS="PROYECTO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="excel">
+			<PARAM NAME="proyecto" VALUECLS="PROYECTO" CARMIN="1" CARMAX="1"/>
+		</RP>
+		 <RP NAME="detalle liquidacion comision" PATH="detalle_liquidacion_comision" FILE="rp@detalle_liquidacion_comision" CLASS="COMISIÓN" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="comercial" VALUECLS="AGENTE_COMERCIAL" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+		</RP> 
+		<RP NAME="etiqueta articulo" PATH="etiqueta_articulo" FILE="rp@etiqueta_articulo" CLASS="ARTÍCULO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="artículo" VALUECLS="ARTÍCULO" CARMIN="1" />
+		</RP>
+		<RP NAME="traspaso_almacen" PATH="traspaso_almacen" FILE="traspaso_almacen" CLASS="TRASPASO_ALMACENES" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="traspaso" VALUECLS="TRASPASO_ALMACENES" CARMIN="1" />
+		</RP>
+		<RP NAME="entrada mercancia" PATH="entrada_mercancia" FILE="entrada_mercancia" CLASS="ENTRADA_PRODUCTOS_ALMACÉN" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="traspaso" VALUECLS="ENTRADA_PRODUCTOS_ALMACÉN" CARMIN="1" />
+		</RP>
+		<RP NAME="traspaso_almacen_ticket" PATH="traspaso_almacen_ticket" FILE="traspaso_almacen_ticket" CLASS="TRASPASO_ALMACENES" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="traspaso" VALUECLS="TRASPASO_ALMACENES" CARMIN="1" />
+		</RP>
+		<RP NAME="traspaso_almacen_ticket_generica" PATH="traspaso_almacen_ticket" FILE="traspaso_almacen_ticket_generica" CLASS="TRASPASO_ALMACENES" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="traspaso" VALUECLS="TRASPASO_ALMACENES" CARMIN="1" />
+		</RP>		
+		<RP NAME="pedido_traspaso_almacen" PATH="pedido_traspaso_almacen" FILE="pedido_traspaso_almacen" CLASS="PEDIDO_TRASPASO_ALMACENES" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="pedido" VALUECLS="PEDIDO_TRASPASO_ALMACENES" CARMIN="1" />
+		</RP>	
+		<RP NAME="pedido_traspaso_ticket" PATH="pedido_traspaso_ticket" FILE="pedido_traspaso_ticket" CLASS="PEDIDO_TRASPASO_ALMACENES" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="pedido" VALUECLS="PEDIDO_TRASPASO_ALMACENES" CARMIN="1" />
+		</RP>		
+		<RP NAME="pedido_traspaso_ticket_generica" PATH="pedido_traspaso_ticket" FILE="pedido_traspaso_ticket_generica" CLASS="PEDIDO_TRASPASO_ALMACENES" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="pedido" VALUECLS="PEDIDO_TRASPASO_ALMACENES" CARMIN="1" />
+		</RP>			
+		<RP NAME="etiqueta articulo entrada continua" PATH="etiqueta_articulo_continua" FILE="etiqueta_articulo_continua62x29" CLASS="ENTRADA_ARTÍCULOS" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="entrada mercancía" VALUECLS="ENTRADA_ARTÍCULOS"/>			
+			<PARAM NAME="fecha inicio" VALUECLS="DATE"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+		</RP>		
+		<RP NAME="etiqueta articulo stock continua" PATH="etiqueta_articulo_continua" FILE="etiqueta_articulo_continua62x29" CLASS="STOCK" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="stock" VALUECLS="STOCK"/>			
+			<PARAM NAME="fecha inicio" VALUECLS="DATE"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+		</RP>
+		<RP NAME="etiqueta entradas A4 70x34" PATH="etiqueta_entradas_A4_70x34" FILE="etiqueta_entradas_A4_70x34" CLASS="ENTRADA_ARTÍCULOS" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="entrada mercancía" VALUECLS="ENTRADA_ARTÍCULOS"/>
+			<!-- Lo quitamos porque es asignado por defecto el documento en vez del otro parametro <PARAM NAME="excluir entrada mercancía" VALUECLS="ENTRADA_ARTÍCULOS"/>-->
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" />
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+		</RP>
+		<RP NAME="etiqueta cliente 70x34" PATH="etiqueta_cliente_70x34" FILE="etiqueta_cliente_70x34" CLASS="CLIENTE_BASE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="cliente" VALUECLS="CLIENTE_BASE"/>
+			<PARAM NAME="provincia" VALUECLS="PROVINCIA"/>
+			<PARAM NAME="localidad" VALUECLS="LOCALIDAD"/>
+			<PARAM NAME="grupo" VALUECLS="GRUPO_CLIENTE"/>
+			<PARAM NAME="potenciales" VALUECLS="BOOLEAN"  CARMAX="1"/>
+		</RP>
+		<RP NAME="etiqueta envio" PATH="etiqueta_envio" FILE="rp@etiqueta_envio" CLASS="CLIENTE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="cliente" VALUECLS="CLIENTE" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="bultos" VALUECLS="INT" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="portes pagados" VALUECLS="BOOLEAN" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="observaciones" VALUECLS="MEMO"/>
+		</RP>
+<!-- 		<RP NAME="etiqueta lote" PATH="etiqueta_lote" FILE="rp@etiqueta_lote" CLASS="ARTÍCULO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="artículo" VALUECLS="ARTÍCULO" CARMIN="1"/>
+		</RP> -->
+		<RP NAME="justificante_cobro" PATH="justificante_cobro" FILE="justificante_cobro" CLASS="COBRO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">			
+			<PARAM NAME="cobro" VALUECLS="COBRO" CARMIN="1" />
+		</RP>
+		
+		<RP NAME="justificante_cobro_ticket" PATH="justificante_cobro" FILE="justificante_cobro_ticket" CLASS="COBRO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">			
+			<PARAM NAME="cobro" VALUECLS="COBRO" CARMIN="1" />
+		</RP>
+		
+		<RP NAME="extractos de cuentas" PATH="extractos_de_cuentas" FILE="rp@extractos_de_cuentas" CLASS="CLIENTE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="cliente" VALUECLS="CLIENTE" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+		</RP>
+		<RP NAME="extractos de cuentas vencimiento" PATH="extractos_de_cuentas" FILE="rp@extractos_de_cuentas" CLASS="VENCIMIENTO_DE_COBRO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="cliente" VALUECLS="CLIENTE" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="vencimiento" VALUECLS="VENCIMIENTO_DE_COBRO" CARMAX="1"/>						
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+		</RP>		
+		<RP NAME="documento_comercial_" PATH="documento_comercial" FILE="documento_comercial" CLASS="DOCUMENTO_COMERCIAL" DIRECT_IMPRESION="FALSE" PREVIEW="TRUE" DISPLAY_PRINT_DIALOG="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL">
+			<PARAM NAME="documento" VALUECLS="DOCUMENTO_COMERCIAL" CARMIN="1"/>
+			<PARAM NAME="ordenar lineas por campo" VALUECLS="ORDEN_LÍNEA" CARMAX="1"/>
+			<PARAM NAME="orden linea" VALUECLS="STRING" CARMAX="1"/>
+			<PARAM NAME="documento array" VALUECLS="STRING" CARMAX="1"/>		
+			<PARAM NAME="mostrar fotos" VALUECLS="BOOLEAN" CARMIN="1" CARMAX="1" DEFVAL="true"/>
+			<PARAM NAME="valorado" VALUECLS="BOOLEAN" CARMIN="1" CARMAX="1" DEFVAL="true"/>
+			<PARAM NAME="idioma" VALUECLS="IDIOMAS" CARMAX="1" DEFVAL="castellano"/>
+			<PARAM NAME="agrupar por referencia producto" VALUECLS="BOOLEAN" CARMIN="1" CARMAX="1" DEFVAL="false"/>
+			<SUBREPORT NAME="linea_comercial" FILE="linea_comercial"/>
+			<SUBREPORT NAME="documento_descuentos_globales" FILE="documento_descuentos_globales"/>
+			<SUBREPORT NAME="documento_cargos" FILE="documento_cargos"/>
+			<SUBREPORT NAME="documento_forma_pago" FILE="documento_forma_pago"/>
+			<SUBREPORT NAME="documento_desglose_iva" FILE="documento_desglose_iva"/>
+		</RP>		
+		<RP NAME="factura ticket" PATH="factura_ticket" FILE="rp@factura_ticket" CLASS="FACTURA_A_CLIENTE" DIRECT_IMPRESION="FALSE" PREVIEW="TRUE" DISPLAY_PRINT_DIALOG="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL">
+			<PARAM NAME="factura cliente" VALUECLS="FACTURA_A_CLIENTE" CARMIN="1"/>
+			<PARAM NAME="ordenar lineas por campo" VALUECLS="ORDEN_LÍNEA" CARMAX="1"/>
+			<PARAM NAME="orden linea" VALUECLS="STRING" CARMAX="1"/>	
+			<SUBREPORT NAME="linea ticket" FILE="rp@factura_ticket_linea"/>
+			<SUBREPORT NAME="descuentos ticket" FILE="rp@factura_ticket_descuentos_globales"/>
+			<SUBREPORT NAME="cargos ticket" FILE="rp@factura_ticket_cargos"/>
+			<SUBREPORT NAME="iva ticket" FILE="rp@factura_ticket_desglose_iva"/>
+		</RP>		
+		<RP NAME="facturacion recibida" PATH="facturacion_recibida" FILE="facturas_recibidas" CLASS="FACTURA_PROVEEDOR" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+		</RP>
+		<RP NAME="facturas emitidas" PATH="facturas_emitidas" FILE="facturas_emitidas" CLASS="FACTURA_A_CLIENTE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+			<PARAM NAME="serie inicio" VALUECLS="STRING"/>
+			<PARAM NAME="serie fin" VALUECLS="STRING"/>
+			<PARAM NAME="cliente" VALUECLS="CLIENTE" CARMAX="1"/>
+			<PARAM NAME="comercial" VALUECLS="AGENTE_COMERCIAL" CARMAX="1"/>
+			<PARAM NAME="grupo cliente" VALUECLS="GRUPO_CLIENTE" CARMAX="1"/>
+			<SUBREPORT NAME="fe datos personales" FILE="facturas_emitidas_datos_personales"/>
+		</RP>
+		<RP NAME="listado_albaranes" PATH="listado_albaranes" FILE="listado_albaranes" CLASS="ALBARÁN_CLIENTE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+		</RP>
+		<RP NAME="facturacion venta resumen" PATH="facturacion_resumen" FILE="rp@facturacion_resumen" CLASS="FACTURA_A_CLIENTE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+		</RP>
+		<RP NAME="facturacion compra resumen" PATH="facturacion_resumen" FILE="rp@facturacion_resumen" CLASS="FACTURA_PROVEEDOR" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+		</RP>
+		<RP NAME="financiacion" PATH="financiacion" FILE="rp@financiacion" CLASS="PROYECTO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="EXCEL">
+			<PARAM NAME="proyecto" VALUECLS="PROYECTO" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="revisión inicial" VALUECLS="INT" CARMIN="1" CARMAX="1"/>
+		</RP>
+		<RP NAME="gantt" PATH="gantt" FILE="rp@gantt" CLASS="PROYECTO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF">
+			<PARAM NAME="proyecto" VALUECLS="PROYECTO" CARMAX="1"/>
+			<PARAM NAME="cliente" VALUECLS="CLIENTE" CARMAX="1"/>
+			<PARAM NAME="cliente potencial" VALUECLS="CLIENTE_POTENCIAL" CARMAX="1"/>
+			<PARAM NAME="inicio" VALUECLS="DATE" CARMAX="1"/>
+			<PARAM NAME="fin" VALUECLS="DATE" CARMAX="1"/>
+			<!--<PARAM NAME="revisión inicial" VALUECLS="INT" CARMIN="1" CARMAX="1"/>-->
+		</RP>
+		<!-- este report para ramsons es historico entradas de mercancia ampliado-->
+		<RP NAME="historico entradas de mercancia" PATH="historico_entradas_de_mercancia" FILE="rp@historico_entradas_de_mercancia" CLASS="ARTÍCULO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+			<PARAM NAME="familia" VALUECLS="FAMILIA"/>
+			<PARAM NAME="subfamilia" VALUECLS="SUBFAMILIA"/>
+			<PARAM NAME="marca" VALUECLS="MARCA"/>
+			<PARAM NAME="artículo" VALUECLS="ARTÍCULO"/>
+			<PARAM NAME="proveedor" VALUECLS="PROVEEDOR" CARMAX="1"/>	
+			<PARAM NAME="entrada mercancía" VALUECLS="ENTRADA_ARTÍCULOS"/>
+			<PARAM NAME="excluir entrada mercancía" VALUECLS="ENTRADA_ARTÍCULOS"/>				
+			<!--<PARAM NAME="tarifa" VALUECLS="TARIFA_PRECIO" CARMAX="1"/>-->
+		<!-- para poner GENERATE_EXCEL="TRUE" hay que hacer un subreport para las líneas -->
+<!-- 		<SUBREPORT NAME="línea artículos" FILE="rp@entradas_de_mercancia_linea_articulos" GENERATE_EXCEL="TRUE"/> -->
+		</RP>
+		<RP NAME="historico ventas agrupado" PATH="historico_ventas_agrupado" FILE="rp@historico_ventas_agrupado" CLASS="FACTURA_A_CLIENTE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+			<PARAM NAME="serie inicio" VALUECLS="STRING"/>
+			<PARAM NAME="serie fin" VALUECLS="STRING"/>
+			<PARAM NAME="cliente" VALUECLS="CLIENTE" CARMAX="1"/>
+			<PARAM NAME="comercial" VALUECLS="AGENTE_COMERCIAL" CARMAX="1"/>
+			<PARAM NAME="grupo cliente" VALUECLS="GRUPO_CLIENTE" CARMAX="1"/>
+			<SUBREPORT NAME="hva datos personales" FILE="rp@historico_ventas_agrupado_datos_personales"/>
+<!-- 		<SUBREPORT NAME="desglose iva" FILE="rp@historico_ventas_agrupado_desglose_iva"/> -->
+		</RP>
+		<RP NAME="historico_ventas_por_productos" PATH="historico_ventas_por_productos" FILE="historico_ventas_por_productos" CLASS="ARTÍCULO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="cliente" VALUECLS="CLIENTE" CARMAX="1"/>
+			<PARAM NAME="comercial" VALUECLS="AGENTE_COMERCIAL" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+			<PARAM NAME="serie inicio" VALUECLS="STRING"/>
+			<PARAM NAME="serie fin" VALUECLS="STRING"/>
+			<PARAM NAME="familia" VALUECLS="FAMILIA"/>
+			<PARAM NAME="subfamilia" VALUECLS="SUBFAMILIA"/>
+			<PARAM NAME="marca" VALUECLS="MARCA"/>			
+			<PARAM NAME="artículo" VALUECLS="ARTÍCULO"/>
+			<PARAM NAME="delegacion" VALUECLS="DELEGACIÓN"/>
+			<SUBREPORT NAME="historico_ventas_por_productos_grafica" FILE="historico_ventas_por_productos_grafica"/>
+		</RP>
+		<RP NAME="huecos codificacion facturas" PATH="huecos_codificacion_facturas" FILE="rp@huecos_codificacion_facturas" CLASS="FACTURA_A_CLIENTE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+		</RP>
+		<RP NAME="inventario" PATH="inventario" FILE="inventario" CLASS="ARTÍCULO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="articulo" VALUECLS="ARTÍCULO"/>
+			<PARAM NAME="familia" VALUECLS="FAMILIA"/>
+			<PARAM NAME="subfamilia" VALUECLS="SUBFAMILIA"/>
+			<PARAM NAME="marca" VALUECLS="MARCA"/>
+			<PARAM NAME="almacen" VALUECLS="ALMACÉN" CARMIN="1" CARMAX="1"/>						
+	 		<PARAM NAME="solo incompletos" VALUECLS="BOOLEAN"  CARMAX="1"/>
+	 		<PARAM NAME="solo sin fotos" VALUECLS="BOOLEAN"  CARMAX="1"/>
+	 		<PARAM NAME="stocks a 0" VALUECLS="BOOLEAN"  CARMAX="1"/>
+	 		<PARAM NAME="ult compra inicio" VALUECLS="DATE" CARMAX="1"/>
+	 		<PARAM NAME="ult compra fin" VALUECLS="DATE" CARMAX="1"/>
+	 		<PARAM NAME="ult venta inicio" VALUECLS="DATE" CARMAX="1"/>
+	 		<PARAM NAME="ult venta fin" VALUECLS="DATE" CARMAX="1"/>
+		</RP>
+		
+		<RP NAME="listado de clientes" PATH="listado_de_clientes" FILE="rp@listado_de_clientes" CLASS="CLIENTE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="activos" VALUECLS="BOOLEAN" CARMAX="1" DEFVAL="true"/>
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="comercial" VALUECLS="AGENTE_COMERCIAL" CARMAX="1"/>
+		</RP>
+		<RP NAME="listado_de_recibos_pendientes_de_cobro" PATH="listado_de_recibos_pendientes_de_cobro" FILE="listado_de_recibos_pendientes_de_cobro" CLASS="VENCIMIENTO_DE_COBRO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="cliente" VALUECLS="CLIENTE" CARMAX="1"/>
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="comercial" VALUECLS="AGENTE_COMERCIAL" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+		</RP>
+		<RP NAME="recibos_pendientes_de_cobro" PATH="listado_de_recibos_pendientes_de_cobro" FILE="listado_de_recibos_pendientes_de_cobro" CLASS="CLIENTE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="cliente" VALUECLS="CLIENTE" CARMAX="1"/>
+			<PARAM NAME="almacen" VALUECLS="ALMACÉN" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="comercial" VALUECLS="AGENTE_COMERCIAL" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+		</RP>
+		<RP NAME="movimientos_mercancia" PATH="movimientos_mercancia" FILE="movimientos_mercancia" CLASS="ARTÍCULO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="artículo" VALUECLS="ARTÍCULO"/>
+			<PARAM NAME="lote" VALUECLS="LOTE"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+			<PARAM NAME="almacen" VALUECLS="ALMACÉN" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="talla" VALUECLS="TALLA"/>
+			<PARAM NAME="color" VALUECLS="COLOR"/>
+		</RP>
+		<RP NAME="pendiente de envio" PATH="pendiente_de_envio" FILE="pendiente_de_envio" CLASS="PEDIDO_DE_CLIENTE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL">
+			<PARAM NAME="pedido cliente" VALUECLS="PEDIDO_DE_CLIENTE" CARMIN="1"/>
+			<SUBREPORT NAME="linea_pedido" FILE="linea_pedido"/>
+		</RP>
+		<RP NAME="recibo" PATH="recibo" FILE="recibo" CLASS="VENCIMIENTO_DE_COBRO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL">
+			<PARAM NAME="cliente" VALUECLS="CLIENTE"/>
+			<PARAM NAME="factura cliente" VALUECLS="FACTURA_A_CLIENTE"/>
+			<PARAM NAME="vencimiento cobro" VALUECLS="VENCIMIENTO_DE_COBRO"/>
+			<PARAM NAME="cláusulas" VALUECLS="MEMO"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+		</RP>
+		<!--<RP NAME="recursos en proyectos" PATH="recursos_en_proyectos" FILE="rp@recursos_en_proyectos" CLASS="PROYECTO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="excel"/>-->
+		<RP NAME="tarifa_precios" PATH="tarifa_precios" FILE="tarifa_precios" CLASS="ARTÍCULO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMIN="1" CARMAX="1"/>
+			<PARAM NAME="familia" VALUECLS="FAMILIA"/>
+			<PARAM NAME="subfamilia" VALUECLS="SUBFAMILIA"/>
+			<PARAM NAME="marca" VALUECLS="MARCA"/>
+			<PARAM NAME="stock minimo" VALUECLS="DOUBLE"/>
+			<PARAM NAME="tarifa" VALUECLS="TARIFA_PRECIO" CARMAX="1"/>
+			<PARAM NAME="destacar_productos_consumidos_este_cliente" VALUECLS="BOOLEAN"  CARMAX="1"/>
+			<PARAM NAME="destacar_productos_consumidos_todos_clientes" VALUECLS="BOOLEAN"  CARMAX="1"/>
+			<PARAM NAME="destacar_promocionados" VALUECLS="BOOLEAN"  CARMAX="1"/>
+			<PARAM NAME="condiciones comerciales" VALUECLS="MEMO"/>
+			<PARAM NAME="cliente" VALUECLS="CLIENTE"/>
+			<SUBREPORT NAME="tarifa_datos_cliente" FILE="tarifa_datos_cliente"/>
+		</RP>
+		<RP NAME="ticket_venta_" PATH="ticket_venta" FILE="ticket_venta_" CLASS="TICKET_VENTA" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" POSTPRINT="27,112,0,64,-16">
+			<PARAM NAME="ticket venta" VALUECLS="TICKET_VENTA" CARMIN="1"/>
+			<PARAM NAME="regalo" VALUECLS="BOOLEAN"  CARMAX="1"/>
+			<SUBREPORT NAME="linea_ticket" FILE="linea_ticket"/>
+			<SUBREPORT NAME="cobro_ticket" FILE="cobro_ticket"/>
+		</RP>
+		<RP NAME="ticket_venta_generica" PATH="ticket_venta" FILE="ticket_venta_generica" CLASS="TICKET_VENTA" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" POSTPRINT="27,112,0,64,-16">
+			<PARAM NAME="ticket venta" VALUECLS="TICKET_VENTA" CARMIN="1"/>
+			<PARAM NAME="regalo" VALUECLS="BOOLEAN"  CARMAX="1"/>
+			<SUBREPORT NAME="linea_ticket_generica" FILE="linea_ticket_generica"/>
+			<SUBREPORT NAME="cobro_ticket_generica" FILE="cobro_ticket_generica"/>
+		</RP>		
+		<RP NAME="tickets por fabricante" PATH="tickets_por_fabricante" FILE="rp@tickets_por_fabricante" CLASS="TICKET_VENTA" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL">			
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+			<PARAM NAME="delegación" VALUECLS="DELEGACIÓN" CARMAX="1"/>
+		</RP>
+		<RP NAME="tickets por categoria" PATH="tickets_por_categoria" FILE="rp@tickets_por_categoria" CLASS="TICKET_VENTA" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL">			
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+			<PARAM NAME="delegación" VALUECLS="DELEGACIÓN" CARMAX="1"/>
+		</RP>
+		<!-- <RP NAME="traspaso entre almacenes" PATH="traspaso_entre_almacenes" FILE="rp@traspaso_entre_almacenes" CLASS="TRASPASO_ALMACENES" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="traspaso" VALUECLS="TRASPASO_ALMACENES" CARMIN="1"/>
+		</RP>-->		
+		<RP NAME="trazabilidad" PATH="trazabilidad" FILE="trazabilidad" CLASS="LOTE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="lote" VALUECLS="LOTE" CARMAX="1"/>
+			<PARAM NAME="dias_solape_seguridad" VALUECLS="INT" CARMAX="1"/>			
+		</RP>
+		<RP NAME="ventas por clientes" PATH="ventas_por_clientes" FILE="rp@ventas_por_clientes" CLASS="CLIENTE" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="comercial" VALUECLS="AGENTE_COMERCIAL" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+			<PARAM NAME="serie inicio" VALUECLS="STRING"/>
+			<PARAM NAME="serie fin" VALUECLS="STRING"/>
+			<PARAM NAME="grupo cliente" VALUECLS="GRUPO_CLIENTE" CARMAX="1"/>
+			<PARAM NAME="cliente" VALUECLS="CLIENTE" />			
+		</RP>
+		<RP NAME="ventas por comerciales" PATH="ventas_por_comerciales" FILE="rp@ventas_por_comerciales" CLASS="AGENTE_COMERCIAL" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="delegación" VALUECLS="DELEGACIÓN" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+			<PARAM NAME="serie inicio" VALUECLS="STRING"/>
+			<PARAM NAME="serie fin" VALUECLS="STRING"/>
+		</RP>
+		<RP NAME="ventas_por_delegaciones" PATH="ventas_por_delegaciones" FILE="ventas_por_delegaciones" CLASS="DELEGACIÓN" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="delegacion" VALUECLS="DELEGACIÓN" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+			<PARAM NAME="serie inicio" VALUECLS="STRING"/>
+			<PARAM NAME="serie fin" VALUECLS="STRING"/>
+		</RP>
+		<RP NAME="ventas_por_productos" PATH="ventas_por_productos" FILE="ventas_por_productos" CLASS="ARTÍCULO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">
+			<PARAM NAME="empresa" VALUECLS="MI_EMPRESA" CARMAX="1"/>
+			<PARAM NAME="categoria" VALUECLS="CATEGORIA_ARTICULO"/>
+			<PARAM NAME="cliente" VALUECLS="CLIENTE" CARMAX="1"/>
+			<PARAM NAME="comercial" VALUECLS="AGENTE_COMERCIAL" CARMAX="1"/>
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+			<PARAM NAME="serie inicio" VALUECLS="STRING"/>
+			<PARAM NAME="serie fin" VALUECLS="STRING"/>
+			<PARAM NAME="familia" VALUECLS="FAMILIA"/>
+			<PARAM NAME="subfamilia" VALUECLS="SUBFAMILIA"/>
+			<PARAM NAME="marca" VALUECLS="MARCA"/>			
+			<PARAM NAME="artículo" VALUECLS="ARTÍCULO"/>
+			<PARAM NAME="delegacion" VALUECLS="DELEGACIÓN" CARMAX="1"/>
+		<!-- para poner GENERATE_EXCEL="TRUE" hay que hacer un subreport para las líneas -->
+<!-- 		<SUBREPORT NAME="línea artículos" FILE="rp@ventas_por_productos_linea_articulos" GENERATE_EXCEL="TRUE"/> -->
+<!--		<SUBREPORT NAME="cargos" FILE="rp@ventas_por_productos_cargos"/>
+			<SUBREPORT NAME="iva recargo" FILE="rp@ventas_por_productos_iva_recargo"/>-->
+		</RP>
+		<RP NAME="compras_por_productos" PATH="compras_por_productos" FILE="compras_por_productos" CLASS="ARTÍCULO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE">			
+			<PARAM NAME="proveedor" VALUECLS="PROVEEDOR" CARMAX="1"/>			
+			<PARAM NAME="fecha inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha fin" VALUECLS="DATE"/>
+			<PARAM NAME="categoria" VALUECLS="CATEGORIA_ARTICULO"/>
+			<PARAM NAME="familia" VALUECLS="FAMILIA"/>
+			<PARAM NAME="subfamilia" VALUECLS="SUBFAMILIA"/>
+			<PARAM NAME="marca" VALUECLS="MARCA"/>					
+		</RP>
+		<RP NAME="stock delegacion" PATH="stock_delegacion" FILE="rp@stock_delegacion" CLASS="ARTÍCULO" PREVIEW="TRUE" PRINT_CONFIRMATION="TRUE" FORMAT="PDF;RTF;EXCEL" GENERATE_EXCEL="TRUE">
+			<PARAM NAME="fecha_inicio" VALUECLS="DATE" CARMIN="1"/>
+			<PARAM NAME="fecha_fin" VALUECLS="DATE"/>
+			<PARAM NAME="familia" VALUECLS="FAMILIA"/>
+			<PARAM NAME="subfamilia" VALUECLS="SUBFAMILIA"/>
+			<PARAM NAME="marca" VALUECLS="MARCA"/>						
+		</RP>		
+	</REPORTS>
+</CONFIG>

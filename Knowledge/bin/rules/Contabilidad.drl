@@ -1,0 +1,2253 @@
+package dynagent.ruleengine.src.ruler.ERPrules
+import dynagent.common.basicobjects.*;
+
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import java.io.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.*;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.text.DecimalFormat;
+global DataModelAdapter dma;
+
+/**************************************************************************************************************************************
+**														FUNCIONES AUXILIARES 									 			         **
+***************************************************************************************************************************************/
+
+function int getEjercicio(Date fecha){
+	Calendar c = Calendar.getInstance();
+	c.setTime(fecha);
+	return c.get(Calendar.YEAR);
+}
+
+
+function String construyeRdnCuenta(String nombreMiEmpresa, int numeroDigitos, int codigoCuenta, String detalleCuenta){
+	String rdnCuenta = "[" + nombreMiEmpresa + "] " + generarCuentaEspecifica(numeroDigitos, codigoCuenta, detalleCuenta);
+	return rdnCuenta;
+}
+
+
+/*
+	Permite pasar un porcentaje de IVA o de RE y calcula automaticamente la notación que tendrá el detalle de la cuenta.
+	He respetado la lógica que implementó Dario al respecto.
+*/
+function String getDetalleCuentaSegunPorcentaje( int numDigitos, boolean esRecargo, Double porcentaje){
+
+//Si existe un individuo IVA con recargo y otro sin recargo, de mismo porcentaje, por defecto ambos van a apuntar al mismo individuo "cuenta_iva", es decir,
+//no se separan, tendria el usuario que crear a mano las subcuentas. (ya el dinero se separa en cuenta de iva y de recargo 
+
+	int digitosSubc=numDigitos-3;
+	
+	Integer parteEntera = porcentaje.intValue();	
+	String ceros = "0";
+	Double parteDecimal = porcentaje - parteEntera;	
+	
+	String detalleCuenta=null;		
+	String sParteEntera = String.valueOf(parteEntera);
+			
+	if(parteDecimal == 0D){ // Es un entero
+		sParteEntera += ceros;
+		detalleCuenta= sParteEntera;		
+	}else{ //Es un decimal
+		 detalleCuenta = (parteDecimal.toString()).substring(2,3);		
+		if(parteEntera > 0)
+			detalleCuenta = ""+parteEntera + detalleCuenta;
+	}
+	Integer result=Integer.valueOf(detalleCuenta); 
+	if(esRecargo && (digitosSubc==3||digitosSubc==4)){
+		System.err.println("RECARGO "+digitosSubc+" "+parteEntera);
+		result=result*100;
+	}
+	
+	if(esRecargo && digitosSubc==5){
+		System.err.println("RECARGO "+digitosSubc+" "+parteEntera);
+		result=result*1000;
+	}	
+	//System.err.println("\n --- DEBUG DEBUG FIN FUNCION getDetalleCuentaSegunPorcentaje, detalleCuenta:"+detalleCuenta);
+	return result.toString();
+}
+
+
+
+function Domain getCuentaFromServer(DataModelAdapter dma, Integer codigo_cuenta, int numero_digitos, String  sDetalle, Value miEmpresa){
+	Domain cuenta=null;
+	
+	Integer idoCuenta = null;
+	
+	IntValue detalleEnMotor = null;
+	String detalleEnMotor_s = null;
+	Boolean encontrado = false;	
+	
+	if(sDetalle.length()+(""+codigo_cuenta).length()<numero_digitos){
+		dma.printRule("rellenar subcuenta "+sDetalle);
+		String relleno="00000000000000000";	
+		int pos=numero_digitos - ((""+codigo_cuenta).length()+sDetalle.length());	
+		sDetalle =relleno.substring(0,Math.max(0,pos))+sDetalle;
+		dma.printRule("rellenada queda "+sDetalle);
+	}
+	
+	HashMap<String, Value> propiedadValor = new HashMap<String, Value>();
+	propiedadValor.put(Constants.prop_codigo_cuenta, new IntValue(codigo_cuenta));
+	propiedadValor.put("mi_empresa", miEmpresa); 
+	propiedadValor.put("detalle", new StringValue(sDetalle));
+	
+	
+	instance filtro = dma.buildInstanceWith("CUENTA_CONTABLE", propiedadValor, null, null, null);
+	
+	ArrayList<ResultQuery> rqCuentas = dma.serverGetValuesWhichSatisfaceFilter(filtro, "detalle");
+	Integer idtoCuenta = dma.getIdClass("CUENTA_CONTABLE");
+	if(rqCuentas.size() >= 1){
+		for (Iterator it = rqCuentas.iterator(); it.hasNext() && !encontrado;) {
+			ResultQuery resultCuenta = (ResultQuery)it.next();
+			idoCuenta = resultCuenta.getIdo();
+			cuenta= new Domain(idoCuenta, idtoCuenta);			
+		}
+	}
+	
+	if(cuenta!=null){
+		//lo cargamos en motor si aún no está.
+		
+		String rdn=dma.getValue(cuenta,"rdn").getValue_s();
+		dma.printRule("\n funcion getCuentaFromServer codigo_cuenta:"+codigo_cuenta+"  detalle:"+sDetalle+"  miEmpresa:"+miEmpresa+"\n encuentra cuenta rdn="+rdn);
+	}
+		return cuenta;
+}
+
+
+function Domain creaCuentaContable(DataModelAdapter dma, Integer codigo_cuenta, String  detalle, ObjectValue miEmpresa, int numeroDigitos){
+	dma.printRule("creando cuenta "+codigo_cuenta+" "+detalle);
+	Domain domainCuenta = dma.creaIndividualOfClass("CUENTA_CONTABLE");
+	dma.setValue(domainCuenta, Constants.prop_codigo_cuenta, new IntValue(codigo_cuenta));
+	dma.setValue(domainCuenta, "detalle", new StringValue(detalle));
+	dma.setValue(domainCuenta, "mi_empresa", miEmpresa);
+	
+	String nombreMiEmpresa=dma.getValue(new Domain(miEmpresa),"rdn").getValue_s();
+	String rdnCuenta =construyeRdnCuenta(nombreMiEmpresa , numeroDigitos, codigo_cuenta, detalle);
+	dma.setValue(domainCuenta, "rdn", new StringValue(rdnCuenta));
+	return domainCuenta;
+}
+
+
+/*
+	Función auxiliar que se usa para generar los RDN's de las cuentas contables.
+*/
+function String generarCuentaEspecifica(Integer numero_digitos_cuenta, Integer codigoCuenta, Object codigoSubCuenta){
+	
+	String cuentaEspecifica =  codigoCuenta.toString() ;
+	
+	
+	if(codigoSubCuenta == null){
+		codigoSubCuenta="";
+	}
+		
+	String relleno="00000000000000000";
+	String detalle=codigoSubCuenta.toString();	
+	if(	cuentaEspecifica.length()+ detalle.length()>numero_digitos_cuenta ){
+		detalle=detalle.substring(0,detalle.length()-(cuentaEspecifica.length()+detalle.length()-numero_digitos_cuenta));
+	}
+	int pos=numero_digitos_cuenta - cuentaEspecifica.length()-detalle.length();
+	
+	cuentaEspecifica =cuentaEspecifica +"."+relleno.substring(0,Math.max(0,pos))+detalle;
+	System.out.println("subcuenta no nula "+cuentaEspecifica.length()+" "+detalle.length()+" "+pos+" "+detalle+" "+cuentaEspecifica);
+	
+	return cuentaEspecifica;
+}
+
+/**************************************************************************************************************************************
+**														REGLAS DE LIMPIEZA										 			         **
+***************************************************************************************************************************************/
+
+/*
+	Se encarga de eliminar los apuntes y el asiento de las Facturas (ventas / compras)
+	que se han eliminado del desglose de IVA del documento.
+*/
+
+/*
+rule "[LIMPIEZA] BORRADO DE FACTURAS"
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(clase:CLASS, CLASSSUP==Constants.className_documento_contable)
+		Individual(idoDocumento:IDO, idtoDocumento:IDTO, CLASSNAME==clase, STATE==Constants.INDIVIDUAL_STATE_DELETED)
+		ObjValue(IDO==idoDocumento, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null, idtoAsiento:VALUECLS, objAsiento:OBJECTVALUE)
+		IndividualState(IDO==idoAsiento, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	then
+		dma.printRule("[CONTABILIDAD]=================[LIMPIEZA] BORRADO DE FACTURAS");	
+		dma.delValue(idoDocumento, idtoDocumento, "asiento", objAsiento);
+		dma.deleteObject(idoAsiento, idtoAsiento);
+end
+*/	
+
+rule "[LIMPIEZA] APUNTE NULO"
+	agenda-group "bddrules"
+	when
+				
+		ObjValue(idoAsiento:IDO,idtoAsiento:IDTO,PROPNAME=="apuntes",idoApunte:IDOVALUE!=null,idtoApunte:VALUECLS,ovApunte:OBJECTVALUE)
+		not(DatValue(IDO==idoApunte,PROPNAME=="debe"||=="haber"||=="base",QMIN!=null&&!=0))
+	then
+		dma.printRule("[LIMPIEZA] APUNTE NULO");		
+		dma.delValue(idoAsiento, idtoAsiento, "apuntes", ovApunte);	
+		dma.deleteObject(idoApunte, idtoApunte);
+end	
+
+rule "[LIMPIEZA] ASIENTO NULO"
+	agenda-group "bddrules"
+	when
+		
+		FactHierarchy(idtoASiento:IDTO, CLASSSUP=="ASIENTO")
+		Individual(IDTO==idtoASiento,idoAsiento:IDO,STATE!=Constants.INDIVIDUAL_STATE_DELETED)
+		not(ObjValue(IDO==idoAsiento,PROPNAME=="apuntes",IDOVALUE!=null))
+	then
+		dma.printRule("[LIMPIEZA] ASIENTO NULO");					
+		dma.deleteObject(idoAsiento, idtoASiento);
+end	
+
+rule "[LIMPIEZA] ASIENTO DUPLICADO"
+	agenda-group "rules"
+	when
+				
+		FactHierarchy(idtoASiento:IDTO, CLASSSUP=="ASIENTO")
+		Individual(IDTO==idtoASiento,idoAsiento1:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+		ObjValue(idoDocumento:IDO, PROPNAME=="asiento", IDOVALUE==idoAsiento1)
+		ObjValue(IDO==idoDocumento, PROPNAME=="asiento", idoAsiento2:IDOVALUE!=null&&!=idoAsiento1)
+		eval(idoAsiento2>0&&idoAsiento2<idoAsiento1||idoAsiento1<idoAsiento2&&idoAsiento2<0)//eliminare el 1 por ser el ultimo
+		ObjValue(IDO==idoAsiento1, PROPNAME=="mi_empresa", idoME:IDOVALUE!=null)
+		ObjValue(IDO==idoAsiento2, PROPNAME=="mi_empresa", IDOVALUE==idoME)
+	then
+		dma.printRule("[LIMPIEZA] ASIENTO DUPLICADO");		
+		dma.deleteObject(idoAsiento1, idtoASiento);			
+end	
+
+/* Mejor que falle por tratar de crear la misma
+rule "[LIMPIEZA] CUENTAS DUPLICADAS"
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(idto:IDTO, CLASSSUP=="CUENTA_CONTABLE")
+		Individual(IDTO==idto,ido1:IDO>0,STATE==Constants.INDIVIDUAL_STATE_READY)
+		DatValue(IDO==ido1,PROPNAME=="rdn",code:VALOR)
+		Individual(IDTO==idto,ido2:IDO<0,STATE==Constants.INDIVIDUAL_STATE_READY)
+		DatValue(IDO==ido2,PROPNAME=="rdn",VALOR==code)
+		
+	then
+		dma.printRule("[CONTABILIDAD]===========[LIMPIEZA] CUENTAS DUPLICADAS. ido1:"+ido1+" ido2:"+ido2+"  rdn:"+code);
+		dma.showMessage("La cuenta contable de código "+code+" parece erronea, hable con el administrador");
+		dma.setValue(ido2,idto,"rdn",new StringValue("#"+code));
+end	*/
+
+
+rule "[LIMPIEZA] AISLADO CUENTA CORRUPTA"
+	salience -200
+	agenda-group "rules"
+	when		
+		FactHierarchy(idto:IDTO, CLASSSUP=="CUENTA_CONTABLE")
+		Individual(IDTO==idto,ido:IDO>0,STATE==Constants.INDIVIDUAL_STATE_READY)
+		not(DatValue(IDO==ido,PROPNAME=="rdn",VALOR!=null))				
+	then
+		dma.printRule("[CONTABILIDAD]===========[LIMPIEZA] BORRADO CUENTAS DUPLICADAS. ido:"+ido);
+		//dma.showMessage("La cuenta contable de id interno "+ido+" esta corrupta y ha sido aislada, por favor hable con el administrador");
+		dma.getDDM().isolatedInfoObject(ido,true);
+end	
+
+
+/**************************************************************************************************************************************
+**														REGLAS DE INSTALACIÓN									 			         **
+***************************************************************************************************************************************/
+
+/*
+	Dada una factura que no tiene asiento, se crea el objeto asiento y el enlace. Además se crean los apuntes correspondientes
+	al total del importe de la factura/movimiento de caja y el apunte que compensa éste.
+*/	
+rule "[INSTALACION] ASIENTO, APUNTE CON EL IMPORTE TOTAL Y APUNTE CON LA CONTRAPARTIDA"
+	salience -150
+	agenda-group "rules"
+	when
+		
+	  	FactHierarchy(classDocumento:CLASS,CLASSSUP=="FACTURA")
+		FactHierarchy(CLASS==classDocumento,tipoDocumento:CLASSSUP=="DOCUMENTO_COMPRA"||=="DOCUMENTO_VENTA")
+		//End lock para que de tiempo a saber si la factura tiene servicios
+		Lock(idoDocumento:IDO, STATE==Constants.INDIVIDUAL_STATE_END_LOCK, CLASSNAME==classDocumento, idtoDocumento:IDTO)
+		
+		not((and 	FactHierarchy(IDTO==idtoDocumento,clsExcluir:CLASSSUP=="DOCUMENTO_COMPRA"||=="TICKET")
+					DatValue(CLASSNAME=="PARAMETRO_VERDADERO",idoParam:IDO,PROPNAME=="rdn",VALOR==("excluir contabilidad "+clsExcluir))
+					DatValue(IDO==idoParam,PROPNAME=="activo",VALOR=="true")))																
+				
+															
+		DatValue(IDO==idoDocumento, PROPNAME==Constants.PROP_RDN, rdn:VALOR!=null)
+
+		// No existe todavía el asiento		
+		DatValue(IDO==idoDocumento, PROPNAME==Constants.prop_fecha, fechaDoc:DATE!=null)
+			
+		//Mi empresa
+		Individual(idoConfig:IDO, idtoConfig:IDTO,CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE,miEmpresa:OBJECTVALUE)	
+		
+		dominioAsiento:Domain() from accumulate((and 	ObjValue(IDO==idoDocumento, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null) 
+														ObjValue(IDO==idoAsiento, idtoAsiento:IDTO,PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+												),
+													init(Domain res=new Domain(0,0);),
+													action(res=new Domain(idoAsiento,idtoAsiento);),
+													result(res))									
+						
+		tieneServicios:Long() from accumulate((and 	FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA_ARTÍCULOS_SERVICIO")
+													exists(ObjValue(IDO==idoDocumento, PROPNAME=="línea", VALUECLS==idtoLinea))),
+												count(idtoLinea))
+																								
+																
+		ventaRectificativa:Boolean() from accumulate((and 	DatValue(IDO==idoConfig,PROPNAME=="serie_factura_rectificativa_ventas",serieConfig:VALOR!=null)														
+															DatValue(IDO==idoDocumento,PROPNAME=="serie",serieDoc:VALOR!=null)
+													),
+												init(Boolean res=false;),
+												action(res=serieConfig.equals(serieDoc);),
+												result(res))												
+												
+		ObjValue(IDO==idoConfig, propCfgTotal:PROPNAME=="cuenta_ventas_mercaderias"||=="cuenta_ventas_rectificativa_mercaderias"||=="cuenta_ventas_servicios"||=="cuenta_compra_mercaderias"||=="cuenta_compra_servicios", idoCuentaTotal:IDOVALUE, ovCCTotal:OBJECTVALUE)
+		DatValue(IDO==idoCuentaTotal, PROPNAME=="codigo_cuenta",codeConfigTotal:INTVALUE!=null)
+		
+		eval(	tipoDocumento.equals("DOCUMENTO_COMPRA")&& (tieneServicios.intValue()>0 && propCfgTotal.equals("cuenta_compra_servicios") || tieneServicios.intValue()==0 && propCfgTotal.equals("cuenta_compra_mercaderias"))||
+				tipoDocumento.equals("DOCUMENTO_VENTA")&& ( tieneServicios.intValue()>0 && propCfgTotal.equals("cuenta_ventas_servicios") || 
+															tieneServicios.intValue()==0 && !ventaRectificativa.booleanValue() && propCfgTotal.equals("cuenta_ventas_mercaderias") ||
+															tieneServicios.intValue()==0 && ventaRectificativa.booleanValue() && propCfgTotal.equals("cuenta_ventas_rectificativa_mercaderias")
+														  ))
+
+		ObjValue(IDO==idoConfig, propCfgSujeto:PROPNAME=="cuenta_clientes"||=="cuenta_proveedores_mercaderias"||=="cuenta_proveedores_servicios",  idoCSujeto:IDOVALUE)				
+		DatValue(IDO==idoCSujeto, PROPNAME=="codigo_cuenta",codeConfigSujeto:INTVALUE!=null)
+												
+		//El Cliente/Proveedor
+		ObjValue(IDO==idoDocumento, tipoSujeto:PROPNAME=="cliente"||=="proveedor", idoSujeto:IDOVALUE!=null)
+		ObjValue(IDO==idoSujeto, PROPNAME=="cuenta_contable", idoCS:IDOVALUE!=null, idtoCS:VALUECLS, objCuentaSujeto:OBJECTVALUE)		
+		DatValue(IDO==idoCS, PROPNAME=="codigo_cuenta",INTVALUE==codeConfigSujeto)										
+		
+		eval(	tipoDocumento.equals("DOCUMENTO_COMPRA")&& (tieneServicios.intValue()>0 && propCfgSujeto.equals("cuenta_proveedores_servicios") || tieneServicios.intValue()==0 && propCfgSujeto.equals("cuenta_proveedores_mercaderias"))||
+				tipoDocumento.equals("DOCUMENTO_VENTA")&& propCfgSujeto.equals("cuenta_clientes") )
+		
+		
+		eval( dma.preload(idoCS, idtoCS) )
+		ObjValue(IDO==idoCS, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+		
+		exists((and ObjValue(IDO==idoDocumento, PROPNAME=="desglose_iva", idoDesglose:IDOVALUE)
+           			ObjValue(IDO==idoDesglose, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)))
+							
+	then
+		dma.printRule("[CONTABILIDAD]=================[INSTALACION] ASIENTO, APUNTE CON EL IMPORTE TOTAL Y APUNTE CON LA CONTRAPARTIDA "); 
+		
+		Domain dominioApunteTotal = null, dominioContrapartida = null, dominioCuenta = null, dominioApunteTotalEsteAsiento=null;		
+		/*Lo insertamos	
+		if(classDocumento.equals(Constants.className_factura_rectificativa_ventas) || 
+			classDocumento.equals(Constants.className_factura_rectificativa_compras)){
+				conceptoAsiento += " [Rectificativa]";
+		}*/
+		String claseApunteTotal=tipoDocumento.equals("DOCUMENTO_COMPRA")?Constants.className_apunte_abono:Constants.className_apunte_cargo;
+		boolean previoAsientoNulo=(dominioAsiento.getIdo()==0);
+		if(previoAsientoNulo){			
+			//Datos generales: documento, concepto, fecha, empresa		
+			dominioAsiento = dma.creaIndividualOfClass(Constants.className_asiento);		
+			dma.setValue(dominioAsiento, Constants.prop_fecha, new TimeValue(fechaDoc));
+			dma.setValue(dominioAsiento, "mi_empresa", miEmpresa);
+			dma.setValue(dominioAsiento, "documento_contable", new ObjectValue(idoDocumento, idtoDocumento));
+		}else{
+			LinkedList apuntes=dma.getValues(dominioAsiento,"apuntes");			
+			for(int i=0;i<apuntes.size();i++){
+				ObjectValue ovApunte=(ObjectValue)apuntes.get(i);				
+				if(dma.isSpecialized(ovApunte.getValueCls(),dma.getIdClass(claseApunteTotal))){ 
+					ObjectValue ov=(ObjectValue)dma.getValue(ovApunte,Constants.prop_subcuenta);
+					dominioApunteTotalEsteAsiento=new Domain(ovApunte);
+					if(objCuentaSujeto.equals(ov))	dominioApunteTotal=dominioApunteTotalEsteAsiento;
+				}
+				if(dma.isSpecialized(ovApunte.getValueCls(),dma.getIdClass(Constants.className_apunte_abono))){ 
+					dominioContrapartida=new Domain(ovApunte);
+				}
+			}
+		}
+		
+		if(!previoAsientoNulo && dominioApunteTotal==null&&dominioApunteTotalEsteAsiento!=null){//Existía asiento pero sus apuntes no correspondian a este cliente
+			dma.delValue(dominioAsiento,"apuntes",new ObjectValue(dominioApunteTotalEsteAsiento));
+			dma.deleteObject(dominioApunteTotalEsteAsiento);		
+		}
+		//Creamos los apuntes del importe total y de la contrapartida y lo enlazamos
+		//apunte de sujeto
+		if(dominioApunteTotal==null){
+			dominioApunteTotal = dma.creaIndividualOfClass(claseApunteTotal);		
+			dma.setValue(dominioApunteTotal, Constants.prop_subcuenta, objCuentaSujeto);
+			dma.addValue(dominioAsiento, "apuntes", new ObjectValue(dominioApunteTotal));
+		}
+		if(dominioContrapartida==null){
+			//apunte de la base generica
+			dominioContrapartida = dma.creaIndividualOfClass(Constants.className_apunte_abono);
+			dma.setValue(dominioContrapartida, Constants.prop_subcuenta, ovCCTotal);
+			dma.addValue(dominioAsiento, "apuntes", new ObjectValue(dominioContrapartida));	
+		}	
+					
+		//Enlazamos el asiento a la factura de venta
+		//dma.addValue(idoDocumento, idtoDocumento, "asiento", new ObjectValue(dominioAsiento));
+end	
+/*
+rule "[INSTALACION] ASIENTO, APUNTE CON EL IMPORTE TOTAL Y APUNTE CON LA CONTRAPARTIDA DE PAGOS Y COBROS"
+	salience -100 
+	agenda-group "rules"
+	when		
+	  	FactHierarchy(classPagoCobro:CLASS, CLASSSUP==Constants.className_documento_contable)
+		FactHierarchy(CLASS==classPagoCobro, tipoPagoCobro:CLASSSUP=="PAGO"||=="COBRO")
+		Individual(idoFlujo:IDO, CLASSNAME==classPagoCobro, idtoFlujo:IDTO, STATE!=Constants.INDIVIDUAL_STATE_PREDELETED&&!=Constants.INDIVIDUAL_STATE_DELETED)
+		ObjValue(IDO==idoFlujo, PROPNAME=="caja_entrada"||=="caja_salida", idoCaja:IDOVALUE!=null,idtoCaja:VALUECLS!=null)
+		eval( dma.preload(idoCaja, idtoCaja) )
+		DatValue(IDO==idoFlujo, PROPNAME==Constants.prop_fecha, fechaDoc:DATE!=null)
+		
+		DatValue(IDO==idoFlujo, PROPNAME=="importe", DOUBLEVALUE!=0)	
+		
+		//Config contabilidad y cuentas caja y banco
+		Individual(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE,ovMiEmpresa:OBJECTVALUE!=null)	
+		
+		//Un cobro puede ser sobre varias facturas de distinta empresa, por tanto en ese caso la empresa se toma del vencimiento
+		//la mi_empresa se toma
+		//1) de la miEmpresa del documentoCobro si es un cobroAnticipo
+		//2) de la miEmpresa de los vencimientos si es un cobroFactura
+			
+		forall(	FactHierarchy(CLASS==classPagoCobro, CLASSSUP=="PAGO"||=="COBRO_VENCIMIENTO")
+				ObjValue(IDO==idoFlujo, PROPNAME=="vencimientos_asignados", idoAsignacion:IDOVALUE!=null)
+				ObjValue(IDO==idoAsignacion, PROPNAME=="vencimiento", idoVencimiento:IDOVALUE!=null)
+				ObjValue(IDO==idoVencimiento, PROPNAME=="factura", idoFactura:IDOVALUE!=null)
+				ObjValue(IDO==idoFactura, PROPNAME=="desglose_iva", idoDesglose:IDOVALUE!=null)
+				ObjValue(IDO==idoDesglose,PROPNAME=="mi_empresa",IDOVALUE==idoMiEmpresa))
+				
+		forall(	ObjValue(IDO==idoFlujo, PROPNAME=="documento_anticipo", idoRoot:IDOVALUE!=null)
+				ObjValue(IDO==idoRoot, PROPNAME=="desglose_iva", idoDesglose:IDOVALUE!=null)
+				ObjValue(IDO==idoDesglose,PROPNAME=="mi_empresa",IDOVALUE==idoMiEmpresa))
+		//No existe un asiento con esta empresa
+		not(
+			(and
+				ObjValue(IDO==idoFlujo, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null)
+				ObjValue(IDO==idoAsiento, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+			)
+		)
+
+		//Sujeto y su cuenta asociada a la empresa del vencimiento
+		ObjValue(IDO==idoFlujo, PROPNAME=="cliente"||=="proveedor", idoSujeto:IDOVALUE!=null, idtoSujeto:VALUECLS)
+		eval( dma.preload(idoSujeto, idtoSujeto) )
+		DatValue(IDO==idoSujeto, PROPNAME==Constants.prop_nombre, nombreSujeto:VALOR!=null)
+		ObjValue(IDO==idoSujeto, PROPNAME=="cuenta_contable", idoCS:IDOVALUE!=null, idtoCS:VALUECLS, objCuentaSujeto:OBJECTVALUE)
+		eval( dma.preload(idoCS, idtoCS) )		
+		ObjValue(IDO==idoCS, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+		
+		
+		ovCuentaCaja:ObjectValue() from accumulate((and
+														ObjValue(IDO==idoCaja, PROPNAME=="cuenta_contable", idoCC:IDOVALUE!=null,cc:OBJECTVALUE,idtoCC:VALUECLS!=null)
+														eval( dma.preload(idoCC, idtoCC) )
+														ObjValue(IDO==idoCC, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)),
+														init(ObjectValue res=new ObjectValue(0,0);),
+														action(res=cc;),
+														result(res))
+																
+		//Cogemos su medio_de_pago para saber si el pago se hace a través de la cuenta de caja o la de banco
+		ObjValue(IDO==idoFlujo, PROPNAME==Constants.prop_medio_de_pago, idoMedioPago:IDOVALUE!=null, idtoMedioPago:VALUECLS)
+		eval( dma.preload(idoMedioPago, idtoMedioPago) )
+		DatValue(IDO==idoMedioPago, PROPNAME==Constants.PROP_RDN, medioPago:VALOR!=null)	
+				
+		ObjValue(IDO==idoConfig, PROPNAME=="cuenta_caja", idoCajaCfg:IDOVALUE,ovCuentaCajaCfg:OBJECTVALUE!=null)
+		ObjValue(IDO==idoConfig, PROPNAME=="cuenta_bancos", ovCuentaBancoCfg:OBJECTVALUE!=null) 
+		
+		
+		DatValue(IDO==idoConfig, PROPNAME=="concepto_cobro", conceptoAsientoV:VALOR!=null)		
+		DatValue(IDO==idoConfig, PROPNAME=="concepto_pago", conceptoAsientoC:VALOR!=null)
+		
+		docAnticipo:Double() from accumulate(ObjValue(ido:IDO==idoFlujo, PROPNAME=="documento_anticipo"), sum(ido))
+	then
+		dma.printRule("[CONTABILIDAD]=================[INSTALACION] ASIENTO, APUNTE CON EL IMPORTE TOTAL Y APUNTE CON LA CONTRAPARTIDA DE PAGOS Y COBROS_: doc:"+docAnticipo); 
+		
+		Domain dominioAsiento = null, dominioCuenta = null, dominioApunteTotal = null, dominioContrapartida = null;	
+		String conceptoAsiento = tipoPagoCobro.equals("COBRO")?"Cobro":"Pago";
+		dominioAsiento = dma.creaIndividualOfClass(Constants.className_asiento);
+		//dma.addValue(idoFlujo, idtoFlujo, "asiento", new ObjectValue(dominioAsiento));
+		if(classPagoCobro.equals("COBRO_ANTICIPO") && docAnticipo.intValue()==0 ){//en cobros_factura el concepto sera los rdns de las facturas, lo hace otra regla
+			conceptoAsiento = "Cobro " + nombreSujeto;
+		}				
+		dma.setValue(dominioAsiento, Constants.prop_concepto, new StringValue(conceptoAsiento));		
+		dma.setValue(dominioAsiento, Constants.prop_fecha, new TimeValue(fechaDoc));		
+		dma.setValue(dominioAsiento, "mi_empresa", ovMiEmpresa);	
+		dma.setValue(dominioAsiento, "documento_contable", new ObjectValue(idoFlujo, idtoFlujo));
+
+		//Creamos los apuntes del importe total y de la contrapartida y lo enlazamos
+		if(tipoPagoCobro.equals("COBRO")){
+			dominioApunteTotal = dma.creaIndividualOfClass(Constants.className_apunte_cargo);
+			dominioContrapartida = dma.creaIndividualOfClass(Constants.className_apunte_abono);
+			dma.setValue(dominioContrapartida, Constants.prop_subcuenta, objCuentaSujeto);
+			
+		}else if(tipoPagoCobro.equals("PAGO")){
+			dominioApunteTotal = dma.creaIndividualOfClass(Constants.className_apunte_abono);			
+			dominioContrapartida = dma.creaIndividualOfClass(Constants.className_apunte_cargo);
+			dma.setValue(dominioContrapartida, Constants.prop_subcuenta, objCuentaSujeto);
+			
+		}
+		dma.setValue(dominioApunteTotal, Constants.prop_concepto, new StringValue(conceptoAsiento));		
+		dma.setValue(dominioContrapartida, Constants.prop_concepto, new StringValue(conceptoAsiento));	
+		//Insertamos la cuenta de pago.		
+		Value valCaja=null;
+		if(ovCuentaCaja.getValue()!=0){//si la caja tiene asociada una cuenta contable especifica, esta tiene prioridad 
+			valCaja=ovCuentaCaja;
+			dma.printRule("..debug hay cuenta contable especifica para la caja, es la que se usara");
+		//si no hay caja especifica asociada a la caja hay que usar la genérica, cuenta bancos de config contabilidad gen si medio pago=transferencia,... y caja si es metalico,..				
+		}else if (medioPago.equals("Pago_en_caja") || medioPago.equals("Metálico") || medioPago.equals("Pagaré") || medioPago.equals("Pago_con_vale")){
+			valCaja=ovCuentaCajaCfg;
+			dma.printRule("..debug NO hay cuenta contable especifica para la caja, medio pago metalico o similar usara cuenta contable generica caja");
+		}else{
+			valCaja=ovCuentaBancoCfg;
+			dma.printRule("..debug NO hay cuenta contable especifica para la caja, medio pago transf o similar usara cuenta contable generica bancos");
+		}
+		dma.setValue(dominioApunteTotal, Constants.prop_subcuenta, valCaja);
+		//Los enlazamos al asiento
+		dma.addValue(dominioAsiento, "apuntes", new ObjectValue(dominioApunteTotal));	
+ 		dma.addValue(dominioAsiento, "apuntes", new ObjectValue(dominioContrapartida));
+end	
+*/
+	
+
+rule "[CONTABILIDAD] PRECARGA FACTURA SIENDO COBRADA"
+	agenda-group "rules"
+	when
+		FactHierarchy(classPagoCobro:CLASS, tipoPagoCobro:CLASSSUP=="PAGO"||=="COBRO")		
+		Individual( CLASSNAME==classPagoCobro, idoFlujo:IDO,idtoFlujo:IDTO, STATE==Constants.INDIVIDUAL_STATE_READY)
+		ObjValue(IDO==idoFlujo, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null)		
+		ObjValue(IDO==idoFlujo, PROPNAME=="vencimientos_asignados", idoAsignacionV:IDOVALUE!=null)		
+		ObjValue(IDO==idoAsignacionV, PROPNAME=="vencimiento", idoVencimiento:IDOVALUE)
+		ObjValue(IDO==idoVencimiento, PROPNAME=="factura", idoFactura:IDOVALUE,idtoFactura:VALUECLS)	
+		not(Individual(IDO==idoFactura))		
+then
+	dma.printRule("[CONTABILIDAD] PRECARGA FACTURA SIENDO COBRADA");
+	dma.ruleGetFromServer(idoFactura,idtoFactura,1,false,false);
+end		
+
+
+rule "CONCEPTO ASIENTO y APUNTES DE FACTURA"
+	agenda-group "rules"
+	when
+		FactHierarchy(classDocumento:CLASS,CLASSSUP=="FACTURA")
+		FactHierarchy(CLASS==classDocumento,idtoFactura:IDTO,tipoDocumento:CLASSSUP=="DOCUMENTO_COMPRA"||=="DOCUMENTO_VENTA")
+		
+		Lock(idoFactura:IDO,IDTO==idtoFactura, STATE==Constants.INDIVIDUAL_STATE_END_LOCK)				
+		DatValue(IDO==idoFactura, PROPNAME==Constants.prop_fecha, fechaDoc:DATE!=null)					
+		
+		Individual(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")				
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE!=null)
+		//Mi empresa
+		exists((and ObjValue(IDO==idoFactura, PROPNAME=="desglose_iva", idoDesglose:IDOVALUE!=null)		
+					ObjValue(IDO==idoDesglose, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)))
+					
+		ObjValue(IDO==idoFactura, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null,idtoAsiento:VALUECLS)		
+		ObjValue(IDO==idoAsiento, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+		
+		//La cuenta de clientes y ventas		
+		DatValue(IDO==idoConfig, PROPNAME=="concepto_asiento_factura_ventas", conceptoAsientoV:VALOR!=null)		
+
+		//La cuenta de proveedores y acreedores		
+		DatValue(IDO==idoConfig, PROPNAME=="concepto_asiento_factura_compras", conceptoAsientoC:VALOR!=null)						
+			
+		DatValue(IDO==idoFactura, PROPNAME=="rdn", rdnFactura:VALOR!=null)
+		
+		apuntes:ArrayList() from accumulate((and ObjValue(IDO==idoAsiento, PROPNAME=="mi_empresa",IDOVALUE==idoMiEmpresa)
+											  F:ObjValue(IDO==idoAsiento, PROPNAME=="apuntes", IDOVALUE!=null)),
+										 init(ArrayList res=new ArrayList();),
+										 action(res.add(F);),
+										 result(res))
+then
+	dma.printRule("[CONTABILIDAD]==== CONCEPTO ASIENTO y APUNTES DE FACTURA "+rdnFactura);
+
+	StringValue ca=(StringValue)dma.getValue(idoAsiento,idtoAsiento,"concepto");
+	String conceptoAsiento=null;
+	
+	if(ca!=null) conceptoAsiento=ca.getValue();
+	
+	dma.printRule("concepto "+conceptoAsiento);
+	
+	if(conceptoAsiento==null || !conceptoAsiento.contains(rdnFactura)){
+		//Obtenemos el concepto
+		if(tipoDocumento.equals("DOCUMENTO_COMPRA")){
+			conceptoAsiento = conceptoAsientoC + " " + rdnFactura;
+		}else if(tipoDocumento.equals("DOCUMENTO_VENTA")){
+			conceptoAsiento = conceptoAsientoV + " " + rdnFactura;
+		}			
+		if(classDocumento.contains("TICKET")){
+			conceptoAsiento=classDocumento+" "+rdnFactura;
+		}
+		dma.setValue(idoAsiento,idtoAsiento,"concepto", new StringValue(conceptoAsiento));
+	}		
+
+	for(int i=0;i<apuntes.size();i++){
+		ObjValue apunte=(ObjValue)apuntes.get(i);
+		ca=(StringValue)dma.getValue(apunte.getIDOVALUE(),apunte.getVALUECLS(),"concepto");
+	
+		if(ca!=null && ca.getValue().contains(rdnFactura)) continue;
+		dma.printRule("actualiza concepto "+conceptoAsiento);
+		dma.setValue(apunte.getIDOVALUE(),apunte.getVALUECLS(),"concepto", new StringValue(conceptoAsiento));	
+	}
+end	
+	
+rule "CONCEPTO ASIENTO COBRO_FACTURA LLEVA EL RDN DE LA FACTURA"
+	agenda-group "rules"
+	when
+		FactHierarchy(classPagoCobro:CLASS, tipoPagoCobro:CLASSSUP=="PAGO"||=="COBRO")
+		
+		Individual( CLASSNAME==classPagoCobro, idoDocumento:IDO,idtoDocumento:IDTO, STATE==Constants.INDIVIDUAL_STATE_READY)
+		ObjValue(IDO==idoDocumento, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null)
+		DatValue(IDO==idoAsiento, PROPNAME=="concepto", conceptoAsiento:VALOR!=null,idtoAsiento:IDTO)
+		ObjValue(IDO==idoAsiento, PROPNAME=="mi_empresa", miEmpresa:IDOVALUE!=null)
+		ObjValue(IDO==idoDocumento, PROPNAME=="vencimientos_asignados", idoAsignacionV:IDOVALUE!=null)		
+		ObjValue(IDO==idoAsignacionV, PROPNAME=="vencimiento", idoVencimiento:IDOVALUE)
+		ObjValue(IDO==idoVencimiento, PROPNAME=="mi_empresa",IDOVALUE== miEmpresa)
+		ObjValue(IDO==idoVencimiento, PROPNAME=="factura", idoFactura:IDOVALUE)	
+		DatValue(IDO==idoFactura, PROPNAME=="rdn", rdnFactura:VALOR!=null)
+		eval(!conceptoAsiento.contains(rdnFactura))
+		apuntes:ArrayList() from collect(ObjValue(IDO==idoAsiento, PROPNAME=="apuntes", IDOVALUE!=null))
+then
+	dma.printRule("[CONTABILIDAD]==== CONCEPTO ASIENTO COBRO_FACTURA LLEVA EL RDN DE LA FACTURA: concepto:"+conceptoAsiento+" rdnFactura:"+rdnFactura);
+	dma.setValue(idoAsiento,idtoAsiento,"concepto", new StringValue(conceptoAsiento+" "+rdnFactura));
+	for(int i=0;i<apuntes.size();i++){
+		ObjValue apunte=(ObjValue)apuntes.get(i);
+		dma.setValue(apunte.getIDOVALUE(),apunte.getVALUECLS(),"concepto", new StringValue(conceptoAsiento+" "+rdnFactura));	
+	}
+end		
+		
+rule "CONCEPTO ASIENTO COBRO_ANTICIPO CON DOCUMENTO ANTICIPO FACTURA LLEVA EL RDN DE LA FACTURA"
+	agenda-group "rules"
+	when
+		FactHierarchy(classPagoCobro:CLASS, tipoPagoCobro:CLASSSUP=="PAGO"||=="COBRO")
+		
+		Individual( CLASSNAME==classPagoCobro, idoDocumento:IDO,idtoDocumento:IDTO, STATE==Constants.INDIVIDUAL_STATE_READY)
+		ObjValue(IDO==idoDocumento, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null)
+		DatValue(IDO==idoAsiento, PROPNAME=="concepto", conceptoAsiento:VALOR!=null,idtoAsiento:IDTO)
+		ObjValue(IDO==idoDocumento, PROPNAME=="documento_anticipo", idoDocA:IDOVALUE!=null,claseDocA:RANGENAME)			
+		DatValue(IDO==idoDocA, PROPNAME=="rdn", rdnDocA:VALOR!=null)
+		eval(!conceptoAsiento.contains(rdnDocA))
+		apuntes:ArrayList() from collect(ObjValue(IDO==idoAsiento, PROPNAME=="apuntes", IDOVALUE!=null))
+then
+	dma.printRule("[CONTABILIDAD]==== CONCEPTO ASIENTO COBRO_ANTICIPO CON DOCUMENTO ANTICIPO FACTURA LLEVA EL RDN DE LA FACTURA: concepto:"+conceptoAsiento+" rdnFactura:"+rdnDocA);
+	
+	String traza=Constants.trazaDoc(claseDocA,rdnDocA);
+	
+	dma.setValue(idoAsiento,idtoAsiento,"concepto", new StringValue(conceptoAsiento+" "+traza));
+	for(int i=0;i<apuntes.size();i++){
+		ObjValue apunte=(ObjValue)apuntes.get(i);
+		dma.setValue(apunte.getIDOVALUE(),apunte.getVALUECLS(),"concepto", new StringValue(conceptoAsiento+" "+traza));	
+	}
+end	
+				
+rule "APUNTES IVA Y RECARGO"
+	salience -150 
+	agenda-group "rules"
+	when		
+		FactHierarchy(classFactura:CLASS,tipoFactura:CLASSSUP=="FACTURA")
+		FactHierarchy(CLASS==classFactura,tipoDocumento:CLASSSUP=="DOCUMENTO_COMPRA"||=="DOCUMENTO_VENTA")
+		Lock(idoDocumento:IDO, idtoDocumento:IDTO,STATE==Constants.INDIVIDUAL_STATE_END_LOCK, CLASSNAME==classFactura)
+
+		ObjValue(IDO==idoDocumento, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null, valueAsiento:VALUE, valueCLSAsiento:VALUECLS)
+		ObjValue(IDO==idoAsiento, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE)
+				
+		//exista configuración del iva para el año y empresa de la factura
+		Individual(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+
+		DatValue(IDO==idoDocumento, PROPNAME==Constants.prop_fecha, fechaDoc:DATE!=null)
+			
+		DatValue(IDO==idoConfig,propConfig:PROPNAME=="codigo_cuenta_RE_IVA_compras"||=="codigo_cuenta_RE_IVA_ventas"||=="codigo_cuenta_recargo_equivalencia_ventas",codigoCuentaCfg:INTVALUE!=null)
+		eval(tipoDocumento.equals("DOCUMENTO_COMPRA") && propConfig.equals("codigo_cuenta_RE_IVA_compras") ||
+			 tipoDocumento.equals("DOCUMENTO_VENTA") && propConfig.contains("ventas"))				 			 				
+		
+		Individual(CLASSNAME=="TIPO_IVA", idoIVA:IDO!=null,idtoIVA:IDTO)
+		DatValue(IDO==idoIVA,PROPNAME=="rdn",rdnIva:VALOR)			
+	
+		//Dado un desglose_iva de una factura (de compra o venta) con cuota_iva (incluso cuota iva cero se crea el apunte)
+		domDesglose:Domain() from accumulate((and 	ObjValue(IDO==idoDocumento, PROPNAME=="desglose_iva", idoDesglose:IDOVALUE!=null,idtoDesglose:VALUECLS)
+													ObjValue(IDO==idoDesglose, PROPNAME=="mi_empresa",IDOVALUE==idoMiEmpresa)
+													ObjValue(IDO==idoDesglose, PROPNAME==Constants.prop_iva, IDOVALUE==idoIVA)),
+											  init(Domain d=new Domain(0,0);),
+											  action(d=new Domain(idoDesglose,idtoDesglose);),
+											  result(d))			
+											  		
+		FactHierarchy(claseApunte:CLASS=="APUNTE_IVA"||=="APUNTE_RE",CLASSSUP==claseApunte)
+												  		
+		domApunte:Domain() from accumulate((and 	ObjValue(IDO==idoAsiento, PROPNAME=="apuntes", RANGENAME==claseApunte, idoApunte:IDOVALUE!=null)
+													ObjValue(IDO==idoApunte, idtoApunte:IDTO,PROPNAME==Constants.prop_iva, IDOVALUE==idoIVA)),
+												init(Domain d=new Domain(0,0);),
+											  	action(d=new Domain(idoApunte,idtoApunte);),
+											  	result(d))
+													
+													  	
+		
+		ObjValue(IDO==idoIVA, prop_re:PROPNAME==(claseApunte.equals("APUNTE_IVA")?"cuenta_IVA":"cuenta_R.E."), idoCC:IDOVALUE,ccIva:OBJECTVALUE!=null,idtoCC:VALUECLS)		
+		eval( dma.preload(idoCC, idtoCC) )
+		ObjValue(IDO==idoCC, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+		
+		//Distinguir iva compra y de venta
+		DatValue(IDO==idoCC,PROPNAME=="codigo_cuenta",INTVALUE==codigoCuentaCfg)
+		
+		//todo iva tiene dos subcuentas, la del porcentaje de iva base y la del recargo. POr tanto el IVA base y recargo quedan siempre separado, pero puede quererse separar tambien cuanto
+		//de iva base fue facturado con recargo y cuanto no, para ello se configura el campo subcuenta_base_de_recargos_de_equivalencia, que repercute en que se instalan dos cuentas base de iva
+		// (bajo la property "cuenta iva" en la clase IVA)
+		
+		//si existe apunte recargo y esta  configurado separar la base de iva pareja al recargo, y estamos en cuenta de iva, tomamos la cuenta de IVA base del recargo
+		//para ello la instalacion apunte recargo debe ser prioritaria
+		not((and	eval(prop_re.equals("cuenta_IVA"))
+					DatValue(IDO==(domDesglose.getIdo()), PROPNAME=="cuota_recargo", DOUBLEVALUE!=0.0)
+					DatValue(IDO==idoIVA,PROPNAME=="subcuenta_base_de_recargos_de_equivalencia",subc_base_recarg:VALOR!=null) 											
+					DatValue(IDO==idoCC,PROPNAME=="detalle",VALOR!=subc_base_recarg)))
+					
+		not((and 	eval(prop_re.equals("cuenta_IVA"))
+					DatValue(IDO==(domDesglose.getIdo()), PROPNAME=="cuota_recargo", DOUBLEVALUE==0.0)
+					DatValue(IDO==idoCC,PROPNAME=="detalle",detalle:VALOR!=null)
+					DatValue(IDO==idoIVA,PROPNAME=="subcuenta_base_de_recargos_de_equivalencia",VALOR==detalle) 											
+					))
+					
+		not((and 	eval(tipoDocumento.equals("DOCUMENTO_VENTA")&&prop_re.equals("cuenta_R.E.")&&!propConfig.equals("codigo_cuenta_recargo_equivalencia_ventas"))
+					DatValue(IDO==idoConfig,PROPNAME=="codigo_cuenta_recargo_equivalencia_ventas",INTVALUE!=null)
+		))				 					 
+		
+		//no instalo recargo si no hay recargo
+		not((and 	eval(prop_re.equals("cuenta_R.E."))
+					DatValue(IDO==(domDesglose.getIdo()), PROPNAME=="cuota_recargo", DOUBLEVALUE==0.0)))
+					
+		ObjValue(IDO==idoDocumento, PROPNAME=="cliente"||=="proveedor", idoSujeto:IDOVALUE!=null)
+		ObjValue(IDO==idoSujeto, PROPNAME=="cuenta_contable", idoCS:IDOVALUE!=null,idtoCS:VALUECLS, objCuentaSujeto:OBJECTVALUE)
+			
+	then
+		dma.printRule("\n\n[CONTABILIDAD]=================APUNTES IVA Y RECARGO "); 
+		Double base=dma.getDoubleValue(domDesglose,"base",true);
+		
+		if(base.doubleValue()!=0.0){
+		 	if(domApunte.getIdo()==0){		
+				domApunte = dma.creaIndividualOfClass(claseApunte);
+				dma.addValue(valueAsiento, valueCLSAsiento, "apuntes", new ObjectValue(domApunte)); //Enlazamos con los asientos.
+				dma.setValue(domApunte, Constants.prop_subcuenta, ccIva);
+				dma.setValue(domApunte, Constants.prop_iva, new ObjectValue(idoIVA, idtoIVA));
+			}
+			Double cuota=dma.getDoubleValue(domDesglose,claseApunte.equals("APUNTE_IVA")?"cuota_iva":"cuota_recargo",true);					
+			DoubleValue dvCuota = new DoubleValue(cuota);			
+			DoubleValue valorCero = new DoubleValue(new Double(0));
+		
+			if(tipoDocumento.equals("DOCUMENTO_COMPRA")){
+				dma.setValue(domApunte, Constants.prop_debe, dvCuota);
+				dma.setValue(domApunte, Constants.prop_haber, valorCero);			
+			}else if(tipoDocumento.equals("DOCUMENTO_VENTA")){
+				dma.setValue(domApunte, Constants.prop_debe, valorCero);
+				dma.setValue(domApunte, Constants.prop_haber, dvCuota);
+			}		
+			dma.setValue(domApunte, Constants.prop_contrapartida, objCuentaSujeto);
+			dma.setValue(domApunte, Constants.prop_base, new DoubleValue(base));
+		}
+		
+		if(base.doubleValue()==0.0 && domApunte.getIdo()!=0){
+		//limpiar
+			//dma.delValue(idoDocumento,idtoDocumento,"asiento",new ObjectValue(domApunte));
+			dma.deleteObject(domApunte);
+		}				
+end
+/*
+rule "[INSTALACION] APUNTES DE RECARGO DE EQUIVALENCIA"
+	salience -100 //mas prioridad que "APUNTES IVA Y RECARGO"
+	agenda-group "rules"
+	when		
+		FactHierarchy(classFactura:CLASS,tipoFactura:CLASSSUP=="FACTURA")
+		FactHierarchy(CLASS==classFactura,tipoDocumento:CLASSSUP=="DOCUMENTO_COMPRA"||=="DOCUMENTO_VENTA")
+
+		Lock(idoDocumento:IDO, STATE==Constants.INDIVIDUAL_STATE_END_LOCK, CLASSNAME==classFactura)
+		DatValue(IDO==idoDocumento, PROPNAME==Constants.prop_fecha, fechaDoc:DATE!=null)			 			 		
+
+		ObjValue(IDO==idoDocumento, PROPNAME=="desglose_iva", idoDesglose:IDOVALUE!=null)
+		ObjValue(IDO==idoDesglose, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE!=null)
+		
+		ObjValue(IDO==idoDesglose, PROPNAME==Constants.prop_iva, idoIVA:IDOVALUE!=null, objectIVA:OBJECTVALUE)
+		DatValue(IDO==idoDesglose, PROPNAME==Constants.prop_cuota_recargo, cuota_recargo:DOUBLEVALUE!=0)
+		DatValue(IDO==idoDesglose, PROPNAME==Constants.prop_base, base:DOUBLEVALUE)
+		DatValue(IDO==idoIVA, PROPNAME==Constants.prop_porcentaje_recargo, porcentaje_recargo:DOUBLEVALUE)
+		
+		ObjValue(IDO==idoDocumento, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null, valueAsiento:VALUE, valueCLSAsiento:VALUECLS)
+		ObjValue(IDO==idoAsiento, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+				
+		not(
+			(and 
+				ObjValue(IDO==idoAsiento, PROPNAME=="apuntes", RANGENAME==Constants.className_apunte_re, idoApunte:IDOVALUE!=null)
+				ObjValue(IDO==idoApunte, PROPNAME==Constants.prop_iva, IDOVALUE==idoIVA)
+			)
+		)
+		
+		ObjValue(IDO==idoIVA, PROPNAME=="cuenta_R.E.", idoCC:IDOVALUE,ccRE:OBJECTVALUE,idtoCC:VALUECLS)
+		eval( dma.preload(idoCC, idtoCC) )
+		ObjValue(IDO==idoCC, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)		
+				
+		Individual(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+					
+		DatValue(IDO==idoConfig,propConfig:PROPNAME=="codigo_cuenta_RE_IVA_compras"||=="codigo_cuenta_RE_IVA_ventas",codigoCuentaCfg:INTVALUE!=null)
+		eval(tipoDocumento.equals("DOCUMENTO_COMPRA") && propConfig.equals("codigo_cuenta_RE_IVA_compras") ||
+			 tipoDocumento.equals("DOCUMENTO_VENTA") && propConfig.equals("codigo_cuenta_RE_IVA_ventas"))
+			 
+		//distinguir compras y ventas
+		DatValue(IDO==idoCC,PROPNAME=="codigo_cuenta",INTVALUE==codigoCuentaCfg)
+	then
+		dma.printRule("\n\n[CONTABILIDAD]=================[INSTALACION] APUNTES DE RECARGO DE EQUIVALENCIA");
+		dma.printRule("idoDesglose: "+idoDesglose);
+		
+		Domain dominioApunte = dma.creaIndividualOfClass(Constants.className_apunte_re);
+		dma.addValue(valueAsiento, valueCLSAsiento, "apuntes", new ObjectValue(dominioApunte));
+		dma.setValue(dominioApunte, Constants.prop_iva, objectIVA);
+		dma.setValue(dominioApunte, Constants.prop_subcuenta, ccRE);		
+		dma.setValue(dominioApunte, Constants.prop_base, new DoubleValue(new Double(0)));
+end
+*/
+//HASTA AQUI
+
+rule "[INSTALACION] APUNTE DE RETENCIONES" 
+	salience -150
+	agenda-group "rules"
+	when
+		FactHierarchy(classFactura:CLASS,tipoFactura:CLASSSUP=="FACTURA")
+		FactHierarchy(CLASS==classFactura,tipoDocumento:CLASSSUP=="DOCUMENTO_COMPRA"||=="DOCUMENTO_VENTA")
+		Lock(idoDocumento:IDO, STATE==Constants.INDIVIDUAL_STATE_END_LOCK, CLASSNAME==classFactura)
+		
+		DatValue(IDO==idoDocumento, PROPNAME==Constants.prop_fecha, fechaDoc:DATE!=null)
+		ObjValue(IDO==idoDocumento, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE!=null)
+		
+		DatValue(IDO==idoDocumento, PROPNAME==Constants.prop_retencion, retenciones:DOUBLEVALUE!=0)
+		DatValue(IDO==idoDocumento, PROPNAME==Constants.prop_porcentaje_retencion, pRetenciones:DOUBLEVALUE)
+			
+		ObjValue(IDO==idoDocumento, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null, valueAsiento:VALUE, valueCLSAsiento:VALUECLS)
+		ObjValue(IDO==idoAsiento, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+		
+		Individual(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+	
+		ObjValue(IDO==idoConfig, propR:PROPNAME=="cuenta_retenciones_ventas"||=="cuenta_retenciones_compras", idoCuentaRetenciones:IDOVALUE!=null, valueCLSCuentaRet:VALUECLS)
+		eval(tipoDocumento.equals("DOCUMENTO_COMPRA") && propR.equals("cuenta_retenciones_compras") || tipoDocumento.equals("DOCUMENTO_VENTA") && propR.equals("cuenta_retenciones_ventas")) 		
+		eval( dma.preload(idoCuentaRetenciones, valueCLSCuentaRet) )
+				
+		DatValue(IDO==idoCuentaRetenciones, PROPNAME==Constants.prop_codigo_cuenta, cuentaRetenciones:INTVALUE!=null) 
+		not(
+			(and 
+				ObjValue(IDO==idoAsiento, PROPNAME=="apuntes", RANGENAME==Constants.className_apunte_cargo||==Constants.className_apunte_abono, idoApunte:IDOVALUE!=null)
+				ObjValue(IDO==idoApunte, PROPNAME==Constants.prop_subcuenta, idoSubCuenta:IDOVALUE!=null)
+				DatValue(IDO==idoSubCuenta, PROPNAME==Constants.prop_codigo_cuenta, INTVALUE==cuentaRetenciones)
+			)
+		)
+	then
+		dma.printRule("[CONTABILIDAD]=================[INSTALACION] APUNTE DE RETENCIONES");
+		Domain dominioApunteRetencion = null, dominioCuentaRetenciones = null;
+		
+		if(tipoDocumento.equals("DOCUMENTO_COMPRA")){
+			dominioApunteRetencion = dma.creaIndividualOfClass(Constants.className_apunte_abono);			
+		}else if(tipoDocumento.equals("DOCUMENTO_VENTA")){
+			dominioApunteRetencion = dma.creaIndividualOfClass(Constants.className_apunte_cargo);	
+		}
+		dma.setValue(dominioApunteRetencion, Constants.prop_base, new DoubleValue(new Double(0)));
+		dma.setValue(dominioApunteRetencion, Constants.prop_subcuenta, new ObjectValue(idoCuentaRetenciones,valueCLSCuentaRet));
+		dma.addValue(valueAsiento, valueCLSAsiento, "apuntes", new ObjectValue(dominioApunteRetencion));
+end
+
+/**************************************************************************************************************************************
+**														REGLAS DE ACTUALIZACIÓN									 			         **
+***************************************************************************************************************************************/
+
+/*
+	Esta regla se encarga de MODIFICAR el apunte que corresponde al total de la factura de venta. 
+*/
+rule "[ACTUALIZACION] APUNTE DEL IMPORTE TOTAL"
+	agenda-group "rules" 
+	when
+	    
+	    FactHierarchy(classFactura:CLASS,CLASSSUP=="FACTURA")	
+	    Lock(idoDocumento:IDO, STATE==Constants.INDIVIDUAL_STATE_END_LOCK, CLASSNAME==classFactura, estado:STATE) 
+	    ObjValue(IDO==idoDocumento, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null)
+	    ObjValue(IDO==idoAsiento,PROPNAME=="mi_empresa",idoMiEmpresa:IDOVALUE!=null)
+	    
+		importe: Double()
+           	from accumulate((and 	ObjValue(IDO==idoDocumento, PROPNAME=="desglose_iva", idoDesglose:IDOVALUE)
+           							ObjValue(IDO==idoDesglose, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+									DatValue(IDO==idoDesglose, PROPNAME=="importe", base:QMIN!=null)), 
+									sum(base))											
+		
+		ObjValue(IDO==idoAsiento, PROPNAME=="apuntes", classApunte:RANGENAME==Constants.className_apunte_cargo||==Constants.className_apunte_abono, idoApunte:IDOVALUE!=null)
+		
+		//Comparamos la cuenta del apunte de cargo con la del cliente de la factura.
+		ObjValue(IDO==idoApunte, PROPNAME==Constants.prop_subcuenta, idoSubCuenta:IDOVALUE!=null, idtoApunte:IDTO)
+		ObjValue(IDO==idoDocumento, tipoSujeto:PROPNAME=="cliente"||=="proveedor", idoSujeto:IDOVALUE!=null)
+		ObjValue(IDO==idoSujeto, PROPNAME=="cuenta_contable", IDOVALUE==idoSubCuenta)		
+
+	then
+	 	dma.printRule("[CONTABILIDAD]=================[ACTUALIZACION] APUNTE DEL IMPORTE TOTAL");
+		dma.setValue(idoApunte, idtoApunte, Constants.prop_base, new DoubleValue(new Double(0)));
+		if(classApunte.equals(Constants.className_apunte_cargo)){
+			dma.setValue(idoApunte, idtoApunte, Constants.prop_debe, new DoubleValue(importe));
+		}else{
+			dma.setValue(idoApunte, idtoApunte, Constants.prop_haber, new DoubleValue(importe));
+		}
+end
+
+/*
+	Acumula las cuotas de iva, recargo equivalencia y retenciones para calcular el abono el cuenta que compensa el cargo.
+	Se evitan las facturas rectificativas, que tendrán un tratamiento diferente.
+*/
+
+rule "[ACTUALIZACION] APUNTE QUE CUADRA EL ASIENTO"
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(classFactura:CLASS,tipoFactura:CLASSSUP=="FACTURA")
+			
+		Lock(idoDocumento:IDO, STATE==Constants.INDIVIDUAL_STATE_END_LOCK, CLASSNAME==classFactura)
+				
+		ObjValue(IDO==idoDocumento, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null) 
+		ObjValue(IDO==idoAsiento, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE!=null)		
+		DatValue(IDO==idoDocumento, PROPNAME==Constants.prop_fecha, fechaDoc:DATE!=null) 
+		
+		ObjValue(IDO==idoAsiento, PROPNAME=="apuntes", classApunte:RANGENAME==Constants.className_apunte_abono||==Constants.className_apunte_cargo, idoApunte:IDOVALUE!=null, idtoApunte:VALUECLS)
+		ObjValue(IDO==idoApunte, PROPNAME==Constants.prop_subcuenta, objSubCuenta:OBJECTVALUE!=null)
+		
+		//Configuración de contabilidad
+		Individual(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+		
+		//Para seleccionar el apunte desglosado y no el del sujeto
+		ObjValue(IDO==idoConfig, PROPNAME=="cuenta_ventas_mercaderias"||=="cuenta_ventas_rectificativa_mercaderias"||=="cuenta_ventas_servicios"||=="cuenta_compra_mercaderias"||=="cuenta_compra_servicios", OBJECTVALUE==objSubCuenta)
+
+		importe_abono: Double()
+           	from accumulate((and 	ObjValue(IDO==idoDocumento, PROPNAME=="desglose_iva", idoDesglose:IDOVALUE)
+           							ObjValue(IDO==idoDesglose, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+									DatValue(IDO==idoDesglose, PROPNAME=="base", base:QMIN!=null)), 
+									sum(base))			
+
+	then
+		dma.printRule("[CONTABILIDAD]=================[ACTUALIZACION] APUNTE QUE CUADRA EL ASIENTO");
+		//Double importe_abono = (importe  + retenciones) - cuota_re_iva;
+
+		dma.setValue(idoApunte, idtoApunte, Constants.prop_base, new DoubleValue(new Double(0)));
+		if(classApunte.equals(Constants.className_apunte_abono)){
+			dma.setValue(idoApunte, idtoApunte, Constants.prop_haber, new DoubleValue(importe_abono));
+		}else{
+			dma.setValue(idoApunte, idtoApunte, Constants.prop_debe, new DoubleValue(importe_abono));
+		}
+end
+
+/*
+	Descripción.
+*/
+rule "[ACTUALIZACION] APUNTE DE RETENCIONES"
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(classFactura:CLASS, tipoDocumento:CLASSSUP=="FACTURA_A_CLIENTE"||=="FACTURA_PROVEEDOR")
+
+		Lock(idoDocumento:IDO, STATE==Constants.INDIVIDUAL_STATE_END_LOCK, CLASSNAME==classFactura)		
+		ObjValue(IDO==idoDocumento, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE!=null)
+		DatValue(IDO==idoDocumento, PROPNAME==Constants.prop_fecha, fechaDoc:DATE!=null)
+		
+		DatValue(IDO==idoDocumento, PROPNAME==Constants.prop_retencion, retenciones:DOUBLEVALUE!=null)
+		ObjValue(IDO==idoDocumento, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null, valueAsiento:VALUE, valueCLSAsiento:VALUECLS)
+
+		Individual(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)	
+		
+		
+		ObjValue(IDO==idoConfig, PROPNAME=="cuenta_retenciones_ventas"||=="cuenta_retenciones_compras", objCuentaRetenciones:OBJECTVALUE!=null) 
+		
+		ObjValue(IDO==idoAsiento, PROPNAME=="apuntes", tipoApunte:RANGENAME==Constants.className_apunte_cargo||==Constants.className_apunte_abono, idoApunte:IDOVALUE!=null, objApunte:OBJECTVALUE)		
+		eval( (tipoApunte.equals(Constants.className_apunte_cargo) && tipoDocumento.equals("FACTURA_A_CLIENTE"))
+			|| (tipoApunte.equals(Constants.className_apunte_abono) && tipoDocumento.equals("FACTURA_PROVEEDOR") ) )
+
+		ObjValue(IDO==idoApunte, idtoApunte:IDTO, PROPNAME==Constants.prop_subcuenta, OBJECTVALUE==objCuentaRetenciones)
+
+	then
+		dma.printRule("[CONTABILIDAD]=================[ACTUALIZACION] APUNTE DE RETENCIONES");
+		
+		if(retenciones.equals(new Double(0))){
+			dma.delValue(valueAsiento, valueCLSAsiento, "apuntes", objApunte);
+			dma.deleteObject(idoApunte, idtoApunte);
+		}else{
+			if(tipoDocumento.equals("FACTURA_PROVEEDOR")){
+				dma.setValue(idoApunte, idtoApunte, Constants.prop_haber, new DoubleValue(retenciones));			
+			}else if(tipoDocumento.equals("FACTURA_A_CLIENTE")){
+				dma.setValue(idoApunte, idtoApunte, Constants.prop_debe, new DoubleValue(retenciones));					
+			}
+		}
+end
+
+rule "APUNTES DE COBROS Y PAGOS"
+	agenda-group "rules"
+	when
+		
+	  	FactHierarchy(classPagoCobro:CLASS, tipoPagoCobro:CLASSSUP=="COBRO"||=="PAGO")
+		Lock(idoFlujo:IDO,idtoFlujo:IDTO, CLASSNAME==classPagoCobro, idtoDocumento:IDTO, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+		
+		not((and 	FactHierarchy(IDTO==idtoDocumento,clsExcluir:CLASSSUP=="COBRO"||=="PAGO")
+					DatValue(CLASSNAME=="PARAMETRO_VERDADERO",idoParam:IDO,PROPNAME=="rdn",VALOR==("excluir contabilidad "+clsExcluir))
+					DatValue(IDO==idoParam,PROPNAME=="activo",VALOR=="true")))																
+			
+													
+		DatValue(IDO==idoFlujo, PROPNAME==Constants.prop_fecha, fechaDoc:DATE!=null)
+		DatValue(IDO==idoFlujo, PROPNAME=="importe", importeCobro:DOUBLEVALUE!=0)
+			
+		ObjValue(IDO==idoFlujo, PROPNAME==Constants.prop_medio_de_pago, idoMedioPago:IDOVALUE!=null, idtoMedioPago:VALUECLS)
+		eval( dma.preload(idoMedioPago, idtoMedioPago) )
+		DatValue(IDO==idoMedioPago, PROPNAME==Constants.PROP_RDN, medioPago:VALOR!=null)
+
+		Individual(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE,ovMiEmpresa:OBJECTVALUE)	
+		
+		esCobroDeEstaEmpresa:ArrayList() from collect(ObjValue(IDO==idoFlujo, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa))					
+			
+		ObjValue(IDO==idoConfig, PROPNAME=="cuenta_caja", ovCuentaCajaCfg:OBJECTVALUE!=null)
+		ObjValue(IDO==idoConfig, PROPNAME=="cuenta_bancos", ovCuentaBancoCfg:OBJECTVALUE!=null)
+		ObjValue(IDO==idoFlujo, PROPNAME=="caja_entrada"||=="caja_salida", idoCaja:IDOVALUE!=null,idtoCaja:VALUECLS!=null)
+		eval( dma.preload(idoCaja, idtoCaja) )
+		
+		ovCuentaCaja:ObjectValue() from accumulate((and	
+														ObjValue(IDO==idoCaja, PROPNAME=="cuenta_contable", idoCC:IDOVALUE,cc:OBJECTVALUE,idtoCC:VALUECLS)
+														eval( dma.preload(idoCC, idtoCC) )
+														ObjValue(IDO==idoCC, PROPNAME=="mi_empresa",IDOVALUE==idoMiEmpresa)),
+														init(ObjectValue res=new ObjectValue(0,0);),
+														action(res=cc;),
+														result(res))
+														
+		dominioAsiento:Domain() from accumulate((and 	ObjValue(IDO==idoFlujo, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null) 
+														ObjValue(IDO==idoAsiento, idtoAsiento:IDTO,PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+												),
+													init(Domain res=new Domain(0,0);),
+													action(res=new Domain(idoAsiento,idtoAsiento);),
+													result(res))															
+														
+		ObjValue(IDO==idoFlujo, PROPNAME=="cliente"||=="proveedor", idoSujeto:IDOVALUE!=null, idtoSujeto:VALUECLS)
+		eval( dma.preload(idoSujeto, idtoSujeto) )
+		DatValue(IDO==idoSujeto, PROPNAME==Constants.prop_nombre, nombreSujeto:VALOR!=null)
+		ObjValue(IDO==idoSujeto, PROPNAME=="cuenta_contable", idoCS:IDOVALUE!=null, idtoCS:VALUECLS, objCuentaSujeto:OBJECTVALUE)
+		eval( dma.preload(idoCS, idtoCS) )		
+		ObjValue(IDO==idoCS, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+																												
+		docAnticipo:Double() from accumulate(ObjValue(ido:IDO==idoFlujo, PROPNAME=="documento_anticipo"), sum(ido))
+		////////////														
+		
+		importeVencEmp:Double() from accumulate((and										
+																not ObjValue(IDO==idoFlujo, PROPNAME=="mi_empresa", IDOVALUE!=null)																				
+																ObjValue(IDO==idoFlujo, PROPNAME=="vencimientos_asignados", idoAsignacion:IDOVALUE!=null,idtoAsig:VALUECLS)
+																eval( dma.preload(idoAsignacion, idtoAsig) )
+																ObjValue(IDO==idoAsignacion, PROPNAME=="vencimiento", idoVencimiento:IDOVALUE!=null,idtoV:VALUECLS)																													
+																eval( dma.preload(idoVencimiento, idtoV) )
+																ObjValue(IDO==idoVencimiento, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)																
+																DatValue(IDO==idoAsignacion, PROPNAME=="importe_asignado", imp:DOUBLEVALUE!=null)
+												),sum(imp))		
+													
+		
+	then
+										
+		double importeContable=importeVencEmp;
+				
+		if(esCobroDeEstaEmpresa.size()>0) importeContable=importeCobro;		
+		
+		dma.printRule("[CONTABILIDAD]=================APUNTES DE COBROS Y PAGOS: "+importeContable+", empresa: "+idoMiEmpresa+" ovCuentaCaja:"+ovCuentaCaja);
+		
+		ObjectValue ovApAbono=null,ovApCargo=null;
+		boolean previoExisteAsiento=(dominioAsiento.getIdo()!=0);
+		if(!previoExisteAsiento){
+			Domain dominioCuenta = null, dominioApunteTotal = null, dominioContrapartida = null;	
+			String conceptoAsiento = tipoPagoCobro.equals("COBRO")?"Cobro":"Pago";
+			dominioAsiento = dma.creaIndividualOfClass(Constants.className_asiento);
+			//dma.addValue(idoFlujo, idtoFlujo, "asiento", new ObjectValue(dominioAsiento));
+			if(classPagoCobro.equals("COBRO_ANTICIPO") && docAnticipo.intValue()==0 ){//en cobros_factura el concepto sera los rdns de las facturas, lo hace otra regla
+				conceptoAsiento = "Cobro " + nombreSujeto;
+			}				
+			dma.setValue(dominioAsiento, Constants.prop_concepto, new StringValue(conceptoAsiento));		
+			dma.setValue(dominioAsiento, Constants.prop_fecha, new TimeValue(fechaDoc));		
+			dma.setValue(dominioAsiento, "mi_empresa", ovMiEmpresa);	
+			dma.setValue(dominioAsiento, "documento_contable", new ObjectValue(idoFlujo, idtoFlujo));
+			//Creamos los apuntes del importe total y de la contrapartida y lo enlazamos
+			if(tipoPagoCobro.equals("COBRO")){
+				dominioApunteTotal = dma.creaIndividualOfClass(Constants.className_apunte_cargo);
+				ovApCargo=new ObjectValue(dominioApunteTotal);
+				dominioContrapartida = dma.creaIndividualOfClass(Constants.className_apunte_abono);
+				ovApAbono=new ObjectValue(dominioContrapartida);
+				dma.setValue(dominioContrapartida, Constants.prop_subcuenta, objCuentaSujeto);			
+			}else if(tipoPagoCobro.equals("PAGO")){
+				dominioApunteTotal = dma.creaIndividualOfClass(Constants.className_apunte_abono);
+				ovApAbono=new ObjectValue(dominioApunteTotal);			
+				dominioContrapartida = dma.creaIndividualOfClass(Constants.className_apunte_cargo);
+				ovApCargo=new ObjectValue(dominioContrapartida);
+				dma.setValue(dominioContrapartida, Constants.prop_subcuenta, objCuentaSujeto);			
+			}
+			dma.setValue(dominioApunteTotal, Constants.prop_concepto, new StringValue(conceptoAsiento));		
+			dma.setValue(dominioContrapartida, Constants.prop_concepto, new StringValue(conceptoAsiento));	
+			//Insertamos la cuenta de pago.		
+			Value valCaja=null;
+			if(ovCuentaCaja.getValue()!=0){//si la caja tiene asociada una cuenta contable especifica, esta tiene prioridad 
+				valCaja=ovCuentaCaja;
+				dma.printRule("..debug hay cuenta contable especifica para la caja, es la que se usara");
+			//si no hay caja especifica asociada a la caja hay que usar la genérica, cuenta bancos de config contabilidad gen si medio pago=transferencia,... y caja si es metalico,..				
+			}else if (medioPago.equals("Pago_en_caja") || medioPago.equals("Metálico") || medioPago.equals("Pagaré") || medioPago.equals("Pago_con_vale")){
+				valCaja=ovCuentaCajaCfg;
+				dma.printRule("..debug NO hay cuenta contable especifica para la caja, medio pago metalico o similar usara cuenta contable generica caja");
+			}else{
+				valCaja=ovCuentaBancoCfg;
+				dma.printRule("..debug NO hay cuenta contable especifica para la caja, medio pago transf o similar usara cuenta contable generica bancos");
+			}
+			dma.setValue(dominioApunteTotal, Constants.prop_subcuenta, valCaja);
+			//Los enlazamos al asiento
+			dma.addValue(dominioAsiento, "apuntes", new ObjectValue(dominioApunteTotal));	
+ 			dma.addValue(dominioAsiento, "apuntes", new ObjectValue(dominioContrapartida));		
+		}else{
+			LinkedList apuntes=dma.getValues(dominioAsiento,"apuntes");			
+			for(int i=0;i<apuntes.size();i++){
+				ObjectValue ovApunte=(ObjectValue)apuntes.get(i);				
+				if(dma.isSpecialized(ovApunte.getValueCls(),dma.getIdClass("APUNTE_ABONO"))){ 
+					ovApAbono=ovApunte;
+				}
+				if(dma.isSpecialized(ovApunte.getValueCls(),dma.getIdClass("APUNTE_CARGO"))){ 
+					ovApCargo=ovApunte;
+				}
+			}
+		}		
+		//Como no se pueden combinar cobro anticipado a doc, con cobro a vencimiento, si no tiene vencimiento me quedo con el importe total del cobro
+		//if( importeContable==0.0 ) importeContable=importeCobro;
+				
+		DoubleValue importeV = new DoubleValue(importeContable);
+		DoubleValue importeCero = new DoubleValue(new Double(0));
+		
+		dma.setValue(dominioAsiento, Constants.prop_fecha,new TimeValue(fechaDoc));
+		dma.setValue(new Domain(ovApAbono), Constants.prop_haber, importeV);
+		dma.setValue(new Domain(ovApAbono), Constants.prop_base, importeCero);
+		dma.setValue(new Domain(ovApCargo), Constants.prop_debe, importeV);
+		dma.setValue(new Domain(ovApCargo), Constants.prop_base, importeCero);
+		
+		Value valCaja=null;
+		if(ovCuentaCaja.getValue()!=0){//si la caja tiene asociada una cuenta contable especifica, esta tiene prioridad 
+				valCaja=ovCuentaCaja;
+				dma.printRule("..debug hay cuenta contable especifica para la caja, es la que se usara");
+		//si no hay caja especifica asociada a la caja hay que usar la genérica, cuenta bancos de config contabilidad gen si medio pago=transferencia,... y caja si es metalico,..				
+		}else if (medioPago.equals("Pago_en_caja") || medioPago.equals("Metálico") || medioPago.equals("Pagaré") || medioPago.equals("Pago_con_vale")){
+			valCaja=ovCuentaCajaCfg;
+			dma.printRule("..debug NO hay cuenta contable especifica para la caja, medio pago metalico o similar usara cuenta contable generica caja");
+		}else{
+			valCaja=ovCuentaBancoCfg;
+			dma.printRule("..debug NO hay cuenta contable especifica para la caja, medio pago transf o similar usara cuenta contable generica bancos");
+		}
+		dma.setValue(new Domain(tipoPagoCobro.equals("COBRO")? ovApCargo:ovApAbono), Constants.prop_subcuenta, valCaja);
+		
+end
+
+/**************************************************************************************************************************************
+**													REGLAS DE VISUALIZACIÓN 									 			         **
+***************************************************************************************************************************************/	
+	
+/*
+	Esta regla se encarga de modificar el RDN de los objetos de tipo APUNTE_CARGO y TIPO_ABONO para que cuando se muestren en la interfaz
+	se vea la cuenta completa en vez del código (ID_O) del objeto CUENTA_CONTABLE.
+*/	
+rule "[VALOR POR DEFECTO] COMPOSICIÓN DEL CÓDIGO DE LAS SUBCUENTAS"
+salience -200
+	agenda-group "rules" 
+	when 
+		
+		DatValue(idoCuenta:IDO, idtoCuenta:IDTO, PROPNAME=="codigo_cuenta", codigoCuenta:INTVALUE, ch1:hasCHANGED)		
+		ObjValue(IDO==idoCuenta, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE!=null)
+		DatValue(IDO==idoMiEmpresa, PROPNAME=="rdn", nombreMiEmpresa:VALOR!=null, ch3:hasCHANGED)
+		ObjValue(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+		DatValue(IDO==idoConfig, PROPNAME==Constants.prop_digitos_cuentas, numeroDigitosTotal:VALOR)
+		//Acumulamos el detalle, ya que puede darse el caso de que no esté definido
+			
+		ch4: ArrayList() from collect(DatValue(IDO==idoCuenta, PROPNAME=="detalle", VALOR!=null, hasCHANGED==true))				
+		//Solo si ha habido algun cambio en alguna de las propiedades que forman el RDN
+		eval( ch1 || ch3 || ch4.size()>0)
+
+	then
+		dma.printRule("\n [CONTABILIDAD]==========[VALOR POR DEFECTO]======= COMPOSICIÓN DEL CÓDIGO DE LAS SUBCUENTAS de: "+idoCuenta+"  ch1:"+ch1+"  ch3:"+ch3+"  ch4:"+ch4.size());
+		dma.printRule(" codigoCuenta="+codigoCuenta +" miEmpres:"+nombreMiEmpresa+"\n rdnPrevio:"+dma.getValue(idoCuenta,idtoCuenta,"rdn"));
+		
+		int numeroDigitos = (int) Double.parseDouble(numeroDigitosTotal);
+		String detalleCuenta = "0";
+		
+		if(ch4.size()>0){
+			detalleCuenta = ((StringValue)dma.getValue(idoCuenta, idtoCuenta, "detalle")).getValue();
+		}
+		
+		String rdnCuenta =construyeRdnCuenta(nombreMiEmpresa , numeroDigitos, codigoCuenta, detalleCuenta);
+		dma.printRule(".......rdnCuentaCalculado:"+rdnCuenta);
+		dma.setValue(idoCuenta, idtoCuenta, Constants.PROP_RDN, new StringValue(rdnCuenta));
+end
+
+/**************************************************************************************************************************************
+**													REGLAS DE CUENTAS CONTABLES									 			         **
+***************************************************************************************************************************************/
+
+/*rule "[MISC.] NO EXISTE NINGUN APUNTE SIN CONCEPTO, EN CASO DE NO TENER, HEREDAN DEL ASIENTO"
+	agenda-group "rules"
+	when 
+		
+	    FactHierarchy(classAsiento:CLASS, CLASSSUP==Constants.className_asiento)
+	    Individual(idoAsiento:IDO, CLASSNAME==classAsiento)
+   	    DatValue(IDO==idoAsiento, PROPNAME==Constants.prop_concepto, conceptoAsiento:DATAVALUE!=null)
+		ObjValue(IDO==idoAsiento, PROPNAME=="apuntes", idoApunte:VALOR!=null, idtoApunte:VALUECLS)
+	    not(DatValue(IDO==idoApunte, PROPNAME==Constants.prop_concepto, VALOR!=null)) 
+	then
+		dma.printRule("[CONTABILIDAD]=================[MISC.] NO EXISTE NINGUN APUNTE SIN CONCEPTO, EN CASO DE NO TENER, HEREDAN DEL ASIENTO");	
+		dma.setValue(Integer.parseInt(idoApunte), idtoApunte, Constants.prop_concepto, conceptoAsiento);		
+end*/
+
+
+rule "[MISC.] LOS APUNTES HEREDAN LA PROPIEDAD MI_EMPRESA DEL ASIENTO"
+	agenda-group "rules"
+	when 
+		
+	    FactHierarchy(classAsiento:CLASS, CLASSSUP==Constants.className_asiento)
+	    Individual(idoAsiento:IDO, CLASSNAME==classAsiento)
+   	    ObjValue(IDO==idoAsiento, PROPNAME=="mi_empresa", empresaAsiento:OBJECTVALUE!=null)
+		ObjValue(IDO==idoAsiento, PROPNAME=="apuntes", idoApunte:IDOVALUE!=null, idtoApunte:VALUECLS)
+	    not( ObjValue(IDO==idoApunte, PROPNAME=="mi_empresa", IDOVALUE!=null) )
+	then
+		dma.printRule("[CONTABILIDAD]=================[MISC.] LOS APUNTES HEREDAN LA PROPIEDAD MI_EMPRESA DEL ASIENTO");
+		dma.setValue(idoApunte, idtoApunte, "mi_empresa", empresaAsiento);
+end
+
+
+rule "[MISC.] LOS APUNTES HEREDAN LA PROPIEDAD FECHA DEL ASIENTO"
+	agenda-group "rules"
+	when 
+		
+	    FactHierarchy(classAsiento:CLASS, CLASSSUP==Constants.className_asiento)
+	    Individual(idoAsiento:IDO, CLASSNAME==classAsiento)
+		ObjValue(IDO==idoAsiento, PROPNAME=="apuntes", idoApunte:IDOVALUE!=null, idtoApunte:VALUECLS)
+		DatValue(IDO==idoAsiento, PROPNAME=="fecha", fecha:DATE)
+	    not( DatValue(IDO==idoApunte, PROPNAME=="fecha", DATE==fecha))
+	then
+		dma.printRule("[CONTABILIDAD]===============[MISC.] LOS APUNTES HEREDAN LA PROPIEDAD FECHA DEL ASIENTO");
+		dma.setValue(idoApunte, idtoApunte, "fecha",new TimeValue(fecha));
+end
+
+
+rule "[MISC.] LOS ASIENTOS HEREDAN LA PROPIEDAD FECHA DEL DOCUMENTO"
+	agenda-group "rules"
+	when 
+   	    DatValue(idoDoc:IDO, PROPNAME=="fecha", fecha:DATE, fCh:hasCHANGED)
+		ObjValue(IDO==idoDoc, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null,idtoAsiento:VALUECLS,aCh:hasCHANGED)
+		eval(fCh||aCh)	    
+	then
+		dma.printRule("[CONTABILIDAD]=================[MISC.] LOS ASIENTOS HEREDAN LA PROPIEDAD FECHA DEL DOCUMENTO");
+		dma.setValue(idoAsiento, idtoAsiento, "fecha", new TimeValue(fecha));
+end
+
+
+/**************************************************************************************************************************************
+**											REGLAS DE TRATAMIENTO DE CUENTAS CONTABLES							 			         **
+***************************************************************************************************************************************/
+
+rule "[INICIALIZACION] EL VALOR DE SALDO_SUBCUENTA AL CREAR UN APUNTE ES EL SALDO DE LA CUENTA_CONTABLE"
+	salience -100
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(clase:CLASS, classSup:CLASSSUP==Constants.className_apunte)
+		ObjValue(ido:IDO, idto:IDTO, CLASSNAME==clase, LEVEL==Constants.LEVEL_PROTOTYPE) //Solo para creación
+		Lock(IDO==ido, estado:STATE)
+		ObjValue(IDO==ido, PROPNAME=="mi_empresa", IDOVALUE!=null)
+		DatValue(IDO==ido, PROPNAME==Constants.prop_debe, debe:DOUBLEVALUE!=null)
+		DatValue(IDO==ido, PROPNAME==Constants.prop_haber, haber:DOUBLEVALUE!=null)
+		DatValue(IDO==ido, PROPNAME==Constants.prop_base, base:DOUBLEVALUE!=null)
+		DatValue(IDO==ido, PROPNAME==Constants.prop_base, DOUBLEVALUE!=null)			
+		eval( !debe.equals(new Double(0)) || !haber.equals(new Double(0)) || !base.equals(new Double(0)) )		
+		ObjValue(IDO==ido, PROPNAME==Constants.prop_subcuenta, idoSC:IDOVALUE!=null, idtoSC:VALUECLS)
+		eval( dma.preload(idoSC, idtoSC) )
+		DatValue(IDO==idoSC, PROPNAME==Constants.prop_saldo, saldoSC:DOUBLEVALUE!=null)
+		(or
+			not( exists(DatValue(IDO==ido, PROPNAME==Constants.prop_saldo_subcuenta, DOUBLEVALUE!=null) )) //O el saldo subcuenta es nulo
+			exists(DatValue(IDO==ido, PROPNAME==Constants.prop_saldo_subcuenta, DOUBLEVALUE!=saldoSC)) //O es distinto de nulo y distino del saldo acumulado en la subcuenta
+		)
+	then
+		dma.printRule("[CONTABILIDAD]=================[INICIALIZACION] EL VALOR DE SALDO_SUBCUENTA AL CREAR UN APUNTE ES EL SALDO DE LA CUENTA_CONTABLE");	
+		DoubleValue dv = new DoubleValue(saldoSC);
+		dma.setValue(ido, idto, Constants.prop_saldo_subcuenta, dv);			
+end		
+		
+
+rule "[ACUMULACION] EL SALDO DEBE/HABER ES LA SUMA DE LOS IMPORTES AL DEBE/HABER DE ESA CUENTA"
+	salience 98
+	agenda-group "rules"
+	when
+		FactHierarchy(idtoCuentaContable:IDTO, CLASSSUP=="CUENTA_CONTABLE")
+		ObjValue(idoCuentaContable:IDO!=null, IDTO==idtoCuentaContable)		
+		DatValue(IDO==idoCuentaContable, PROPNAME==Constants.PROP_RDN, rdnCuenta:VALOR!=null)
+		
+		saldoDebeINIT: Double()  
+		from accumulate(
+				(and
+					ObjValue(IDO==idoCuentaContable, PROPNAME=="mi_empresa", empresaCuenta:OBJECTVALUE!=null)
+					FactHierarchy(idtoApunte:IDTO, CLASSSUP==Constants.className_apunte)	
+					ObjValue(idoApunte:IDO, IDTO==idtoApunte, PROPNAME=="mi_empresa", empresaApunte:OBJECTVALUE!=null)	
+					eval( empresaApunte.equals(empresaCuenta) )
+					ObjValue(IDO==idoApunte, PROPNAME==Constants.prop_subcuenta, INITIALRANGE==idoCuentaContable)	
+					DatValue(IDO==idoApunte, prop:PROPNAME==Constants.prop_debe, importe:INITIALDOUBLE!=null) 
+				),
+				sum(importe))
+
+		saldoDebe: Double()  
+		from accumulate(
+				(and
+					ObjValue(IDO==idoCuentaContable, PROPNAME=="mi_empresa", empresaCuenta:OBJECTVALUE!=null)
+					FactHierarchy(idtoApunte:IDTO, CLASSSUP==Constants.className_apunte)		
+					Individual(IDTO==idtoApunte,idoApunte:IDO, STATE==Constants.INDIVIDUAL_STATE_READY)		
+					ObjValue(IDO==idoApunte,PROPNAME==Constants.prop_subcuenta, IDOVALUE==idoCuentaContable)	
+					ObjValue(IDO==idoApunte, PROPNAME=="mi_empresa", empresaApunte:OBJECTVALUE!=null)	
+					eval( empresaApunte.equals(empresaCuenta) )					
+															
+					DatValue(IDO==idoApunte, prop:PROPNAME==Constants.prop_debe, importe:DOUBLEVALUE!=null)
+				),
+				sum(importe))		
+		saldoHaberINIT: Double()  
+		from accumulate(
+				(and
+					ObjValue(IDO==idoCuentaContable, PROPNAME=="mi_empresa", empresaCuenta:OBJECTVALUE!=null)
+					FactHierarchy(idtoApunte:IDTO, CLASSSUP==Constants.className_apunte)	
+					ObjValue(idoApunte:IDO, IDTO==idtoApunte, PROPNAME=="mi_empresa", empresaApunte:OBJECTVALUE!=null)	
+					eval( empresaApunte.equals(empresaCuenta) )
+					ObjValue(IDO==idoApunte, PROPNAME==Constants.prop_subcuenta, INITIALRANGE==idoCuentaContable)	
+					DatValue(IDO==idoApunte, PROPNAME==Constants.prop_haber, importe:INITIALDOUBLE!=null) 
+				),
+				sum(importe))
+
+		saldoHaber: Double()  
+		from accumulate(
+				(and
+					ObjValue(IDO==idoCuentaContable, PROPNAME=="mi_empresa", empresaCuenta:OBJECTVALUE!=null)
+					FactHierarchy(idtoApunte:IDTO, CLASSSUP==Constants.className_apunte)				
+					Individual(IDTO==idtoApunte,idoApunte:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+					ObjValue(IDO==idoApunte,PROPNAME==Constants.prop_subcuenta, IDOVALUE==idoCuentaContable)	
+					ObjValue(IDO==idoApunte, PROPNAME=="mi_empresa", empresaApunte:OBJECTVALUE!=null)	
+					eval( empresaApunte.equals(empresaCuenta) )					
+															
+					DatValue(IDO==idoApunte,PROPNAME==Constants.prop_haber, importe:DOUBLEVALUE!=null)
+				),
+				sum(importe))	
+	then
+		dma.printRule("[CONTABILIDAD]=================[ACUMULACION] EL SALDO DEBE/HABER DE "+rdnCuenta+" ES LA SUMA DE LOS IMPORTES AL DEBE/HABER");
+		
+		//Debe
+	 	dma.setIncrementalValue(idoCuentaContable, idtoCuentaContable, dma.getIdProperty(Constants.prop_saldo_debe), saldoDebe-saldoDebeINIT, 3);		
+	 	//Haber
+	 	dma.setIncrementalValue(idoCuentaContable, idtoCuentaContable, dma.getIdProperty(Constants.prop_saldo_haber), saldoHaber-saldoHaberINIT, 3);
+	 	//Saldo (Debe - Haber)
+	 	dma.setIncrementalValue(idoCuentaContable, idtoCuentaContable, dma.getIdProperty(Constants.prop_saldo), saldoDebe-saldoDebeINIT-(saldoHaber-saldoHaberINIT), 3);
+end
+
+rule "[ACUMULACION] EL SALDO SUBCUENTA ES LAS SUMA DE LAS CONTRIBUCIONES DE APUNTES ANTERIORES A ESA SUBCUENTA"
+	agenda-group "rules"
+	when
+		
+		FactHierarchy(clase:CLASS, CLASSSUP==Constants.className_apunte)
+		Individual(idoApunteR:IDO, idtoApunteR:IDTO, CLASSNAME==clase, STATE==Constants.INDIVIDUAL_STATE_READY, LEVEL==Constants.LEVEL_INDIVIDUAL) //Evitamos que se dispare con prototipos y borrados
+		ObjValue(IDO==idoApunteR, PROPNAME=="mi_empresa", objMiEmpresa:OBJECTVALUE!=null)
+		Individual(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", OBJECTVALUE==objMiEmpresa)
+		DatValue(IDO==idoConfig, PROPNAME==Constants.prop_actualizar_saldo_subcuenta, BOOLEANVALOR==true)
+		DatValue(IDO==idoApunteR, PROPNAME==Constants.prop_fecha, fechaR:DATE!=null)
+
+		saldoINIT: Double()  
+		from accumulate(
+				(and
+					ObjValue(IDO==idoApunteR, PROPNAME==Constants.prop_subcuenta, idoCuentaContable:IDOVALUE!=null)
+					DatValue(IDO==idoCuentaContable, PROPNAME==Constants.PROP_RDN, rdnCuenta:VALOR!=null)
+					FactHierarchy(claseApunte:CLASS, CLASSSUP==Constants.className_apunte)
+					Individual(idoApunte:IDO, CLASSNAME==claseApunte)
+					ObjValue(IDO==idoApunte, PROPNAME=="mi_empresa", empresaApunte:OBJECTVALUE!=null)	
+					eval( empresaApunte.equals(objMiEmpresa) )	
+					DatValue(IDO==idoApunte, PROPNAME==Constants.prop_fecha, fecha:DATE!=null)
+					eval( fecha.before(fechaR) || fecha.equals(fechaR) )
+					ObjValue(IDO==idoApunte, PROPNAME==Constants.prop_subcuenta, idoSubCuenta:INITIALRANGE!=null)						
+					DatValue(IDO==idoSubCuenta, PROPNAME==Constants.PROP_RDN, INITIALVALOR==rdnCuenta)	
+					DatValue(IDO==idoApunte, PROPNAME==Constants.prop_debe, importeDebe:INITIALDOUBLE!=null)
+					DatValue(IDO==idoApunte, PROPNAME==Constants.prop_haber, importeHaber:INITIALDOUBLE!=null)					
+				),
+				sum(importeDebe-importeHaber))
+		
+
+		saldoCURR: Double()  
+		from accumulate(
+				(and
+					ObjValue(IDO==idoApunteR, PROPNAME==Constants.prop_subcuenta, idoCuentaContable:IDOVALUE!=null)
+					DatValue(IDO==idoCuentaContable, PROPNAME==Constants.PROP_RDN, rdnCuenta:VALOR!=null)				
+					FactHierarchy(claseApunte:CLASS, CLASSSUP==Constants.className_apunte)
+					Individual(CLASSNAME==claseApunte,idoApunte:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+					ObjValue(IDO==idoApunte,PROPNAME==Constants.prop_subcuenta, idoSubCuenta:IDOVALUE!=null)	
+					ObjValue(IDO==idoApunte, PROPNAME=="mi_empresa", empresaApunte:OBJECTVALUE!=null)	
+					eval( empresaApunte.equals(objMiEmpresa) )
+					DatValue(IDO==idoApunte, PROPNAME==Constants.prop_fecha, fecha:DATE!=null)
+					eval( fecha.before(fechaR) || fecha.equals(fechaR) )				
+					
+					DatValue(IDO==idoSubCuenta, PROPNAME==Constants.PROP_RDN, VALOR==rdnCuenta)				
+					DatValue(IDO==idoApunte, PROPNAME==Constants.prop_debe, importeDebe:DOUBLEVALUE!=null)
+					DatValue(IDO==idoApunte, PROPNAME==Constants.prop_haber, importeHaber:DOUBLEVALUE!=null)
+				),
+				sum(importeDebe-importeHaber))
+
+	then
+		dma.printRule("[CONTABILIDAD]=================[ACUMULACION] EL SALDO SUBCUENTA ES LAS SUMA DE LAS CONTRIBUCIONES DE APUNTES ANTERIORES A ESA SUBCUENTA: "+idoApunteR);	
+ 
+	 	dma.setIncrementalValue(idoApunteR, idtoApunteR, dma.getIdProperty(Constants.prop_saldo_subcuenta) ,saldoCURR-saldoINIT, 3);		
+end
+
+/*
+	Debe cargar la cuenta contable a la que apunta el apunte que se está apunto de borrar, así como todos los 
+	apuntes con fecha anterior a este cuyas subcuentas son iguales. Esta regla solo debe actuar
+	cuando se ha seleccionado la opción de trabajar actualizando los saldos_subcuenta de los apuntes. 
+*/
+rule "[PRECARGA] SUBCUENTA Y APUNTES EN ELIMINACIÓN DE APUNTES"
+	salience 100
+	agenda-group "rules" when 
+		
+		FactHierarchy(clase:CLASS, classSup:CLASSSUP==Constants.className_asiento)		
+		IndividualState(ido:IDO, idto:IDTO, CLASSNAME==clase, estado:STATE==Constants.INDIVIDUAL_STATE_LOCK||==Constants.INDIVIDUAL_STATE_DELETED)	
+		eval( dma.preload(ido, idto) )
+		ObjValue(IDO==ido, PROPNAME=="mi_empresa", miEmpresa:OBJECTVALUE!=null)
+		
+		// Sólo en caso de que exista una configuración para la empresa del asiento en la que se
+		// especifique que tiene que actualizar los saldos subcuenta.
+		exists(
+			(and
+				Individual(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+				ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", OBJECTVALUE==miEmpresa)
+				DatValue(IDO==idoConfig, PROPNAME=="actualizar_saldo_subcuenta", VALOR=="true")
+			)
+		)
+				
+		values: HashMap()  
+		from accumulate(
+				(and
+					ObjValue(IDO==ido, PROPNAME=="apuntes", idoApunte:IDOVALUE!=null, idtoApunte:VALUECLS, objApuntes:OBJECTVALUE)
+					eval( dma.preload(idoApunte, idtoApunte) )
+					ObjValue(IDO==idoApunte, PROPNAME==Constants.prop_subcuenta,idtoSubC:VALUECLS, objSC:OBJECTVALUE, LEVEL==Constants.LEVEL_INDIVIDUAL) //Subcuenta del apunte
+					DatValue(IDO==idoApunte, PROPNAME==Constants.prop_fecha, fecha:DATE!=null)
+				),
+				init( HashMap<ObjectValue, Date> mapCuentaFecha = new HashMap<ObjectValue, Date>(); ),
+                action( mapCuentaFecha.put(objSC, fecha); ),
+                result( mapCuentaFecha ) 
+		)
+
+	then
+		dma.printRule("[CONTABILIDAD]=================[PRECARGA] SUBCUENTA Y APUNTES EN ELIMINACIÓN DE APUNTES");
+		
+		//Cargamos los otros apuntes	 	
+		HashMap<String, ArrayList<Value>> propiedadValor = new HashMap<String, ArrayList<Value>>();
+		ArrayList<Value> valoresValueCuenta = new ArrayList<Value>();
+		ArrayList<Value> valoresFecha = new ArrayList<Value>();
+		Date older = new Date();
+		
+		Iterator<ObjectValue> it = values.keySet().iterator();
+		while(it.hasNext()){
+			ObjectValue ovSubcuenta = it.next();
+			Date fecha = (Date)values.get(ovSubcuenta);
+			
+		 	dma.ruleGetFromServer(ovSubcuenta.getValue(), ovSubcuenta.getValueCls(), 2, false);
+			
+			valoresValueCuenta.add(ovSubcuenta);
+			if(fecha.before(older)){
+				older = fecha;
+			}
+		}
+		TimeValue tv = new TimeValue();
+		tv.setRelativeSecondsMin(older.getTime()/Constants.TIMEMILLIS);		
+		tv.setRelativeSecondsMax(null);		
+		valoresFecha.add(tv);
+		
+		propiedadValor.put(Constants.prop_subcuenta, valoresValueCuenta);
+		propiedadValor.put(Constants.prop_fecha, valoresFecha);
+		instance filtro = dma.buildInstanceWith(Constants.className_apunte, null, propiedadValor, null, null);
+		HashSet<IDIndividual> idosApuntes = dma.loadIndividualsWithSatisficedFilter(filtro);
+end
+
+
+/*
+	Regla que se encarga de asignarle a un cliente/proveedor un código de cuenta contable igual al RDN del cliente/proveedor.
+*/
+
+
+rule "[INSTALACION] CUENTA CONTABLES DE IVA"
+	agenda-group "rules"
+	when
+		FactHierarchy(classFactura:CLASS,tipoFactura:CLASSSUP=="FACTURA")
+		FactHierarchy(CLASS==classFactura,tipoDocumento:CLASSSUP=="DOCUMENTO_COMPRA"||=="DOCUMENTO_VENTA")
+		Lock(idoDocumento:IDO,idtoDocumento:IDTO, STATE==Constants.INDIVIDUAL_STATE_LOCK, CLASSNAME==classFactura)
+		DatValue(IDO==idoDocumento, PROPNAME==Constants.prop_fecha, fechaDoc:DATE!=null)
+		//ObjValue(IDO==idoDocumento, PROPNAME=="mi_empresa", ovmiEmpresa:OBJECTVALUE!=null,idoMiEmpresa:IDOVALUE)
+		
+		not((and 	FactHierarchy(IDTO==idtoDocumento,clsExcluir:CLASSSUP=="DOCUMENTO_COMPRA"||=="TICKET")
+					DatValue(CLASSNAME=="PARAMETRO_VERDADERO",idoParam:IDO,PROPNAME=="rdn",VALOR==("excluir contabilidad "+clsExcluir))
+					DatValue(IDO==idoParam,PROPNAME=="activo",VALOR=="true")))
+					
+		Individual(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+		
+		DatValue(IDO==idoConfig,propConfig:PROPNAME=="codigo_cuenta_RE_IVA_compras"||=="codigo_cuenta_RE_IVA_ventas",codigoCuenta:INTVALUE!=null)
+		eval(tipoDocumento.equals("DOCUMENTO_COMPRA") && propConfig.equals("codigo_cuenta_RE_IVA_compras") ||
+			 tipoDocumento.equals("DOCUMENTO_VENTA") && propConfig.equals("codigo_cuenta_RE_IVA_ventas"))					
+				
+		//Dado un desglose_iva de una factura (de compra o venta) con cuota_iva > 0€
+		ObjValue(IDO==idoDocumento, PROPNAME=="desglose_iva", idoDesglose:IDOVALUE!=null)
+		ObjValue(IDO==idoDesglose, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE,ovmiEmpresa:OBJECTVALUE!=null)
+				
+		ObjValue(IDO==idoDesglose, PROPNAME==Constants.prop_iva, idoIVA:IDOVALUE!=null)
+		DatValue(IDO==idoDesglose, PROPNAME=="cuota_iva", cuota:VALOR!=null)
+		DatValue(IDO==idoIVA, idtoIVA:IDTO, propPorcentaje:PROPNAME=="porcentaje_iva", porcentaje:DOUBLEVALUE!=null)
+		
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+		DatValue(IDO==idoConfig, PROPNAME=="dígitos_cuentas", digitosCuentas:INTVALUE!=null)
+		
+		subc_base_recarg:String() from accumulate((and	DatValue(IDO==idoIVA,PROPNAME=="subcuenta_base_de_recargos_de_equivalencia",sb:VALOR!=null)
+														DatValue(IDO==idoDesglose, PROPNAME=="cuota_recargo", cuota_rec:DOUBLEVALUE!=0.0)
+													),
+												  init(String res="";),action(res=sb;),result(res))
+		
+		not((and		
+			ObjValue(IDO==idoIVA, PROPNAME=="cuenta_IVA", idoCuentaIVA:IDOVALUE!=null,idtoCuenta:VALUECLS)
+			eval( dma.preload(idoCuentaIVA, idtoCuenta) )
+			ObjValue(IDO==idoCuentaIVA, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)			
+			//Distinguir iva compras y de ventas
+			DatValue(IDO==idoCuentaIVA,PROPNAME=="codigo_cuenta",INTVALUE==codigoCuenta)
+			DatValue(IDO==idoCuentaIVA,PROPNAME=="detalle",detalleCCIVA:VALOR!=null)
+			eval(!(subc_base_recarg.length()>0&&!subc_base_recarg.equals(detalleCCIVA)))
+		))				
+		
+		//Hay que distinguir la existencia de cuenta con su asignacion al IVA. 
+		//La cuenta puede no estar en server pero haber sido creada ahora, por ejemplo en IVA exento se crea la misma para recargo que para iva 
+
+		ivaMotor:Domain() from accumulate( (and	FactHierarchy(idtoCuenta:IDTO,CLASSSUP=="CUENTA_CONTABLE")
+												ObjValue(IDTO==idtoCuenta,idoCuenta:IDO, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+												DatValue(IDO==idoCuenta,PROPNAME=="detalle",detalleAny:VALOR!=null)
+												eval(subc_base_recarg.length()>0||getDetalleCuentaSegunPorcentaje(digitosCuentas,false,porcentaje).equals(detalleAny))
+												eval(!(subc_base_recarg.length()>0&&!subc_base_recarg.equals(detalleAny)))
+												DatValue(IDO==idoCuenta,PROPNAME=="codigo_cuenta",INTVALUE==codigoCuenta)												
+																																									
+										), 
+											init( Domain resIDO= new Domain(0,0)),
+											action( resIDO= new Domain(idoCuenta,idtoCuenta);),
+											result(resIDO))
+			
+	then	    	    
+	    String detalleCuenta=subc_base_recarg.length()>0?subc_base_recarg:getDetalleCuentaSegunPorcentaje(digitosCuentas,false,porcentaje);
+		dma.printRule("\n\n[CONTABILIDAD]======[INSTALACION] CUENTA CONTABLES DE IVA porcentaje:"+porcentaje+" detalle:"+detalleCuenta+" codidgoCuenta:"+codigoCuenta+" "+ivaMotor.getIdo());
+		//1) Se busca en bbdd 
+		
+		Domain domCuenta=getCuentaFromServer(dma, codigoCuenta,digitosCuentas,detalleCuenta, ovmiEmpresa);
+		
+		//2)Si no existe en bbdd, se instala
+		
+		if(domCuenta==null && ivaMotor.getIdo().doubleValue()!=0.0) domCuenta=ivaMotor;
+		
+		if(domCuenta==null){
+		
+			domCuenta=creaCuentaContable(dma, codigoCuenta, detalleCuenta, ovmiEmpresa,digitosCuentas);
+			dma.printRule("no encontro en BBDD, INSTALA UNA: Detalle="+detalleCuenta+"  idoCuentaCreada:"+domCuenta.getIdo());
+		
+		}else{
+			dma.printRule("\n..encontrada en bbdd la cuenta: domCuenta:"+domCuenta+"\n.. con rdn="+dma.getValue(domCuenta,"rdn"));
+		}
+		dma.addValue(idoIVA,idtoIVA,"cuenta_IVA",new ObjectValue(domCuenta));
+end
+
+
+
+rule "[INSTALACION] CUENTA CONTABLES DE RECARGO EQUIVALENCIA"
+	
+	agenda-group "rules"
+	when
+		FactHierarchy(classFactura:CLASS,tipoFactura:CLASSSUP=="FACTURA")
+		FactHierarchy(CLASS==classFactura,idtoDocumento:IDTO,tipoDocumento:CLASSSUP=="DOCUMENTO_COMPRA"||=="DOCUMENTO_VENTA")
+		Lock(idoDocumento:IDO, STATE==Constants.INDIVIDUAL_STATE_END_LOCK, CLASSNAME==classFactura)
+		DatValue(IDO==idoDocumento, PROPNAME==Constants.prop_fecha, fechaDoc:DATE!=null)		
+		
+		not((and 	FactHierarchy(IDTO==idtoDocumento,clsExcluir:CLASSSUP=="DOCUMENTO_COMPRA"||=="TICKET")
+					DatValue(CLASSNAME=="PARAMETRO_VERDADERO",idoParam:IDO,PROPNAME=="rdn",VALOR==("excluir contabilidad "+clsExcluir))
+					DatValue(IDO==idoParam,PROPNAME=="activo",VALOR=="true")))
+					
+		Individual(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")	
+			 
+		DatValue(IDO==idoConfig,propConfig:PROPNAME=="codigo_cuenta_RE_IVA_compras"||=="codigo_cuenta_RE_IVA_ventas"||=="codigo_cuenta_recargo_equivalencia_ventas",codigoCuentaCfg:INTVALUE!=null)
+		eval(tipoDocumento.equals("DOCUMENTO_COMPRA") && propConfig.equals("codigo_cuenta_RE_IVA_compras") ||
+			 tipoDocumento.equals("DOCUMENTO_VENTA") && propConfig.contains("ventas"))				 
+			 				
+		//Dado un desglose_iva de una factura (de compra o venta) con cuota_iva > 0€
+		ObjValue(IDO==idoDocumento, PROPNAME=="desglose_iva", idoDesglose:IDOVALUE!=null)
+		ObjValue(IDO==idoDesglose, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE,ovmiEmpresa:OBJECTVALUE!=null)
+		ObjValue(IDO==idoDesglose, PROPNAME==Constants.prop_iva, idoIVA:IDOVALUE!=null)
+		DatValue(IDO==idoDesglose, propCuota:PROPNAME=="cuota_recargo", cuota:VALOR!=0)
+		DatValue(IDO==idoIVA, idtoIVA:IDTO, PROPNAME=="porcentaje_recargo", porcentaje:DOUBLEVALUE!=null)
+		
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)
+		DatValue(IDO==idoConfig, PROPNAME==Constants.prop_digitos_cuentas, digitosCuentas:INTVALUE!=null)		
+		not((and 	eval(tipoDocumento.equals("DOCUMENTO_VENTA")&&!propConfig.equals("codigo_cuenta_recargo_equivalencia_ventas"))
+					DatValue(IDO==idoConfig,PROPNAME=="codigo_cuenta_recargo_equivalencia_ventas",INTVALUE!=null)
+		))					
+		//TODO PRELOAD
+		not((and
+			ObjValue(IDO==idoIVA, PROPNAME=="cuenta_R.E.", idoCuenta:IDOVALUE!=null,idtoCuenta:VALUECLS)
+			eval( dma.preload(idoCuenta, idtoCuenta) )
+			ObjValue(IDO==idoCuenta, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)			
+			DatValue(IDO==idoCuenta,PROPNAME=="codigo_cuenta",INTVALUE==codigoCuentaCfg)
+		))		
+
+		//Hay que distinguir la existencia de cuenta con su asignacion al IVA. 
+		//La cuenta puede no estar en server pero haber sido creada ahora, por ejemplo en IVA exento se crea la misma para recargo que para iva 
+		ivaMotor:Domain() from accumulate( (and	FactHierarchy(idtoCuenta:IDTO,CLASSSUP=="CUENTA_CONTABLE")
+												ObjValue(IDTO==idtoCuenta,idoCuenta:IDO, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)												
+												DatValue(IDO==idoCuenta,PROPNAME=="detalle",detalleAny:VALOR!=null)
+												eval(getDetalleCuentaSegunPorcentaje(digitosCuentas,true,porcentaje).equals(detalleAny))
+												DatValue(IDO==idoCuenta,PROPNAME=="codigo_cuenta",INTVALUE==codigoCuentaCfg)																															
+										), 
+											init( Domain resIDO= new Domain(0,0)),
+											action( resIDO= new Domain(idoCuenta,idtoCuenta);),
+											result(resIDO))
+	then
+
+	    String detalleCuenta=getDetalleCuentaSegunPorcentaje(digitosCuentas,true,porcentaje);
+		dma.printRule("=========[CONTABILIDAD]=========[INSTALACION] CUENTA CONTABLES DE RECARGO EQUIVALENCIA. porcentaje:"+porcentaje+"\ndetalle:"+detalleCuenta+" codidgoCuenta:"+codigoCuentaCfg);
+		//1) Se busca en bbdd 
+		Domain domCuenta=getCuentaFromServer(dma, codigoCuentaCfg,digitosCuentas,detalleCuenta, ovmiEmpresa);
+		//2)Si no existe en bbdd, se instala
+		
+		if(domCuenta==null && ivaMotor.getIdo().doubleValue()!=0.0) domCuenta=ivaMotor;
+		
+		if(domCuenta==null){
+			domCuenta=creaCuentaContable(dma, codigoCuentaCfg, detalleCuenta, ovmiEmpresa,digitosCuentas);
+			dma.printRule("no encontro en BBDD, INSTALA UNA: Detalle="+detalleCuenta+"  idoCuentaCreada:"+domCuenta.getIdo());
+		
+		}else{
+			dma.printRule("\n..encontrada en bbdd la cuenta: domCuenta:"+domCuenta+"\n.. con rdn="+dma.getValue(domCuenta,"rdn"));
+		}
+		dma.addValue(idoIVA,idtoIVA,"cuenta_R.E.",new ObjectValue(domCuenta));
+end
+
+
+rule "[PRECARGA/INSTALACION] CUENTA CONTABLE CLIENTE/PROVEEDOR"
+	agenda-group "rules"
+	when
+		FactHierarchy(clsDocContable:CLASS, CLASSSUP=="DOCUMENTO_CONTABLE")
+		Individual(CLASSNAME==clsDocContable, idoDocContable:IDO, idtoDocumento:IDTO, STATE==Constants.INDIVIDUAL_STATE_READY)
+		DatValue(IDO==idoDocContable, PROPNAME==Constants.prop_fecha, fechaDoc:DATE!=null)						
+		
+		//ESTA CONFIGURADA LA CONTABILIDAD PARA ESE EJERCICIO Y ESA EMPRESA
+		Individual(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE,ovmiEmpresa:OBJECTVALUE)	
+				
+		//la mi_empresa se toma
+		//1) de la miEmpresa del documentoCobro si es un cobroAnticipo
+		//2) de la miEmpresa de los vencimientos si es un cobroFactura
+		
+		forall(	FactHierarchy(CLASS==clsDocContable,CLASSSUP=="COBRO_ANTICIPO")
+				ObjValue(IDO==idoDocContable,PROPNAME=="mi_empresa",IDOVALUE==idoMiEmpresa))
+			
+		forall(	ObjValue(IDO==idoDocContable, PROPNAME=="vencimientos_asignados", idoAsignacionV:IDOVALUE!=null)
+				ObjValue(IDO==idoAsignacionV, PROPNAME=="vencimiento", idoVencimiento:IDOVALUE!=null)
+				ObjValue(IDO==idoVencimiento, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa))
+				
+		forall(	ObjValue(IDO==idoDocContable, PROPNAME=="desglose_iva", idoDesglose:IDOVALUE!=null)
+				ObjValue(IDO==idoDesglose,PROPNAME=="mi_empresa",IDOVALUE==idoMiEmpresa))
+				
+		//Sujeto y su cuenta asociada a la empresa del vencimiento
+		
+		ObjValue(IDO==idoDocContable, propsujeto:PROPNAME=="cliente"||=="proveedor", idoSujeto:IDOVALUE!=null, idtoSujeto:VALUECLS)
+		eval( dma.preload(idoSujeto, idtoSujeto) )
+		DatValue(IDO==idoSujeto, PROPNAME==Constants.prop_nombre, nombreSujeto:VALOR!=null)
+		DatValue(IDO==idoSujeto, PROPNAME=="rdn", rdnSujeto:VALOR!=null)	
+				
+		ObjValue(IDO==idoConfig, propCfgSujeto:PROPNAME=="cuenta_clientes"||=="cuenta_proveedores_mercaderias"||=="cuenta_proveedores_servicios",  idoConfigCSujeto:IDOVALUE,idtoConfigCSujeto:VALUECLS)
+
+		//No importa si coexiste servicios y mercancias en mismo doc, para instalar en cliente
+		tieneServicios:Long() from accumulate((and 	FactHierarchy(idtoLinea:IDTO,CLASSSUP=="LÍNEA_ARTÍCULOS_SERVICIO")
+													exists(ObjValue(IDO==idoDocContable, PROPNAME=="línea", VALUECLS==idtoLinea))),
+												count(idtoLinea))
+		eval(dma.preload(idoConfigCSujeto, idtoConfigCSujeto))													
+	
+		eval(	propsujeto.equals("proveedor")&& (tieneServicios.intValue()>0 && propCfgSujeto.equals("cuenta_proveedores_servicios") || tieneServicios.intValue()==0 && propCfgSujeto.equals("cuenta_proveedores_mercaderias"))||
+				propsujeto.equals("cliente")&&propCfgSujeto.equals("cuenta_clientes") )		
+		DatValue(IDO==idoConfigCSujeto, PROPNAME=="codigo_cuenta",codeConfigSujeto:INTVALUE!=null)
+
+////////						
+			
+		//Total dígitos definidos para cuentas contables
+		DatValue(IDO==idoConfig, PROPNAME==Constants.prop_digitos_cuentas, digitosCuentas:INTVALUE!=null)
+		
+		//NO EXISTE CUENTA CONTABLE ASIGNADA AL SUJETO PARA ESE EJERCICIO Y ESA MIEMPRESA
+		//TODO PRELOAD
+		not((and
+			ObjValue(IDO==idoSujeto, PROPNAME=="cuenta_contable", idoCSAny:IDOVALUE!=null, idtoCSAny:VALUECLS)
+			eval( dma.preload(idoCSAny, idtoCSAny) )
+			ObjValue(IDO==idoCSAny, PROPNAME=="mi_empresa", IDOVALUE==idoMiEmpresa)			
+			DatValue(IDO==idoCSAny, PROPNAME=="codigo_cuenta",INTVALUE==codeConfigSujeto)
+		))
+	then
+		dma.printRule("[CONTABILIDAD]=================[PRECARGA/INSTALACION] CUENTA CONTABLE CLIENTE/PROVEEDOR "+clsDocContable+" "+idoDocContable+" "+idoSujeto+" "+codeConfigSujeto);
+		
+		Domain domCuenta=null;
+		//1) Se busca en bbdd 
+		if(idoSujeto>0){			
+			domCuenta=getCuentaFromServer(dma, codeConfigSujeto, digitosCuentas,rdnSujeto, ovmiEmpresa);
+		}
+		//2)Si no existe en bbdd, se instala
+		if(domCuenta==null){
+			domCuenta=creaCuentaContable(dma, codeConfigSujeto, rdnSujeto, ovmiEmpresa, digitosCuentas);
+			dma.printRule("no encuentra la cuenta en BDDD, instala una nueva ido:"+domCuenta.getIdo());
+		}else{
+			dma.printRule("..encontrada en bbdd la cuenta: domCuenta:"+domCuenta+"\n.. con rdn="+dma.getValue(domCuenta,"rdn"));
+			
+		}
+		//Asignamos al cliente el código de cuenta_contable
+		dma.addValue(idoSujeto, idtoSujeto, "cuenta_contable", new ObjectValue(domCuenta)); 
+end		
+
+
+rule "PRECARGA SUBCUENTA QUE NO ESTA EN MOTOR"
+salience 100
+ agenda-group "rules" when 
+  	ObjValue(PROPNAME=="subcuenta", idoCuenta:IDOVALUE!=null, idoRoot:IDO!=null,clsRoot:CLASSNAME,idto:VALUECLS)
+  	not(Individual(IDO==idoCuenta))
+then
+	dma.printRule("\n[CONTABILIDAD]===== [PRECARGA] PRECARGA SUBCUENTA QUE NO ESTA EN MOTOR. clsRoot:"+clsRoot+"  idoRoot:"+idoRoot+"  idoCuenta:"+idoCuenta);
+ 	dma.ruleGetFromServer(idoCuenta,idto,1,false);
+end
+
+	
+//nuevas reglas ayuda configuracion	
+rule "CUENTAS CONTABLES CREADAS EN CONFIGURACIÓN TIENEN miEmpresa indicadas en ConfiguracionTraspasoContabilidad"
+agenda-group "rules" when
+ 		Lock(CLASSNAME=="CONFIGURACIÓN_CONTABLE", idoConfig:IDO, idto:IDTO, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+ 		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa",miEmpresa:OBJECTVALUE!=null)
+		
+		FactHierarchy( CLASSSUP=="CUENTA_CONTABLE",idtoCuenta:IDTO)
+		ObjValue(IDO==idoConfig, propiedadCuenta:PROPNAME!=null,idoCuenta:IDOVALUE!=null,VALUECLS==idtoCuenta)		
+		Individual(IDO==idoCuenta)
+		not(ObjValue(IDO==idoCuenta,PROPNAME=="mi_empresa",IDOVALUE!=null))
+		
+	then
+		dma.printRule("\n[CONTABILIDAD]================  CUENTAS CONTABLES CREADAS EN CONFIGURACIÓN TIENEN miEmpresa indicadas en ConfiguracionTraspasoContabilidad");
+		dma.setValue(idoCuenta, idtoCuenta, "mi_empresa",miEmpresa);
+end
+
+
+rule "CUENTAS CONTABLES NO COMPATIBLES CON CONFIGURACIÓN POR VALOR DISTINTO EN MIEMPRESA O EJERCICIO"
+salience 100
+agenda-group "rules" when
+ 		Lock(CLASSNAME=="CONFIGURACIÓN_CONTABLE", ido:IDO, idto:IDTO, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+ 		ObjValue(IDO==ido, PROPNAME=="mi_empresa", idoMiEmpresa:IDOVALUE!=null)
+		ObjValue(IDO==ido,  PROPNAME=="configuración_cuentas_compras"||=="configuración_cuentas_ventas", idoConfigCuenta:IDOVALUE!=null)
+		ObjValue(IDO==idoConfigCuenta, propiedadCuenta:PROPNAME!=null,idoCuenta:IDOVALUE!=null,idtoCuenta:VALUECLS)
+		eval(propiedadCuenta.contains("cuenta"))
+		ObjValue(IDO==idoCuenta,PROPNAME=="mi_empresa",IDOVALUE!=idoMiEmpresa)
+		
+	then
+		dma.printRule("\n[CONTABILIDAD]=============== CUENTAS CONTABLES NO COMPATIBLES CON CONFIGURACIÓN POR VALOR DISTINTO EN MIEMPRESA O EJERCICIO");
+		throw new OperationNotPermitedException("\n El valor de mi empresa  de la cuenta no es compatible con el de ConfiguracionTraspasoContabilidad al que se esta asociado");
+end
+
+
+rule "CUENTAS CONTABLES BANCO/CAJAS CREADAS EN CONFIGURACIÓN TIENEN miEmpresa indicadas en Configuracion"
+agenda-group "rules" when
+ 		Lock(CLASSNAME=="CONFIGURACIÓN_CONTABLE", ido:IDO, idto:IDTO, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+ 		ObjValue(IDO==ido, PROPNAME=="mi_empresa",miEmpresa:OBJECTVALUE!=null)
+		ObjValue(IDO==ido,  PROPNAME=="cuenta_bancos"||=="cuenta_caja", idoCuenta:IDOVALUE!=null,idtoCuenta:VALUECLS)
+		Individual(IDO==idoCuenta)
+		not(ObjValue(IDO==idoCuenta,PROPNAME=="mi_empresa",IDOVALUE!=null))
+		
+	then
+		dma.printRule("\n[CONTABILIDAD]========CUENTAS CONTABLES BANCO/CAJAS CREADAS EN CONFIGURACIÓN TIENEN miEmpresa indicadas en Configuracion");
+		dma.setValue(idoCuenta, idtoCuenta, "mi_empresa",miEmpresa);
+end
+
+
+rule "CUENTAS CONTABLES BANCO/CAJA NO COMPATIBLES CON CONFIGURACIÓN POR VALOR DISTINTO EN MIEMPRESA O EJERCICIO"
+salience 100
+agenda-group "rules" when
+ 		Lock(CLASSNAME=="CONFIGURACIÓN_CONTABLE", ido:IDO, idto:IDTO, STATE==Constants.INDIVIDUAL_STATE_LOCK)
+ 		ObjValue(IDO==ido, PROPNAME=="mi_empresa", idoEmpresa:IDOVALUE!=null)
+		ObjValue(IDO==ido,  PROPNAME=="cuenta_bancos"||=="cuenta_caja", idoCuenta:IDOVALUE!=null)
+		ObjValue(IDO==idoCuenta,PROPNAME=="mi_empresa",IDOVALUE!=idoEmpresa)
+		
+	then
+		dma.printRule("\n[CONTABILIDAD]==========  CUENTAS CONTABLES BANCO/CAJAS NO COMPATIBLES CON CONFIGURACIÓN POR VALOR DISTINTO EN MIEMPRESA O EJERCICIO");
+		throw new OperationNotPermitedException("\n El valor de mi empresa de la cuenta no es compatible con el de ConfiguracionTraspasoContabilidad al que se esta asociado");
+end
+
+	
+//////////////////// EXPORTACIÓN A CONTAPLUS/////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////
+
+/*
+	Crea un fichero en la ruta especificada con el nombre basado en el perioro de tiempo que se le pasa por
+	parámetros.
+*/
+function File crearFicheroDestino(DataModelAdapter dma, String ruta, String periodo){
+		dma.printRule("inicio crearFicheroDestino ruta:"+ruta+" periodo:"+periodo);
+		if(ruta.endsWith(".txt")){
+			ruta = ruta.replaceAll("\\.txt", "");
+		}	
+
+		ruta += periodo+".txt";	
+		dma.printRule("ruta: '"+ruta+"'");
+		File fichero = new File(ruta);
+		fichero.createNewFile();
+		
+		dma.printRule("sale en crearFicheroDestino ruta:"+ruta+" periodo:"+periodo);			
+		
+		return fichero;
+}
+
+
+
+
+
+/*
+	Escribe eun un fichero la linea que se le pasa por parametro.
+*/
+function void escribirEnFichero(File f, String cadena){
+		FileWriter fw = null;
+		BufferedWriter bw = null;
+		
+			try {
+				fw = new FileWriter(f, true);
+				bw = new BufferedWriter(fw);
+				
+				bw.write(cadena);
+				bw.newLine();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+			fw.flush();
+			bw.close();
+			fw.close();
+		}
+
+
+function void crearFicheroSubCuentas(DataModelAdapter dma, HashSet CCAsientos, String ruta, String periodo){
+		
+
+	periodo += " [CUENTAS]";	
+	File fichero = crearFicheroDestino(dma, ruta, periodo);
+	dma.printRule("\n debug funcion crearFicheroSubcuentas: paso 1");
+	Iterator it = CCAsientos.iterator();
+	while(it.hasNext()){
+		SubCuenta sc= (SubCuenta)it.next();
+		escribirEnFichero(fichero, sc.generarLinea());
+	}
+}
+
+function void crearFicheroComentarios(DataModelAdapter dma, String ruta, String periodo){
+	periodo += " [COMENTARIOS]";
+	File fichero = crearFicheroDestino(dma, ruta, periodo);
+}
+
+
+
+
+/**
+NUEVO METODO, NO USARA INSTANCE, LAS NUEVAS QUERYS DEVUELVEN UN TIPO DE OBJETO
+**/
+
+
+function HashSet getLineaApunteBBDD(DataModelAdapter dma, DateFormat formatter, int indice, File fichero){
+	return new HashSet();
+}
+
+
+
+/*
+	Esta función se encarga de extraer los datos de un objeto de la clase instancia que representa un apunte y añadirlos al objeto de la clase
+	Apunte, que será luego el encargado de generar la línea compatible con FacturaPlus.
+*/
+/*function HashSet getLineaApunteBBDD(DataModelAdapter dma, instance instancia, DateFormat formatter, int indice, File fichero){
+		Apunte ap = new Apunte(indice);
+		HashSet<String> rdnCuentasContables = new HashSet<String>();
+				
+		//Fecha:
+		formatter = new SimpleDateFormat("yyyyMMdd");
+		long milis = (long)Double.parseDouble(instancia.getPropertyQuery("asientos", dma.getIdProperty("fecha")).getValues().getFirst().getValue_s());
+		Date fecha = new Date(milis*Constants.TIMEMILLIS);
+		String fechaS = formatter.format(fecha);				
+		ap.modificarCampo("fecha", formatter.format(fecha));
+
+		//Subcuenta:
+		String subCuenta = instancia.getPropertyQuery("id_subcuenta", dma.getIdProperty("rdn")).getValues().getFirst().getValue_s();
+		rdnCuentasContables.add(subCuenta);
+		String[] split = subCuenta.split("\\]");
+		subCuenta = split[1].replaceAll("\\.", "");
+		ap.modificarCampo("subCuenta", subCuenta);
+
+		//Contrapartida
+		if(instancia.getPropertyQuery("id_contrapartida", dma.getIdProperty("rdn")) != null){
+			String contrapartida = instancia.getPropertyQuery("id_contrapartida", dma.getIdProperty("rdn")).getValues().getFirst().getValue_s();
+			rdnCuentasContables.add(contrapartida);
+			split = contrapartida.split("\\]");
+			contrapartida = split[1].replaceAll("\\.", "");
+			ap.modificarCampo("contrapartida", contrapartida);
+		}
+
+		//Debe, Haber y Base
+		Double debe = Double.parseDouble(instancia.getPropertyQuery("apunte", dma.getIdProperty("debe")).getValues().getFirst().getValue_s());
+		ap.modificarCampo("importeDebeEuros", debe);
+		ap.modificarCampo("importeDebePts", debe*166.386);
+		Double haber = Double.parseDouble(instancia.getPropertyQuery("apunte", dma.getIdProperty("haber")).getValues().getFirst().getValue_s());
+		ap.modificarCampo("importeHaberEuros", haber);
+		ap.modificarCampo("importeHaberPts", haber*166.386);
+		Double base = Double.parseDouble(instancia.getPropertyQuery("apunte", dma.getIdProperty("base")).getValues().getFirst().getValue_s());
+		ap.modificarCampo("baseIVAEuros", base);
+		ap.modificarCampo("baseImponibleIVAPts", base*166.386);				
+
+		//Obtenemos el IDO
+		String rdnApunte = instancia.getPropertyQuery("apunte", dma.getIdProperty("rdn")).getValues().getFirst().getValue_s();
+		HashMap<String, ArrayList<Value>> propiedadValor = new HashMap<String, ArrayList<Value>>();
+		ArrayList<Value> valores = new ArrayList<Value>();
+		StringValue sValue = new StringValue(rdnApunte);
+		valores.add(sValue);
+		propiedadValor.put("rdn", valores);
+		//HashSet<Integer> idosApuntes = dma.serverGetIdosWithValues("APUNTE", propiedadValor);
+		instance filtro = dma.buildInstanceWith(Constants.className_apunte, null, propiedadValor, null, null);
+		HashSet<IDIndividual> idosApuntes = dma.loadIndividualsWithSatisficedFilter(filtro);
+
+		Integer idoApunte = null;
+		Iterator it = idosApuntes.iterator();
+		while(it.hasNext()){
+			IDIndividual idindiv=(IDIndividual)it.next();
+			idoApunte = idindiv.getIDOIndividual();
+		}
+
+		if(idoApunte != null){
+			Integer idtoApunte = dma.getClassOf(idoApunte);
+			//Porcentaje IVA y Porcentaje RE en caso de existir	
+			dma.loadIndividualIfNotExists(idoApunte, idtoApunte);					
+			if(idtoApunte.equals(dma.getIdClass(Constants.className_apunte_iva))){
+				ObjectValue objIVA = (ObjectValue)dma.getValue(idoApunte, idtoApunte, Constants.prop_iva);
+				Double porcentajeIVA = ((DoubleValue)dma.getValue(objIVA.getValue(), objIVA.getValueCls(), Constants.prop_porcentaje_iva)).getValueMax();
+				ap.modificarCampo("porcentajeIVA", porcentajeIVA);
+				
+			}else if(idtoApunte.equals(dma.getIdClass(Constants.className_apunte_re))){
+				ObjectValue objIVA = (ObjectValue)dma.getValue(idoApunte, idtoApunte, Constants.prop_iva);
+				Double porcentajeRE = ((DoubleValue)dma.getValue(objIVA.getValue(), objIVA.getValueCls(), Constants.prop_porcentaje_recargo)).getValueMax();
+				ap.modificarCampo("porcentajeRE", porcentajeRE);
+			}
+
+			//Concepto
+			String concepto = instancia.getPropertyQuery("apunte", dma.getIdProperty("concepto")).getValues().getFirst().getValue_s();
+			ap.modificarCampo("concepto", concepto);
+
+			//Moneda uso -> Euros
+			ap.modificarCampo("monedaUso", "2");
+			//Creamos la línea, la escribimos al final del fichero y devolvemos la lista de rdn's de cuentas contables
+			escribirEnFichero(fichero, ap.generarLinea());
+		}
+		
+		return rdnCuentasContables;
+}*/
+
+
+
+rule "[EXPORTACION] TRASPASOS ASIENTOS CONTAPLUS"
+	agenda-group "rules" when
+	    FactHierarchy(typeExport:CLASS!=null,CLASSSUP=="DATA_TRANSFER")
+	    eval(typeExport.equals("TRASPASO_ASIENTOS"))
+	    
+	    Lock(idoTraspaso:IDO, CLASSNAME==typeExport, estado:STATE==Constants.INDIVIDUAL_STATE_READY)
+	    DatValue(IDO==idoTraspaso, PROPNAME==Constants.prop_fecha_inicio, fecha_inicio:DATE!=null)
+	    DatValue(IDO==idoTraspaso, PROPNAME==Constants.prop_fecha_fin, fechafin:DATE!=null)
+	    ObjValue(IDO==idoTraspaso, PROPNAME=="mi_empresa", idMiEmpresa:IDOVALUE!=null, objMiEmpresa:OBJECTVALUE)
+	    DatValue(IDO==idMiEmpresa, PROPNAME=="rdn", rdnMiEmpresa:VALOR!=null)
+	    ObjValue(IDO==idoTraspaso, PROPNAME==Constants.prop_programa_destino, idoPrograma:IDOVALUE!=null)
+	    DatValue(IDO==idoPrograma, PROPNAME==Constants.PROP_RDN, VALOR=="ContaPlus")
+	    
+	    //Config contabilidad
+		Individual(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", OBJECTVALUE==objMiEmpresa)
+		DatValue(IDO==idoConfig, PROPNAME==Constants.prop_carpeta, ruta:VALOR!=null)
+		DatValue(IDO==idoConfig, PROPNAME=="dígitos_cuentas", num_dig:VALOR!=null)
+	then
+		dma.printRule("[CONTABILIDAD]=================[EXPORTACION] TRASPASOS ASIENTOS CONTAPLUS");
+		
+		ArrayList parametrosEmpresaYfFechas=new ArrayList(); 
+    	parametrosEmpresaYfFechas.add(rdnMiEmpresa);
+    	parametrosEmpresaYfFechas.add(fecha_inicio);
+    	parametrosEmpresaYfFechas.add(fechafin);
+		
+		HashSet<SubCuenta> cuentas = new HashSet<SubCuenta>();
+		ArrayList<Object> apuntes=Query.getResultsAssociatedToQuery(dma.getDDM(),"exportarContaPlus",parametrosEmpresaYfFechas,num_dig);
+		//esta query esta preparada para devolver ya directamente objetos java apunte con la informacio que necesitamos de los apuntes en bbdd
+		dma.printRule("...debug cuentas QUERY:"+apuntes.size());
+		if(apuntes.size() > 0){
+			DateFormat formatter = new SimpleDateFormat("dd-MM-yyyy");
+			String periodo = formatter.format(fecha_inicio) + " a " + formatter.format(fechafin);
+			if(!ruta.endsWith("\\") && !ruta.endsWith("/")){
+				ruta += "/asientos ";
+			}else{
+				ruta += "asientos ";
+			}
+			File fichero = crearFicheroDestino(dma, ruta, periodo);
+			ArrayList<String> codigosCuentas=new ArrayList<String>(); 
+			for(int i=0;i<apuntes.size();i++){
+				Apunte ap=(Apunte)apuntes.get(i);
+				if(ap.getSubcuenta()!=null&&!codigosCuentas.contains(ap.getSubcuenta().getValor("codigo"))){
+					cuentas.add(ap.getSubcuenta());
+					codigosCuentas.add(ap.getSubcuenta().getValor("codigo"));
+				}
+				if(ap.getContrapartida()!=null&&!codigosCuentas.contains(ap.getSubcuenta().getValor("codigo"))){
+					cuentas.add(ap.getContrapartida());
+					codigosCuentas.add(ap.getSubcuenta().getValor("codigo"));
+				}
+				escribirEnFichero(fichero, ap.generarLinea());
+			}
+		
+			
+			dma.printRule("...debug cuentas:"+cuentas);
+			crearFicheroSubCuentas(dma, cuentas, ruta, periodo);
+			crearFicheroComentarios(dma, ruta, periodo); 
+			dma.showMessage("La exportación ha finalizado correctamente. Se han exportado "+apuntes.size()+" apuntes. El fichero de salida lo puede encontrar en: "+fichero.getAbsolutePath());
+			
+		}else{
+			throw new OperationNotPermitedException("No se ha encontrado ningún apunte en el intervalo indicado. Por favor, revise su selección.");
+		}
+end
+
+
+
+
+////////////////////////////
+
+
+
+/*NO CONTABILIZAR ANTICIPOS NO ASIGNADOS 
+rule "[INSTALACION] ASIENTO, APUNTE CON EL IMPORTE TOTAL Y APUNTE CON LA CONTRAPARTIDA DE ANTICIPOS"
+	salience 100
+	agenda-group "rules"
+	when
+		
+	  	FactHierarchy(idtoAnticipo:IDTO, CLASSSUP=="COBRO_ANTICIPO")
+	  	
+	  	DatValue(idoAnticipo:IDO, IDTO==idtoAnticipo, PROPNAME=="importe_anticipado", importe:DOUBLEVALUE!=0)
+	  	ObjValue(IDO==idoAnticipo, PROPNAME=="medio_de_pago", idoMedioPago:IDOVALUE!=null)
+	  	DatValue(IDO==idoMedioPago, PROPNAME=="rdn", medioPago:VALOR!=null)
+	  	ObjValue(IDO==idoAnticipo, PROPNAME=="mi_empresa", miEmpresa:OBJECTVALUE!=null)
+	  	
+	  	//Cliente
+	  	ObjValue(IDO==idoAnticipo, PROPNAME=="cliente", idoCliente:IDOVALUE!=null)
+	  	DatValue(IDO==idoCliente, PROPNAME==Constants.prop_nombre, nombreCliente:VALOR!=null)
+		ObjValue(IDO==idoCliente, PROPNAME=="cuenta_contable", idoCS:IDOVALUE!=null, idtoCS:VALUECLS, objCuentaSujeto:OBJECTVALUE)
+		eval( dma.preload(idoCS, idtoCS) )
+		ObjValue(IDO==idoCS, PROPNAME=="mi_empresa", OBJECTVALUE==miEmpresa)
+	  	
+	  	//No tiene asiento todavía.
+	  	eval(dma.printRule(">>> idoAnticipo: "+idoAnticipo))
+	  	not(
+	  		(and
+	  			ObjValue(IDO==idoAnticipo, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null, idtoAsiento:VALUECLS)
+	  			eval( dma.preload(idoAsiento, idtoAsiento) )
+	  			ObjValue(IDO==idoAsiento, PROPNAME=="mi_empresa", OBJECTVALUE==miEmpresa)
+	  		)
+	  	)
+	  	eval(dma.printRule(">>> NO HAY ASIENTO para miEmpresa:"+miEmpresa))
+	  	
+	  	//Config contabilidad y cuentas caja y banco
+		Individual(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", OBJECTVALUE==miEmpresa)
+		ObjValue(IDO==idoConfig, PROPNAME=="cuenta_caja", idCuentaCaja:OBJECTVALUE!=null)
+		ObjValue(IDO==idoConfig, PROPNAME=="cuenta_bancos", idCuentaBanco:OBJECTVALUE!=null) 
+	  			 	
+	then
+		dma.printRule("[CONTABILIDAD]=================[INSTALACION] ASIENTO, APUNTE CON EL IMPORTE TOTAL Y APUNTE CON LA CONTRAPARTIDA DE ANTICIPOS");
+		Domain dominioAsiento = dma.creaIndividualOfClass("ASIENTO");
+		dma.setValue(idoAnticipo, idtoAnticipo, "asiento", new ObjectValue(dominioAsiento));
+		
+		dma.setValue(dominioAsiento, Constants.prop_concepto, new StringValue("Anticipo a "+nombreCliente+": "+importe+"€"));
+
+		Date fechaAhora = Calendar.getInstance().getTime();
+		dma.setValue(dominioAsiento, Constants.prop_fecha, new TimeValue(fechaAhora));
+		dma.setValue(dominioAsiento, "mi_empresa", miEmpresa);
+		dma.setValue(dominioAsiento, "documento_contable", new ObjectValue(idoAnticipo, idtoAnticipo));
+		
+		//Creamos los apuntes del importe total y de la contrapartida y lo enlazamos
+		Domain dominioApunteTotal = dma.creaIndividualOfClass(Constants.className_apunte_cargo);
+		Domain dominioContrapartida = dma.creaIndividualOfClass(Constants.className_apunte_abono);
+		dma.setValue(dominioContrapartida, Constants.prop_subcuenta, objCuentaSujeto);
+
+		// Insertamos la cuenta de pago.		
+		if(medioPago.equals("Pago_en_caja") || medioPago.equals("Metálico") || medioPago.equals("Pagaré") || medioPago.equals("Pago_con_vale")){
+			dma.setValue(dominioApunteTotal, Constants.prop_subcuenta, idCuentaCaja);	
+		}else{
+			dma.setValue(dominioApunteTotal, Constants.prop_subcuenta, idCuentaBanco);	
+		}
+	
+		//Los enlazamos al asiento
+		dma.addValue(dominioAsiento, "apuntes", new ObjectValue(dominioApunteTotal));	
+ 		dma.addValue(dominioAsiento, "apuntes", new ObjectValue(dominioContrapartida));
+	
+end
+
+rule "[ACTUALIZACION] APUNTES DE ANTICIPOS"
+	agenda-group "rules"
+	when
+		
+	  	FactHierarchy(idtoAnticipo:IDTO, CLASSSUP=="COBRO_ANTICIPO")
+	  	
+	  	DatValue(idoAnticipo:IDO, IDTO==idtoAnticipo, PROPNAME=="importe_anticipado", importe:DOUBLEVALUE!=0)
+	  	ObjValue(IDO==idoAnticipo, PROPNAME=="medio_de_pago", idoMedioPago:IDOVALUE!=null)
+	  	DatValue(IDO==idoMedioPago, PROPNAME=="rdn", medioPago:VALOR!=null)
+	  	ObjValue(IDO==idoAnticipo, PROPNAME=="mi_empresa", miEmpresa:OBJECTVALUE!=null)
+	  	
+	  	//Cliente
+	  	ObjValue(IDO==idoAnticipo, PROPNAME=="cliente", idoCliente:IDOVALUE!=null)
+	  	DatValue(IDO==idoCliente, PROPNAME==Constants.prop_nombre, nombreCliente:VALOR!=null)
+		ObjValue(IDO==idoCliente, PROPNAME=="cuenta_contable", idoCS:IDOVALUE!=null, idtoCS:VALUECLS, objCuentaSujeto:OBJECTVALUE)
+		eval( dma.preload(idoCS, idtoCS) )
+		ObjValue(IDO==idoCS, PROPNAME=="mi_empresa", OBJECTVALUE==miEmpresa)
+	  	
+	  	//tiene asiento todavía.
+		ObjValue(IDO==idoAnticipo, PROPNAME=="asiento", idoAsiento:IDOVALUE!=null)
+	  	ObjValue(IDO==idoAsiento, idtoAsiento:IDTO, PROPNAME=="mi_empresa", OBJECTVALUE==miEmpresa)
+	  	ObjValue(IDO==idoAsiento, PROPNAME=="apuntes", RANGENAME==Constants.className_apunte_abono, idoApunteAbono:OBJECTVALUE!=null)
+		ObjValue(IDO==idoAsiento, PROPNAME=="apuntes", RANGENAME==Constants.className_apunte_cargo, idoApunteCargo:OBJECTVALUE!=null)
+	  	
+	  	//Config contabilidad y cuentas caja y banco
+		Individual(idoConfig:IDO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", OBJECTVALUE==miEmpresa)
+		ObjValue(IDO==idoConfig, PROPNAME=="cuenta_caja", idCuentaCaja:OBJECTVALUE!=null)
+		ObjValue(IDO==idoConfig, PROPNAME=="cuenta_bancos", idCuentaBanco:OBJECTVALUE!=null)
+		
+	then
+		dma.printRule("[CONTABILIDAD]=================[ACTUALIZACION] APUNTES DE ANTICIPOS");
+		StringValue nuevoConcepto = new StringValue("Anticipo a "+nombreCliente+": "+importe+"€");
+		DoubleValue dvImporte = new DoubleValue(importe);
+		DoubleValue importeCero = new DoubleValue(new Double(0));
+		
+		dma.setValue(new Domain(idoApunteAbono), Constants.prop_haber, dvImporte);
+		dma.setValue(new Domain(idoApunteAbono), Constants.prop_base, importeCero);
+		dma.setValue(new Domain(idoApunteCargo), Constants.prop_debe, dvImporte);
+		dma.setValue(new Domain(idoApunteCargo), Constants.prop_base, importeCero);
+		
+		dma.setValue(idoAsiento, idtoAsiento, Constants.prop_concepto, nuevoConcepto);
+
+		Date fechaAhora = Calendar.getInstance().getTime();
+		dma.setValue(idoAsiento, idtoAsiento, Constants.prop_fecha, new TimeValue(fechaAhora));
+		dma.setValue(idoAsiento, idtoAsiento, "mi_empresa", miEmpresa);
+	
+		dma.setValue(new Domain(idoApunteAbono), Constants.prop_subcuenta, objCuentaSujeto);
+		// Insertamos la cuenta de pago.		
+		if(medioPago.equals("Pago_en_caja") || medioPago.equals("Metálico") || medioPago.equals("Pagaré") || medioPago.equals("Pago_con_vale")){
+			dma.setValue(new Domain(idoApunteCargo), Constants.prop_subcuenta, idCuentaCaja);	
+		}else{
+			dma.setValue(new Domain(idoApunteCargo), Constants.prop_subcuenta, idCuentaBanco);	
+		}
+		
+		dma.setValue(new Domain(idoApunteAbono), "concepto", nuevoConcepto);
+		dma.setValue(new Domain(idoApunteCargo), "concepto", nuevoConcepto);
+end*/
+
+
+
+
+/////////reglas debug, borrarlas cd se termine la depuraciones
+
+
+rule "[LIMPIEZA] DEBUG DOS CUENTAS CON MISMO RDN. dvalue"
+salience 200
+	agenda-group "rules"
+	when
+		FactHierarchy(idto:IDTO, CLASSSUP=="CUENTA_CONTABLE")
+		Individual(IDTO==idto,ido1:IDO,STATE==Constants.INDIVIDUAL_STATE_READY)
+		DatValue(IDO==ido1,PROPNAME=="rdn",code:VALOR)
+		Individual(IDTO==idto,ido2:IDO>ido1,STATE==Constants.INDIVIDUAL_STATE_READY)
+		DatValue(IDO==ido2,PROPNAME=="rdn",VALOR==code)
+		ObjValue(IDO==ido1,PROPNAME=="mi_empresa", idoEmp1:IDOVALUE!=null)
+		ObjValue(IDO==ido2,PROPNAME=="mi_empresa", IDOVALUE==idoEmp1)
+		
+		
+		DatValue(IDO==ido1,PROPNAME=="codigo_cuenta",codigoCuenta1:INTVALUE!=null)
+		
+		DatValue(IDO==ido1,PROPNAME=="detalle",detalle1:VALOR!=null,sdetalle:VALOR!=null)
+		
+		DatValue(IDO==ido2,PROPNAME=="codigo_cuenta",codigoCuenta2:INTVALUE)
+		
+		DatValue(IDO==ido2,PROPNAME=="detalle",detalle2:VALOR)
+		
+	then
+		dma.printRule("\n\n  \n\n\n[CONTABILIDAD]==> DEBUG DOS CUENTAS CON MISMO RDN.  ido1:"+ido1+" ido2:"+ido2+"  rdn:"+code+"\ndetalle1: "+detalle1+" detalle2:"+detalle2);
+		dma.printRule(" codigoCuenta1:"+codigoCuenta1+" codigoCuenta:"+codigoCuenta2);
+end
+
+rule "DEBUG CUENTA CONTABLE EN MOTOR"
+salience 200 		
+agenda-group "rules" when
+ 		DatValue(CLASSNAME=="CUENTA_CONTABLE", ido:IDO,PROPNAME=="rdn", rdn:VALOR)
+ 		eval(rdn.startsWith("700"))
+	then
+		dma.printRule("\n\n\n[CONTABILIDAD]==== DEBUG-DEBUG: CUENTA CONTABLE EN MOTOR, RDN:"+rdn+"   ido:"+ido+"\n");
+end
+
+
+rule "CONFIGURACION CONTABLE POR DEFECTO"
+salience -200
+	agenda-group "rules" 
+	when 
+		Individual(idoConfig:IDO,idtoCfg:IDTO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+		ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", objMiEmpresa:OBJECTVALUE)
+		DatValue(IDO==idoConfig, PROPNAME==Constants.prop_digitos_cuentas, numeroDigitosTotal:QMIN)
+		Model(CLASSNAME=="CONFIGURACIÓN_CONTABLE",p:PROPNAME,OP==Constants.OP_INTERSECTION)
+		not(IndividualValue(IDO==idoConfig, PROPNAME==p))		
+	then
+		dma.printRule("CONFIGURACION CONTABLE POR DEFECTO "+idoConfig+" "+p);
+		if(p.equals("codigo_cuenta_RE_IVA_compras"))				dma.setDataValue(idoConfig,idtoCfg,p,"472");	else
+		if(p.equals("codigo_cuenta_RE_IVA_ventas"))					dma.setDataValue(idoConfig,idtoCfg,p,"477"); 	else  
+		if(p.equals("codigo_cuenta_recargo_equivalencia_ventas"))	dma.setDataValue(idoConfig,idtoCfg,p,"477"); 	else{
+		
+			int cuenta=0;
+			String detalle="0";
+
+			if(p.equals("cuenta_bancos")) 					cuenta=		572; 
+			if(p.equals("cuenta_caja")) 					cuenta=		570;
+			if(p.equals("cuenta_clientes")) 				cuenta=		430;
+			if(p.equals("cuenta_compra_mercaderias")) 		cuenta=		600;
+			if(p.equals("cuenta_compra_servicios")) 		cuenta=		607;
+			if(p.equals("cuenta_proveedores_mercaderias")) 	cuenta=		400;
+			if(p.equals("cuenta_proveedores_servicios")) 	cuenta=		410;
+			if(p.equals("cuenta_retenciones_compras")) 		cuenta=		473;
+			if(p.equals("cuenta_retenciones_ventas")) 		cuenta=		4751;
+			if(p.equals("cuenta_ventas_mercaderias")) 		cuenta=		700;
+			if(p.equals("cuenta_ventas_servicios")) 		cuenta=		705;
+						
+			if(cuenta!=0)
+				dma.setValue(idoConfig,idtoCfg,p,new ObjectValue(creaCuentaContable(dma, cuenta, detalle, objMiEmpresa, numeroDigitosTotal.intValue())));
+		}
+end
+
+
+rule "CAJA: CUENTA CONTABLE POR DEFECTO"
+salience -200
+agenda-group "rules" 
+when 
+    Lock(CLASSNAME=="DELEGACIÓN",idoDeleg:IDO<0,idtoDeleg:IDTO,estadoDelg:STATE,lockUser:LOCKEDBYUSER)
+
+   // forall(	Lock(CLASSNAME=="APLICACIÓN",LOCKEDBYUSER==false)
+   // 		Lock(IDO==idoDeleg,STATE==Constants.INDIVIDUAL_STATE_END_LOCK,LOCKEDBYUSER==true)) 
+    	
+    FactHierarchy(CLASSSUP=="CAJA",idtoCaja:IDTO)
+    ObjValue(IDTO==idtoCaja,idoCaja:IDO,PROPNAME=="delegación",IDOVALUE==idoDeleg)
+    DatValue(IDO==idoDeleg,PROPNAME=="rdn",codeDeleg:VALOR!=null)
+    
+    eval(codeDeleg.matches("\\d+"))
+    
+    Individual(idoConfig:IDO,idtoCfg:IDTO, CLASSNAME=="CONFIGURACIÓN_CONTABLE")
+	ObjValue(IDO==idoConfig, PROPNAME=="mi_empresa", idoEmpresa:IDOVALUE,objMiEmpresa:OBJECTVALUE)
+	
+	not((and 	ObjValue(IDO==idoCaja,PROPNAME=="cuenta_contable",idoCuenta:IDOVALUE!=null)
+				ObjValue(IDO==idoCuenta, PROPNAME=="mi_empresa", IDOVALUE==idoEmpresa)
+		))
+	DatValue(IDO==idoConfig, PROPNAME==Constants.prop_digitos_cuentas, numeroDigitosTotal:QMIN)    
+						
+then
+		dma.printRule("CAJA: CUENTA CONTABLE POR DEFECTO");
+		dma.addValue(idoCaja,idtoCaja,"cuenta_contable",new ObjectValue(creaCuentaContable(dma, 570, codeDeleg, objMiEmpresa, numeroDigitosTotal.intValue())));
+end
+
+
+
+	

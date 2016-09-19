@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<CONFIG>
+	<UTASKS>
+		
+
+		<!--AREA Calidad  -->
+		<UT A_FUNC="Calidad" NAME="PUNTO_CRÍTICO" >
+			<TG_CLASS CLASS="PUNTO_CRÍTICO"  />
+		</UT>
+		<UT A_FUNC="Calidad" NAME="REVISIÓN_PUNTO_CONTROL">
+			<TG_CLASS CLASS="REVISIÓN_PUNTO_CONTROL"  />
+		</UT>
+		</UTASKS>
+
+</CONFIG>

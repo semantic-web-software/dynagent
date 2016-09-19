@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<CONFIG>
+	<UTASKS>
+		
+		<!--AREA PRL-->
+
+	<!--	<UT A_FUNC="Prevención_riesgos" NAME="TAREA">
+			<TG_CLASS CLASS="TAREA" />
+		</UT>
+		
+-->		
+		<UT A_FUNC="Prevención_riesgos" LISTENER="true" NAME="TAREA_PENDIENTE">
+			<TG_CLASS CLASS="TAREA" />
+		</UT>
+
+		<UT A_FUNC="Prevención_riesgos" NAME="MEDIDA_CORRECTIVA">
+			<TG_CLASS CLASS="MEDIDA_CORRECTIVA" />
+		</UT>
+
+		<UT A_FUNC="Prevención_riesgos" NAME="MEDIDA_PREVENTIVA">
+			<TG_CLASS CLASS="MEDIDA_PREVENTIVA" />
+		</UT>
+				
+		<UT A_FUNC="Prevención_riesgos" NAME="RIESGO">
+			<TG_CLASS CLASS="RIESGO" />
+		</UT>
+		<UT A_FUNC="Prevención_riesgos" NAME="EPI">
+			<TG_CLASS CLASS="EPI" />
+		</UT>
+		<UT A_FUNC="Prevención_riesgos" NAME="PUESTO_TRABAJO">
+			<TG_CLASS CLASS="PUESTO_TRABAJO" />
+		</UT>
+	
+	<UT A_FUNC="Prevención_riesgos" NAME="TIPO_PUESTO_TRABAJO">
+			<TG_CLASS CLASS="TIPO_PUESTO_TRABAJO" />
+		</UT>
+	
+	
+	
+	
+		
+		
+	</UTASKS>
+</CONFIG>
+	

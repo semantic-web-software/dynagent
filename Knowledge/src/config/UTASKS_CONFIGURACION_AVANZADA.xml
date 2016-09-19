@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<CONFIG>
+	<UTASKS>
+		<!--AREA CONFIGURACIÓN AVANZADA-->
+	
+	
+	
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="PERFIL_USUARIO">
+			<TG_CLASS CLASS="USERROL"  />
+		</UT>	
+		
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="CAMPO_DESTACADO">
+			<TG_CLASS CLASS="CAMPO_DESTACADO"  />
+		</UT>
+		<!--  <UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="NÚMERO VALORES">
+			<TG_CLASS CLASS="CARDINALIDAD"  />
+		</UT>-->
+
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="COLUMNAS_TABLA">
+			<TG_CLASS CLASS="COLUMNAS_TABLA"  />
+		</UT>
+
+
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="ORDEN_RELATIVO_CAMPOS">
+			<TG_CLASS CLASS="ORDEN_RELATIVO_CAMPOS"  />
+		</UT>
+
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="TAMAÑO_CAMPO">
+			<TG_CLASS CLASS="TAMAÑO_COMPONENTE"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="GRUPO_CAMPOS">
+			<TG_CLASS CLASS="GRUPO_CAMPOS"  />
+		</UT>
+
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="ACCIÓN">
+			<TG_CLASS CLASS="ACCIÓN"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="ALIAS">
+			<TG_CLASS CLASS="ALIAS"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="ÁREA FUNCIONAL">
+			<TG_CLASS CLASS="FUNCTIONAL_AREA"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="CLASE">
+			<TG_CLASS CLASS="CLASE"  />
+		</UT>
+		
+		
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="EXCLUSIÓN">
+			<TG_CLASS CLASS="EXCLUSIÓN"  />
+		</UT>		
+		
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="PROPIEDAD">
+			<TG_CLASS CLASS="PROPIEDAD"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="MÁSCARA_CAMPO">
+			<TG_CLASS CLASS="MÁSCARA_CAMPO"  />
+		</UT>
+		
+		
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="MENÚ">
+			<TG_CLASS CLASS="MENÚ"  />
+		</UT>
+		
+		
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="PERMISO">
+			<TG_CLASS CLASS="PERMISO"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="INFORME">
+			<TG_CLASS CLASS="INFORME"  />
+		</UT>
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="VALOR_POR_DEFECTO">
+			<TG_CLASS CLASS="VALOR_POR_DEFECTO"  />
+		</UT>
+
+		
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="VERSIÓN_MODELO">
+			<TG_CLASS CLASS="VERSIÓN_MODELO"  />
+		</UT>
+		
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="MÓDULO_NEGOCIO">
+			<TG_CLASS CLASS="MÓDULO_NEGOCIO"  />
+		</UT>	
+		
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="CAMPO_REQUERIDO">
+			<TG_CLASS CLASS="CAMPO_REQUERIDO"  />
+		</UT>	
+		
+		<UT A_FUNC="Configuración_Avanzada"  USERROL="administrador"  NAME="NOTIFICACIÓN">
+			<TG_CLASS CLASS="NOTIFICACIÓN"  />
+		</UT>
+		
+	</UTASKS>
+</CONFIG>

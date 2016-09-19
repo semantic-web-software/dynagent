@@ -1,0 +1,162 @@
+package dynagent.ruleengine.src.ruler.ERPrules;
+import dynagent.ruleengine.src.ruler.ERPrules.*;
+import dynagent.ruleengine.src.ruler.ERPrules.datarules.*;
+import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.utils.Auxiliar;
+import dynagent.common.Constants;
+import dynagent.common.exceptions.*;
+import org.drools.WorkingMemory;
+import dynagent.common.basicobjects.*;
+global DataModelAdapter dma;
+
+rule "CARDINALIDAD MINIMA 1 EN  PROPIEDADES ADICIONALES LINEA EN ENTRADA/SALIDA MERCANCIA/REGULARIZACIÓN"
+salience 200
+no-loop true
+ agenda-group "rules" when 
+  	 DocDataModel()
+  	 
+	 FactHierarchy(idtoClsRoot:IDTO,CLASSSUP=="PRODUCCIÓN"||=="FLUJO_ARTÍCULOS"||=="REGULARIZACIÓN")
+	 Lock(IDTO==idtoClsRoot,idoRoot:IDO!=null,clase:CLASSNAME,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	 ObjValue(IDO==idoRoot,PROPNAME=="línea"||=="consumo",idoLinea:IDOVALUE!=null,idtoLinea:VALUECLS,claseLinea:RANGENAME)
+	 ObjValue(IDO==idoLinea,PROPNAME=="producto",idoProducto:IDOVALUE!=null,idtoProducto:VALUECLS,clsProducto:RANGENAME)
+	 
+	 forall(
+		 Model(CLASSNAME==clsProducto,OP==Constants.OP_CARDINALITY,QMIN>=1,propOblig:PROPNAME)
+		 IndividualValue(IDO==idoProducto,PROPNAME==propOblig,VALOR!=null)
+	  )
+	   		 
+	 forall( FactHierarchy(CLASSSUP=="PRODUCCIÓN",IDTO==idtoClsRoot)
+	 		ObjValue(IDO==idoRoot,PROPNAME=="estado",idoEstado:IDOVALUE!=null)
+	 		DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR=="Programado"||=="Realizado"))	
+	 		 
+	 DV:DatValue(IDO==idoProducto,namePropReq:PROPNAME=="requiere_lote"||=="requiere_talla"||=="requiere_color",BOOLEANVALOR==true,idPropReq:PROP)
+	 Model(CLASSNAME==claseLinea,propLineaReq:PROPNAME=="lote"||=="talla"||=="color",OP==Constants.OP_INTERSECTION)
+	 eval(namePropReq.contains(propLineaReq))
+	 not(Model(CLASSNAME==claseLinea,PROPNAME==propLineaReq,OP==Constants.OP_CARDINALITY,QMIN>=1))
+	 not(IndividualCardinality(IDO==idoLinea,PROPNAME==propLineaReq,QMIN>=1))
+	 DatValue(IDO==idoProducto,PROPNAME=="rdn",rdn:VALOR)
+then
+ 	dma.printRule("\n\n============CARDINALIDAD MINIMA 1 EN  PROPIEDADES ADICIONALES LINEA EN ENTRADA/SALIDA MERCANCIA: clase:="+clase+"  namePropReq:"+namePropReq+" propLineaReq:"+propLineaReq+" idoLinea:"+idoLinea +" "+rdn);
+ 	//dma.printRule("\n debug  DV producto:\n"+DV);
+ 	dma.setCardinality(idoLinea,idtoLinea,propLineaReq,1);
+end
+
+rule "ELIMINAR CARDINALIDAD MINIMA 1 EN PROPIEDAD ADICIONAL LINEA SI YA NO APLICA EN ENTRADA/SALIDA MERCANCIA/REGULARIZACIÓN"
+salience 200
+no-loop true
+ agenda-group "rules" when 
+  	 DocDataModel()
+  	 
+  	 jb:JBossEngine()
+	 FactHierarchy(idtoClsRoot:IDTO,CLASSSUP=="PRODUCCIÓN"||=="FLUJO_ARTÍCULOS"||=="REGULARIZACIÓN")
+	 Lock(IDTO==idtoClsRoot,idoRoot:IDO!=null,clase:CLASSNAME,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	 
+	 factCard:IndividualCardinality(idoLinea:IDO,namePropReqLinea:PROPNAME=="lote"||=="talla"||=="color",QMIN>=1,idPropReq:PROP)	 
+	 ObjValue(IDO==idoLinea,PROPNAME=="producto",idoProducto:IDOVALUE!=null,idtoProducto:VALUECLS,clsProducto:RANGENAME)
+	 
+	 ObjValue(IDO==idoRoot,PROPNAME=="línea"||=="consumo",ObjPropLinea:IDOVALUE,ObjPropPrevLinea:IDOPREVALOR,ch:hasCHANGED,idtoLinea:VALUECLS,claseLinea:RANGENAME)
+	 //tambien quito cardinalidad si la linea se ha desvinculado del documento. No funciona metiendo el siguiente or en el fact
+	 eval(ObjPropLinea!=null&&ObjPropLinea.equals(idoLinea) || ObjPropLinea==null&&ch&&ObjPropPrevLinea.equals(idoLinea))
+	 
+	 DV:DatValue(IDO==idoProducto,namePropReq:PROPNAME=="requiere_lote"||=="requiere_talla"||=="requiere_color",st:BOOLEANVALOR)
+	 eval(namePropReq.contains(namePropReqLinea))
+	 
+	 forall(
+		 Model(CLASSNAME==clsProducto,OP==Constants.OP_CARDINALITY,QMIN>=1,propOblig:PROPNAME)
+		 IndividualValue(IDO==idoProducto,PROPNAME==propOblig,VALOR!=null)
+	  )
+		 
+	 
+	 (or eval(st==false||ObjPropLinea==null)
+	 	 exists((and 	FactHierarchy(CLASSSUP=="PRODUCCIÓN",IDTO==idtoClsRoot)
+	 					ObjValue(IDO==idoRoot,PROPNAME=="estado",idoEstado:IDOVALUE!=null)
+	 					DatValue(IDO==idoEstado,PROPNAME=="rdn",VALOR!="Programado"&&!="Realizado"))))
+	 					
+	DatValue(IDO==idoProducto,PROPNAME=="rdn",rdn:VALOR)
+then
+ 	dma.printRule("\n\n========== ELIMINAR CARDINALIDAD MINIMA 1 EN PROPIEDAD ADICIONAL LINEA SI YA NO APLICA EN ENTRADA/SALIDA MERCANCIA/REGULARIZACIÓN:"+clase+" namePropReqLin:"+namePropReqLinea+" idoLinea:"+idoLinea);//+ " "+rdn+" "+ObjPropLinea+" prev:"+prev);
+ 	jb.retractFact(factCard);
+ 	//dma.printRule(".... debug property after: "+dma.getDDM().SystemGetProperty(idoLinea,idtoLinea,idPropReq));
+ 	//throw new OperationNotPermitedException(".... no se permite ese cambio de productos en la misma linea, para cambiar elimine esta línea y cree una nueva");
+ 	//dma.showMessage("\n info debug: Deja de ser obligatorio "+namePropReqLinea+" en linea:"+idoLinea+" porque es false: "+namePropReq);	  	
+end
+
+/*rule "ELIMINAR CARDINALIDAD MINIMA 1 EN PROPIEDAD ADICIONAL LINEA SI YA NO CUELGA DE ENTRADA/SALIDA MERCANCIA/REGULARIZACIÓN"
+salience 200
+no-loop true
+ agenda-group "rules" when 
+  	 DocDataModel()
+  	 
+  	 jb:JBossEngine()
+	 ObjValue(idoRoot:IDO!=null,PROPNAME=="línea"||=="consumo",idoLinea:IDOVALUE!=null,idtoLinea:VALUECLS,clsRoot:CLASSNAME)
+	 Lock(IDO==idoRoot,clase:CLASSNAME,STATE==Constants.INDIVIDUAL_STATE_LOCK)	 
+	 factCard:IndividualCardinality(IDO==idoLinea,namePropReqLinea:PROPNAME=="lote"||=="talla"||=="color",idPropReq:PROP)
+	 not(
+	 	(and
+			 ObjValue(IDO==idoLinea,PROPNAME=="documento",idoFlujoMerca:IDOVALUE!=null,idtoFlujo:VALUECLS)
+			 FactHierarchy(IDTO==idtoFlujo,CLASSSUP=="PRODUCCIÓN"||=="ENTRADA_ARTÍCULOS"||=="SALIDA_ARTÍCULOS"||=="REGULARIZACIÓN")			 
+		)
+	 )
+then
+ 	dma.printRule("\n\n============ELIMINAR CARDINALIDAD MINIMA 1 EN PROPIEDAD ADICIONAL LINEA SI YA NO CUELGA DE ENTRADA/SALIDA MERCANCIA/REGULARIZACIÓN:"+clsRoot+"  namePropReqLinea:"+namePropReqLinea+" idoLinea:"+idoLinea);
+ 	jb.retractFact(factCard);
+end*/
+
+rule "CARDINALIDAD 1 EN ORIGEN/DESTINO DE LÍNEA EN ENTRADAS/SALIDAS MERCANCIA SI SE TOMA CENTRO TRABAJO"
+ agenda-group "rules" when 
+  	 
+	 FactHierarchy(idtoClsRoot:IDTO,classSup:CLASSSUP=="PRODUCCIÓN"||=="FLUJO_ARTÍCULOS")
+	 Lock(IDTO==idtoClsRoot,idoRoot:IDO!=null,clase:CLASSNAME,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	 ObjValue(IDO==idoRoot,propLinea:PROPNAME=="línea"||=="consumo",idoLinea:IDOVALUE!=null,idtoLinea:VALUECLS,claseLinea:RANGENAME)
+	 Individual(IDO==idoLinea)//PARA que no se active con filtros
+	 Model(CLASSNAME==claseLinea,propAlmacenLinea:PROPNAME=="almacén_origen"||=="almacén_destino",OP==Constants.OP_INTERSECTION)
+	 ObjValue(IDO==idoRoot,propAlmacenDoc:PROPNAME=="origen"||=="destino",IDOVALUE!=null)	 
+	 ObjValue(IDO==idoRoot,PROPNAME==propAlmacenDoc,IDOVALUE!=null,idtoCentroTrabajo:VALUECLS)
+	 FactHierarchy(IDTO==idtoCentroTrabajo,CLASSSUP=="CENTRO_TRABAJO")
+	 //revisar con cambio que ahora albaran cliente es tambien entrada
+	 //(or
+	 //	eval(propAlmacenLinea.equals("almacén_origen")&& propAlmacenDoc.equals("origen")&&(classSup.equals("SALIDA_ARTÍCULOS")&&propLinea.equals("línea")||classSup.equals("PRODUCCIÓN")&&propLinea.equals("consumo")))
+	//eval(propAlmacenLinea.equals("almacén_destino")&& propLinea.equals("línea")&& propAlmacenDoc.equals("destino")&&(classSup.equals("ENTRADA_ARTÍCULOS")||classSup.equals("PRODUCCIÓN")))	 	
+	 //)
+	 not(Model(CLASSNAME==claseLinea,PROPNAME==propAlmacenLinea,OP==Constants.OP_CARDINALITY,QMIN==1))
+	 not(IndividualCardinality(IDO==idoLinea,PROPNAME==propAlmacenLinea,OP==Constants.OP_CARDINALITY,QMIN==1))
+then
+ 	dma.printRule("\n\n============CARDINALIDAD 1 EN ORIGEN/DESTINO DE LÍNEA EN ENTRADAS/SALIDAS MERCANCIA SI SE TOMA CENTRO TRABAJO: classSup:="+classSup+"  propAlmacenLinea:"+propAlmacenLinea+" propAlmacenDoc:"+propAlmacenDoc+"  idoLinea:"+idoLinea);
+ 	dma.setCardinality(idoLinea,idtoLinea,propAlmacenLinea,1);
+end
+
+
+rule "ELIMINAR CARDINALIDAD 1 EN ORIGEN/DESTINO DE LÍNEA EN ENTRADAS/SALIDAS MERCANCIA SI NO SE TOMA CENTRO TRABAJO"
+ agenda-group "rules" when 
+  	 
+  	 jb:JBossEngine()
+	 FactHierarchy(idtoClsRoot:IDTO,classSup:CLASSSUP=="FLUJO_ARTÍCULOS")
+	 Lock(IDTO==idtoClsRoot,idoRoot:IDO!=null,clase:CLASSNAME,STATE==Constants.INDIVIDUAL_STATE_LOCK)
+	 ObjValue(IDO==idoRoot,PROPNAME=="línea",idoLinea:IDOVALUE!=null,idtoLinea:VALUECLS,claseLinea:RANGENAME)
+	 Individual(IDO==idoLinea)//PARA que no se active con filtros
+	 Model(CLASSNAME==claseLinea,propAlmacenLinea:PROPNAME=="almacén_origen"||=="almacén_destino",OP==Constants.OP_INTERSECTION)	 
+	 fcard:IndividualCardinality(IDO==idoLinea,PROPNAME==propAlmacenLinea,QMIN==1)
+	 //eval((propAlmacenLinea.equals("almacén_destino")&&classSup.equals("ENTRADA_ARTÍCULOS"))||(propAlmacenLinea.equals("almacén_origen")&&classSup.equals("SALIDA_ARTÍCULOS")))
+	 forall(
+	 	 ObjValue(IDO==idoRoot,propAlmacenDoc:PROPNAME=="origen",IDOVALUE!=null)	 
+		 ObjValue(IDO==idoRoot,PROPNAME==propAlmacenDoc,IDOVALUE!=null,idtoAlmacen:VALUECLS)
+		 FactHierarchy(IDTO==idtoAlmacen,CLASSSUP=="ALMACÉN")
+	 )
+	  forall(
+	 	 ObjValue(IDO==idoRoot,propAlmacenDoc:PROPNAME=="destino",IDOVALUE!=null)	 
+		 ObjValue(IDO==idoRoot,PROPNAME==propAlmacenDoc,IDOVALUE!=null,idtoAlmacen:VALUECLS)
+		 FactHierarchy(IDTO==idtoAlmacen,CLASSSUP=="ALMACÉN")
+	 )
+	 
+	 
+	 
+then
+ 	dma.printRule("\n\n============CARDINALIDAD 1 EN ORIGEN/DESTINO DE LÍNEA EN ENTRADAS/SALIDAS MERCANCIA SI NO SE TOMA CENTRO TRABAJO: classSup:="+classSup+"  propAlmacenLinea:"+propAlmacenLinea+" idoLinea:"+idoLinea);
+	jb.retractFact(fcard);
+end
+

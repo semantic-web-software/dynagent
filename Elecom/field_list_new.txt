@@ -1,0 +1,80 @@
+<FIELD_LIST WIDTH="800" HEIGHT="500">
+	<GROUP ID="0" LABEL="vacio">
+    		<FIELD ID="1" LABEL="CODIGO" TYPE="8"/>
+    		<FIELD ID="2" LABEL="PARA NAME" TYPE="1">
+				<VAL ID="1" LABEL="Alquiler"/>
+				<VAL ID="2" LABEL="Gestión"/>
+				<VAL ID="3" LABEL="Traspaso"/>
+			</FIELD>
+    		<FIELD ID="3" LABEL="ESTADO" TYPE="1">
+				<VAL ID="1" LABEL="Planificado"/>
+				<VAL ID="2" LABEL="Confirmado"/>
+			</FIELD>
+    		<FIELD ID="4" LABEL="FECHA" TYPE="16"/>
+    		<FIELD ID="5" LABEL="Dia Visita" LENGTH="5" TYPE="16"/>
+  	</GROUP>
+  	<GROUP ID="1" LABEL="Direccion" ORDER="1">
+   		<FIELD ID="101" LABEL="STREET" LENGTH="5" ORDER="1" TYPE="2"/>
+ 		<FIELD ID="102" LABEL="COUNTRY" ORDER="3" TYPE="1">
+			<VAL ID="1" LABEL="SPAIN"/>
+			<VAL ID="2" LABEL="INDIAN"/>
+			<VAL ID="3" LABEL="USA"/>
+    		</FIELD>
+		<FIELD ID="103" LABEL="STATE" ORDER="4" TYPE="8"/>
+		<FIELD ID="104" LABEL="NUMBER" ORDER="2" TYPE="2"/>
+  		<FIELD ID="105" LABEL="POSTAL CODE" ORDER="5" TYPE="8"/>
+  	</GROUP>
+  	<GROUP ID="2" LABEL="DETALLE" ORDER="2">
+		<FIELD LABEL="Precio €" ORDER="1" ID="173" TYPE="4" />
+		<FIELD LABEL="Precio Pts" ORDER="2" ID="174" TYPE="4" />
+		<FIELD LABEL="VPO" ORDER="3" ID="202" TYPE="64" />
+		<FIELD LABEL="Dorm.Dobles" LENGTH="2" ORDER="4" ID="203" TYPE="2" />
+		<FIELD LABEL="Dorm.Indiv." LENGTH="2" ORDER="5" ID="204" TYPE="2" />
+		<FIELD LABEL="Total Dorm." LENGTH="2" ORDER="6" ID="205" TYPE="2" />
+		<FIELD LABEL="m2 Constr." ORDER="7" ID="206" LENGTH="6" TYPE="4" />
+		<FIELD LABEL="m2 Util" ORDER="8" ID="207" LENGTH="6" TYPE="4" />
+		<FIELD LABEL="m2 Parcela" ORDER="9" LENGTH="7" ID="208" TYPE="4" />
+		<FIELD LABEL="Baños." ORDER="10" LENGTH="2" ID="209" TYPE="2" />
+		<FIELD LABEL="Aseos" ORDER="11" LENGTH="1" ID="210" TYPE="2" />
+		<FIELD LABEL="Observaciones" ORDER="12" ID="211" TYPE="32" />
+		<FIELD LABEL="Hipoteca" ID="212" TYPE="64" />
+		<FIELD LABEL="Lavadero" ID="213" TYPE="64" />
+		<FIELD LABEL="Terraza" ID="214" TYPE="64" />
+		<FIELD LABEL="Trastero" ID="215" TYPE="64" />
+		<FIELD LABEL="Jardin" ID="216" TYPE="64" />
+		<FIELD LABEL="Garaje" ID="217" TYPE="64" />
+		<FIELD LABEL="Calefaccion" ID="218" TYPE="64" />
+		<FIELD LABEL="Aire Acond." ID="219" TYPE="64" />
+		<FIELD LABEL="Amueblado" ID="220" TYPE="64" />
+		<FIELD LABEL="Doble cristal" ID="221" TYPE="64" />
+		<FIELD LABEL="Pta blindada" ID="222" TYPE="64" />
+		<FIELD LABEL="Agua" ID="223" TYPE="64" />
+		<FIELD LABEL="Luz" ID="224" TYPE="64" />
+		<FIELD LABEL="Gas" ID="225" TYPE="64" />
+		<FIELD LABEL="Soleado" ID="226" TYPE="64" />
+		<FIELD LABEL="Piscina" ID="227" TYPE="64" />
+		<FIELD LABEL="Sotano" ID="228" TYPE="64" />
+		<FIELD LABEL="Telefono" ID="229" TYPE="64" />
+		<FIELD LABEL="Cocina" ID="230" TYPE="64" />
+		<FIELD LABEL="Asfaltado" ID="231" TYPE="64" />
+		<FIELD LABEL="Alumbrado" ID="232" TYPE="64" />
+		<FIELD LABEL="Esquina" ID="233" TYPE="64" />
+		<FIELD LABEL="Gastos comun." ID="234" TYPE="64" />
+		<FIELD LABEL="Sist.seguridad" ID="235" TYPE="64" />
+		<FIELD LABEL="Urbanizado" ID="236" TYPE="64" />
+		<FIELD LABEL="Chimenea" ID="237" TYPE="64" />
+		<FIELD LABEL="Ascensor" ID="238" TYPE="64" />
+		<FIELD LABEL="Vistas" ID="239" TYPE="64" />
+		<FIELD LABEL="Comedor" ID="240" TYPE="64" />
+		<FIELD LABEL="Armarios" ID="241" TYPE="64" />
+		<FIELD LABEL="Suelo" ID="242" TYPE="64" />
+		<FIELD LABEL="Carp.Exter" ID="243" TYPE="64" />
+		<FIELD LABEL="Carp.Inter" ID="244" TYPE="64" />
+		<FIELD LABEL="Año Construc." ID="245" TYPE="64" />
+		<FIELD LABEL="Ult.Reforma" ID="246" TYPE="64" />
+		<FIELD LABEL="Orientacion" ID="247" TYPE="64" />
+		<FIELD LABEL="Plantas" ID="248" TYPE="64" />
+		<FIELD LABEL="Llaves" ID="249" TYPE="64" />	
+		
+  	</GROUP>
+</FIELD_LIST>

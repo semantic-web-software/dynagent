@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry excluding="gdev/gawt/utils/range.java|gdev/gawt/utils/extendedValue.java|gdev/gawt/utils/dateUtil.java|miniCalendar/|gdev/old/" kind="src" path="src"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/Calendar"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/Common"/>
+	<classpathentry kind="con" path="org.eclipse.jst.j2ee.internal.module.container"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/Tinylaf"/>
+	<classpathentry kind="output" path="bin"/>
+</classpath>

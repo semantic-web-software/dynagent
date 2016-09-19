@@ -1,0 +1,90 @@
+//created on: 07-abr-2010
+package dynagent.ruleengine.src.ruler.ERPrules
+
+
+/*import dynagent.ruleengine.src.ruler.*;
+import java.util.*;
+import dynagent.common.properties.*;
+import dynagent.common.properties.values.*;
+import dynagent.common.exceptions.*;
+import dynagent.common.knowledge.*;
+import dynagent.ruleengine.meta.api.*;
+import dynagent.common.Constants;
+import dynagent.imports.ImportFactory;
+import dynagent.exports.ExportFactory;
+import dynagent.exports.IExport;
+
+
+rule "IMPORTACIONES"
+agenda-group "rules" when
+    
+    FactHierarchy(typeImport:CLASS!=null, CLASSSUP=="IMPORT")
+    f:ObjValue(CLASSNAME==typeImport, idUTask:ID, idtoUTask:IDTO, PROPNAME=="estadoRealizacion", idEstado:VALUE!=null)
+	DatValue(ID==idEstado, PROPNAME=="rdn", VALOR==Constants.INDIVIDUAL_INFORMADO)
+	ObjValue(ID==idUTask, PROPNAME=="params", idparams:VALOR!=null)
+	DatValue(ID==idparams, PROPNAME=="fichero", path:VALOR!=null)
+	Model(ID==idUTask, PROPNAME=="targetClass", range:VALUECLS!=null, OP=="OR")
+then
+	dma.printRule("\n==========================================> RULE IMPORTACIONES typeImport="+typeImport);
+	//Import imports=new Import(typeImport,path,dma);
+	HashSet<Integer> importedIdos = ImportFactory.create(typeImport,path,dma.getDDM()).importData();
+	Iterator<Integer> itr = importedIdos.iterator();
+	while(itr.hasNext()){
+		dma.addValue(idUTask, idtoUTask, "targetClass", new IntValue(itr.next()));
+	}
+	
+end
+
+rule "EXPORTACIONES"
+agenda-group "rules" when
+    
+    FactHierarchy(typeExport:CLASS!=null, CLASSSUP=="EXPORT")
+    f:ObjValue(CLASSNAME==typeExport, idUTask:ID, PROPNAME=="estadoRealizacion", idEstado:VALUE!=null)
+	DatValue(ID==idEstado, PROPNAME=="rdn", VALOR==Constants.INDIVIDUAL_REALIZADO)
+	ObjValue(ID==idUTask, PROPNAME=="params", idparams:VALOR!=null)
+	DatValue(ID==idparams, PROPNAME=="fichero", path:VALOR!=null)
+	
+	sources: ArrayList(size>0)
+	             	from accumulate(
+            			ObjValue(ID==idUTask, PROPNAME=="sourceClass",idSource:VALOR!=null),
+                          init	( ArrayList<Integer> listSource=new ArrayList<Integer>();),
+                          action( listSource.add(new Integer(idSource));),                            
+                          result(listSource))
+then
+	dma.printRule("\n==========================================> RULE EXPORTACIONES typeExport="+typeExport);
+	HashSet<Integer> exportedIdos = ExportFactory.create(typeExport, sources, path, dma.getDDM()).exportData();
+	System.err.println("exportedIdos:" + exportedIdos);
+	System.err.println("sourceIdos:" + sources);
+	Iterator<Integer> sourceIdos = sources.iterator();
+	ArrayList<String> NotExportedRdns = new ArrayList<String>();
+	while(sourceIdos.hasNext()){
+		int sourceIdo = sourceIdos.next();
+		if(!exportedIdos.contains(sourceIdo))
+			NotExportedRdns.add(dma.getDDM().getRdnIfExistInRuler(sourceIdo)); 
+	}
+	if(!NotExportedRdns.isEmpty()){
+		String message;
+		if(NotExportedRdns.size() == sources.size()){
+			message = "No se ha realizado la exportación ya que ninguna selección cumple los requisitos necesarios";
+		}else{
+			message = "Las selecciones "+NotExportedRdns+" no han podido ser exportadas porque no cumplen los requisitos necesarios";
+		}
+		dma.showMessage(message);
+	}
+end
+
+rule "TRASPASOS DATOS"
+agenda-group "rules" when
+    ddm:DocDataModel()
+    FactHierarchy(typeExport:CLASS!=null,CLASSSUP=="DATA_TRANSFER")
+    Lock(CLASSNAME==typeExport,idoDataTransfer:IDO!=null,STATE==Constants.INDIVIDUAL_STATE_READY)
+then
+	dma.printRule("\n==========================================> RULE TRASPASOS DATOS typeExport="+typeExport);
+	dma.showMessage("DEBUG: DISPARO REGLA TRASPASOS DATOS typeExport="+typeExport);
+	IExport export=ExportFactory.create(typeExport,idoDataTransfer,dma);
+	export.exportData();
+	String error=export.getError();
+	if(error!=null)
+		dma.showMessage(error);
+end
+*/

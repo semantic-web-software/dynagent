@@ -1,0 +1,47 @@
+<html>
+
+<head></head>
+
+<body bgcolor="#FFFFFF">
+
+<!-- COMENTARIO DEL PAQUETE INTRODUCIDO MANUALMENTE -->
+<P>El objetivo principal de este paquete es asignar la información que se extrae del XML a cada grupo 
+y cada campo concreto. De hecho, con sólo fijarnos en las siglas de este paquete (si quitamos la g inicial tenemos la siglas fld, 
+que significan field, es decir, campo), que ya nos está dando mucha información acerca de la función que 
+llevará a cabo este paquete en el proyecto.
+
+<br>En este paquete, la clase {@link gdev.gfld.GFormFieldList} contiene la relación de todos 
+los grupos que tiene el formulario general. En la clase {@link gdev.gfld.GFormGroup} 
+tendremos toda la información necesaria para el tratamiento de cada grupo del formulario, 
+y además tenemos un vector con todos los campos de dicho grupo. Estos campos son del tipo {@link gdev.gfld.GFormField}, 
+que es una clase abstracta de este paquete. Esta clase ({@link gdev.gfld.GFormField}) es extendida por otras clases ({@link gdev.gfld.GFormBoolean}, {@link gdev.gfld.GFormText}, {@link gdev.gfld.GFormTable}, etc.) 
+para generar los campos necesarios según el tipo. El método abstracto que 
+se encarga de ello es {@link gdev.gfld.GFormField#getMinimumComponentDimension}, 
+que será implementado en las clases hijas según el tipo extraído en el XML. Este método nos da el tamaño mínimo 
+que tiene un campo según la información que se nos ha proporcionado en el XML (tipo, longitud, etiqueta…), 
+aparte de otros atributos proporcionados que también son necesarios (prioridad, orden,…). 
+Gracias al paquete {@link gdev.gawt} construiremos una primera versión de los grupos del formulario, 
+y posteriormente (gracias al paquete {@link gdev.gbalancer}) calcularemos las distintas combinaciones de estos grupos 
+del formulario y obtendremos la mejor combinación (que después será optimizada aún mas) para el usuario. 
+
+
+<br>Este paquete parece tener la misma función que el {@link gdev.gawt}, ya que puede parecer que la clase 
+{@link gdev.gfld.GFormField} y {@link gdev.gawt.GComponent} 
+tienen la misma función, puesto que las dos representan un campo y son extendidas 
+por las clases hijas según el tipo de campo. La diferencia entre los dos paquetes es que {@link gdev.gawt} está 
+orientada a la representación gráfica de los formularios en la interfaz, mientras que {@link gdev.gfld} proporciona 
+toda la información del formulario (grupos y campos) para que sean colocados correctamente en la interfaz. 
+La clase {@link gdev.gfld.GFormField} no sabe 
+dónde está colocado dicho campo en la interfaz, mientras que la clase {@link gdev.gawt.GComponent}
+tiene la información de la posición (dentro del grupo) y el tamaño de un campo para ser colocado en la interfaz, 
+gracias al atributo {@link gdev.gawt.GComponent#m_objFormField} de tipo {@link gdev.gfld.GFormField} 
+de donde saca toda la información necesaria para la colocación de 
+dicho campo en la interfaz (prioridad, orden, tamaño minimo predefinido, etc).
+</P>
+<!-- FIN DEL COMENTARIO DEL PAQUETE INTRODUCIDO MANUALMENTE -->
+
+
+
+</body>
+
+</html>

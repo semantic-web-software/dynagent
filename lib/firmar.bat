@@ -1,0 +1,34 @@
+jarsigner dynagent.jar dynagent   
+jarsigner elecom.jar dynagent   
+jarsigner dynagent-ruleengine.jar dynagent
+jarsigner dynagent-ejb.jar dynagent     
+jarsigner jdom.jar dynagent     
+jarsigner edu.jar dynagent    
+jarsigner encod.jar dynagent   
+jarsigner dynagent-framework.jar dynagent  
+jarsigner protege-owl.jar dynagent   
+jarsigner protege.jar dynagent   
+jarsigner commons-lang-2.3.jar dynagent   
+jarsigner commons-fileupload-1.0.jar dynagent   
+jarsigner jndi-1.2.1.jar dynagent   
+jarsigner xercesImpl.jar dynagent   
+jarsigner xerces.jar dynagent   
+jarsigner ejb.jar dynagent   
+jarsigner jasperreports-1.3.4.jar dynagent   
+jarsigner commons-beanutils-1.7.jar dynagent   
+jarsigner commons-collections-2.1.jar dynagent   
+jarsigner commons-digester-1.7.jar dynagent   
+jarsigner commons-logging-1.0.2.jar dynagent   
+jarsigner itext-1.3.1.jar dynagent    
+jarsigner poi-2.0-final-20040126.jar dynagent   
+jarsigner org.eclipse.jdt.core.manipulation_1.0.1.r321_v20060721.jar dynagent   
+jarsigner org.eclipse.jdt.core_3.2.1.v_677_R32x.jar dynagent   
+jarsigner xml-apis.jar dynagent    
+jarsigner drools-core.jar dynagent   
+jarsigner drools-compiler.jar dynagent  
+jarsigner mvel14.jar dynagent    
+jarsigner antlr-runtime.jar dynagent   
+jarsigner org.eclipse.jdt.core_3.2.1.v_677_R32x.jar dynagent   
+jarsigner tinylaf.jar dynagent   
+jarsigner dynagent-calendar.jar
+pause

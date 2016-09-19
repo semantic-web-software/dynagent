@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry excluding="dynagent/ruleengine/meta/api/old/|dynagent/ruleengine/meta/old/|dynagent/ruleengine/src/parser/old/|dynagent/ruleengine/test/test1/doc/|dynagent/ruleengine/test/test1/src/|dynagent/ruleengine/test/test10/doc/|dynagent/ruleengine/test/test10/src/|dynagent/ruleengine/test/test11/doc/|dynagent/ruleengine/test/test11/src/|dynagent/ruleengine/test/test12/doc/|dynagent/ruleengine/test/test12/src/|dynagent/ruleengine/test/test13/doc/|dynagent/ruleengine/test/test13/src/|dynagent/ruleengine/test/test14/doc/|dynagent/ruleengine/test/test14/src/|dynagent/ruleengine/test/test15/doc/|dynagent/ruleengine/test/test15/src/|dynagent/ruleengine/test/test16/src/|dynagent/ruleengine/test/test17/src/|dynagent/ruleengine/test/test18/src/|dynagent/ruleengine/test/test19/src/|dynagent/ruleengine/test/test2/doc/|dynagent/ruleengine/test/test2/src/|dynagent/ruleengine/test/test20/src/|dynagent/ruleengine/test/test21/src/|dynagent/ruleengine/test/test22/src/|dynagent/ruleengine/test/test23/src/|dynagent/ruleengine/test/test3/doc/|dynagent/ruleengine/test/test3/src/|dynagent/ruleengine/test/test4/doc/|dynagent/ruleengine/test/test4/src/|dynagent/ruleengine/test/test5/doc/|dynagent/ruleengine/test/test5/src/|dynagent/ruleengine/test/test6/doc/|dynagent/ruleengine/test/test6/src/|dynagent/ruleengine/test/test7/doc/|dynagent/ruleengine/test/test7/src/|dynagent/ruleengine/test/test8/doc/|dynagent/ruleengine/test/test8/src/|dynagent/ruleengine/test/test9/doc/|dynagent/ruleengine/test/test9/src/|dynagent/ruleengine/src/ruler/old/|dynagent/ruleengine/meta/accessParser/Pr.java|dynagent/ruleengine/src/ruler/FactODatosAttrib.java|dynagent/ruleengine/src/ruler/FactPeer.java|dynagent/ruleengine/src/ruler/JessEngine.java|dynagent/ruleengine/test/|dynagent/lenguajeUniv/parser/auxiliar/|dynagent/ruleengine/accessImport/|dynagent/ruleengine/jboss/rules/|dynagent/ruleengine/meta/accessParser/|dynagent/ruleengine/meta/api/importConfig/|dynagent/ruleengine/meta/api/importDataReplica/|dynagent/ruleengine/meta/api/serverimport/|dynagent/ruleengine/meta/installReplica/|dynagent/ruleengine/meta/modelImport/|dynagent/ruleengine/meta/modelUpdate/|dynagent/ruleengine/meta/owlimport/|dynagent/ruleengine/meta/serverimport/query/|dynagent/ruleengine/meta/serverimport/report/|dynagent/ruleengine/meta/setup/mysql/index/|dynagent/ruleengine/meta/setup/sqlserver/|dynagent/ruleengine/meta/setup/xml/|dynagent/ruleengine/meta/updateRdn/|dynagent/ruleengine/meta/updateTarifas/|dynagent/ruleengine/src/parser/|dynagent/ruleengine/src/parser/xmi/temp/|dynagent/lenguajeUniv/parser/|dynagent/ruleengine/meta/api/DocDataModelMetodosDeprecated.java" kind="src" path="src"/>
+	<classpathentry kind="lib" path="../../opensource/git/lib/jdom.jar"/>
+	<classpathentry kind="lib" path="../../opensource/git/lib/commons-lang-2.3.jar"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/Common"/>
+	<classpathentry kind="lib" path="../../opensource/git/lib/drools/mvel-1.3.1-java1.4.jar"/>
+	<classpathentry kind="lib" path="../../opensource/git/lib/drools/drools-core-4.0.7.jar"/>
+	<classpathentry kind="con" path="org.eclipse.jst.j2ee.internal.module.container"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER">
+		<attributes>
+			<attribute name="owner.project.facets" value="java"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="../../opensource/git/lib/junit.jar"/>
+	<classpathentry kind="output" path="bin"/>
+</classpath>
