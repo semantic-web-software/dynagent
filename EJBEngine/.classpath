@@ -10,8 +10,8 @@
 	<classpathentry combineaccessrules="false" kind="src" path="/Common"/>
 	<classpathentry combineaccessrules="false" kind="src" path="/RuleEngine"/>
 	<classpathentry combineaccessrules="false" kind="src" path="/Server"/>
-	<classpathentry kind="lib" path="../../opensource/git/lib/jdom.jar"/>
-	<classpathentry kind="lib" path="../../opensource/git/lib/j2ee.jar"/>
-	<classpathentry kind="lib" path="../../opensource/git/lib/ejb.jar"/>
+	<classpathentry kind="lib" path="../lib/jdom.jar"/>
+	<classpathentry kind="lib" path="../lib/j2ee.jar"/>
+	<classpathentry kind="lib" path="../lib/ejb.jar"/>
 	<classpathentry kind="output" path="build/classes"/>
 </classpath>

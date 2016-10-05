@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <classpath>
 	<classpathentry excluding="dynagent/ejb/old/|dynagent/knowledge/old/|dynagent/knowledge/instance/old/|dynagent/services/old/|dynagent/server/ejb/old/|dynagent/server/knowledge/instance/old/|dynagent/server/knowledge/old/|dynagent/server/reports/app/old/|dynagent/server/web/old/|dynagent/server/applicationMessages/|dynagent/server/reports/app/|dynagent/server/test/Test11.java|dynagent/server/test/|dynagent/server/importers/|dynagent/server/application/old/|dynagent/server/services/old/|dynagent/server/services/reports/old/|dynagent/server/ejb/instanceLock.java|dynagent/server/ejb/instanceLockBean.java|dynagent/server/ejb/instanceLockHome.java|dynagent/server/ejb/ISession.java|dynagent/server/ejb/ISessionHome.java|dynagent/server/ejb/SessionBean.java" kind="src" path="src"/>
-	<classpathentry kind="lib" path="../../opensource/git/lib/j2ee.jar"/>
-	<classpathentry kind="lib" path="../../opensource/git/lib/sqljdbc.jar"/>
-	<classpathentry kind="lib" path="../../opensource/git/lib/commons-lang-2.3.jar"/>
-	<classpathentry kind="lib" path="../../opensource/git/lib/jdom.jar"/>
-	<classpathentry kind="lib" path="../../opensource/git/lib/ejb.jar"/>
-	<classpathentry kind="lib" path="../../opensource/git/lib/commons-collections-2.1.jar"/>
+	<classpathentry kind="lib" path="../lib/j2ee.jar"/>
+	<classpathentry kind="lib" path="../lib/sqljdbc.jar"/>
+	<classpathentry kind="lib" path="../lib/commons-lang-2.3.jar"/>
+	<classpathentry kind="lib" path="../lib/jdom.jar"/>
+	<classpathentry kind="lib" path="../lib/ejb.jar"/>
+	<classpathentry kind="lib" path="../lib/commons-collections-2.1.jar"/>
 	<classpathentry combineaccessrules="false" kind="src" path="/Common"/>
-	<classpathentry kind="lib" path="../../opensource/git/lib/mysql-connector-java-5.1.6-bin.jar"/>
-	<classpathentry kind="lib" path="../../opensource/git/lib/jboss-system.jar"/>
-	<classpathentry kind="lib" path="../../opensource/git/lib/commons-fileupload-1.0.jar"/>
-	<classpathentry kind="lib" path="../../opensource/git/lib/poi-3.6-20091214.jar"/>
-	<classpathentry kind="lib" path="../../opensource/git/lib/jasperreports-3.7.3.jar"/>
-	<classpathentry kind="lib" path="../../opensource/git/lib/postgresql-9.0-801.jdbc4.jar"/>
+	<classpathentry kind="lib" path="../lib/mysql-connector-java-5.1.6-bin.jar"/>
+	<classpathentry kind="lib" path="../lib/jboss-system.jar"/>
+	<classpathentry kind="lib" path="../lib/commons-fileupload-1.0.jar"/>
+	<classpathentry kind="lib" path="../lib/poi-3.6-20091214.jar"/>
+	<classpathentry kind="lib" path="../lib/jasperreports-3.7.3.jar"/>
+	<classpathentry kind="lib" path="../lib/postgresql-9.0-801.jdbc4.jar"/>
 	<classpathentry kind="con" path="org.eclipse.jst.j2ee.internal.module.container"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER">
 		<attributes>
